@@ -1,6 +1,6 @@
 # =============================================================================
 # FASE 6: REGISTRO REVOCHE - SMART CONTRACT
-# File: blockchain/contracts/AcademicCredentialRegistry.sol
+# File: blockchain/AcademicCredentialRegistry.sol
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
 

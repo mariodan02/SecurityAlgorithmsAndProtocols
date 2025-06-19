@@ -1,0 +1,121 @@
+# =============================================================================
+# REQUIREMENTS - Sistema Credenziali Accademiche Decentralizzate
+# =============================================================================
+
+# ===== FONDAMENTA CRITTOGRAFICHE (Fase 1) =====
+# Libreria principale per crittografia
+cryptography>=41.0.0
+
+# ===== PKI - PUBLIC KEY INFRASTRUCTURE (Fase 2) =====
+# PyOpenSSL per funzionalità X.509 avanzate (opzionale, cryptography è sufficiente)
+# pyOpenSSL>=23.0.0
+
+# ===== GESTIONE DATI E VALIDAZIONE (Fase 3) =====
+# Validazione dati strutturati
+pydantic>=2.0.0
+
+# Serializzazione JSON avanzata
+orjson>=3.8.0
+
+# ===== COMUNICAZIONE SICURA (Fase 5) =====
+# Framework web per API REST
+fastapi>=0.100.0
+
+# Server ASGI per FastAPI
+uvicorn[standard]>=0.23.0
+
+# Client HTTP con supporto async
+httpx>=0.24.0
+
+# Requests per compatibilità (client HTTP sincrono)
+requests>=2.31.0
+
+# ===== BLOCKCHAIN E REGISTRO REVOCHE (Fase 6) =====
+# Web3 per interazione Ethereum (se si usa blockchain)
+web3>=6.10.0
+
+# ===== DATABASE E STORAGE (Generali) =====
+# ORM per database
+sqlalchemy>=2.0.0
+
+# Driver SQLite (incluso in Python standard library)
+# sqlite3 (built-in)
+
+# Database in-memory ad alte prestazioni
+redis>=4.6.0
+
+# ===== TESTING E DEVELOPMENT =====
+# Framework di testing
+pytest>=7.4.0
+
+# Coverage per test
+pytest-cov>=4.1.0
+
+# Testing async
+pytest-asyncio>=0.21.0
+
+# Mock e fixture
+pytest-mock>=3.11.0
+
+# ===== UTILITIES E SUPPORTO =====
+# Progress bar per operazioni lunghe
+tqdm>=4.65.0
+
+# Colorazione output terminale
+colorama>=0.4.6
+
+# Date e time utilities
+python-dateutil>=2.8.2
+
+# Configurazione da file
+python-dotenv>=1.0.0
+
+# Logging strutturato
+structlog>=23.1.0
+
+# ===== MONITORAGGIO E METRICHE =====
+# Metriche e monitoring
+prometheus-client>=0.17.0
+
+# ===== SECURITY SCANNER (Development) =====
+# Scanner vulnerabilità
+safety>=2.3.0
+
+# Linting di sicurezza
+bandit>=1.7.5
+
+# ===== DOCUMENTAZIONE =====
+# Generazione documentazione
+sphinx>=7.1.0
+
+# Tema documentazione
+sphinx-rtd-theme>=1.3.0
+
+# ===== FORMATO E QUALITÀ CODICE =====
+# Formattazione codice
+black>=23.7.0
+
+# Import sorting
+isort>=5.12.0
+
+# Linting
+flake8>=6.0.0
+
+# Type checking
+mypy>=1.5.0
+
+# ===== NOTE INSTALLAZIONE =====
+#
+# Installazione base (solo runtime):
+#   pip install cryptography pydantic fastapi uvicorn httpx requests
+#
+# Installazione completa sviluppo:
+#   pip install -r requirements.txt
+#
+# Installazione per produzione:
+#   pip install cryptography pydantic fastapi uvicorn[standard] httpx redis sqlalchemy
+#
+# ===== COMPATIBILITÀ =====
+# Python >= 3.8 richiesto
+# Sistema operativo: Windows, macOS, Linux
+# Architetture: x86_64, ARM64 (Apple Silicon supportato)

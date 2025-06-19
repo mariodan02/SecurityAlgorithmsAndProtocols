@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>📊 Dashboard</h2>
+<div class="row">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">Credenziali Emesse</h5>
+                <h3>{{ stats.total_credentials_issued }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <h5 class="card-title">Credenziali Verificate</h5>
+                <h3>{{ stats.total_credentials_verified }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <h5 class="card-title">Verifiche Pending</h5>
+                <h3>{{ stats.pending_verifications }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <h5 class="card-title">Success Rate</h5>
+                <h3>{{ "%.1f"|format(stats.success_rate) }}%</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">📈 Attività Recente</div>
+            <div class="card-body">
+                <canvas id="activityChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">⚡ Azioni Rapide</div>
+            <div class="card-body">
+                <a href="/credentials/issue" class="btn btn-primary btn-block mb-2">Emetti Credenziale</a>
+                <a href="/verification" class="btn btn-success btn-block mb-2">Verifica Presentazione</a>
+                <a href="/monitoring" class="btn btn-info btn-block">Stato Sistema</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Chart.js per grafici
+const ctx = document.getElementById('activityChart').getContext('2d');
+const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'],
+        datasets: [{
+            label: 'Credenziali Emesse',
+            data: [12, 19, 3, 5, 2, 3, 7],
+            borderColor: 'rgb(75, 192, 192)',
+            tension: 0.1
+        }, {
+            label: 'Verifiche Completate',
+            data: [8, 15, 2, 4, 1, 2, 5],
+            borderColor: 'rgb(255, 99, 132)',
+            tension: 0.1
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

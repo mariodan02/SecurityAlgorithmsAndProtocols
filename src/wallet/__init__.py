@@ -32,6 +32,7 @@ Utilizzo base:
 """
 
 # Import wallet principale
+from typing import List, Tuple
 from .student_wallet import (
     AcademicStudentWallet,
     WalletConfiguration,

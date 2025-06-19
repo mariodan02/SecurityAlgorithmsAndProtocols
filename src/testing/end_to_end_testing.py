@@ -26,27 +26,27 @@ try:
     # Core components
     from crypto.foundations import CryptoManager
     from pki.certificate_manager import CertificateManager
-    from credentials.models import CredentialFactory, AcademicCredential
-    from credentials.issuer import AcademicCredentialIssuer
+    from credentials.models import CredentialFactory, AcademicCredential, University # <-- Aggiunto University
+    from credentials.issuer import AcademicCredentialIssuer, IssuerConfiguration # <-- Aggiunto IssuerConfiguration
     from credentials.validator import AcademicCredentialValidator, ValidationLevel
-    
+
     # Wallet and presentation
     from wallet.student_wallet import AcademicStudentWallet, WalletConfiguration, CredentialStorage
     from wallet.selective_disclosure import SelectiveDisclosureManager, DisclosureLevel
     from wallet.presentation import PresentationManager
-    
+
     # Communication and blockchain
     from communication.secure_server import AcademicCredentialsSecureServer, ServerConfiguration
-    from blockchain.revocation_registry import RevocationRegistryManager, BlockchainConfig, BlockchainNetwork
-    
+    # Corretto il nome del file da cui importare
+    from blockchain.blockchain_client import RevocationRegistryManager, BlockchainConfig, BlockchainNetwork 
+
     # Verification
     from verification.verification_engine import CredentialVerificationEngine, VerificationLevel
     from verification.university_integration import UniversityIntegrationManager
-    
+
 except ImportError as e:
     print(f"⚠️  Errore import moduli: {e}")
     print("   Alcuni moduli potrebbero non essere disponibili per il testing")
-
 
 # =============================================================================
 # 1. STRUTTURE DATI TESTING
@@ -212,25 +212,35 @@ class EndToEndTestManager:
     def setup_test_environment(self) -> bool:
         """
         Setup dell'ambiente di test
-        
+
         Returns:
             True se setup riuscito
         """
         try:
             print(f"🔧 Setup ambiente di test...")
-            
+
             # 1. Crypto Manager
             self.crypto_manager = CryptoManager(key_size=2048, padding_type="PSS")
-            
+
             # 2. Certificate Manager
             self.cert_manager = CertificateManager()
-            
+
             # 3. Issuer
-            self.issuer = AcademicCredentialIssuer(
-                self.cert_manager, 
-                "Test University"
+            # Crea una configurazione fittizia per l'issuer del test
+            test_university_info = University(
+                name="Test University",
+                country="IT",
+                city="Test City",
+                website="test.edu"
             )
-            
+            test_issuer_config = IssuerConfiguration(
+                university_info=test_university_info,
+                certificate_path="./test_cert.pem", # Percorso fittizio
+                private_key_path="./test_key.pem" # Percorso fittizio
+            )
+            # Inizializza l'issuer con l'oggetto di configurazione corretto
+            self.issuer = AcademicCredentialIssuer(test_issuer_config)
+
             # 4. Wallet configuration
             wallet_config = WalletConfiguration(
                 wallet_name="Test Student Wallet",
@@ -238,27 +248,27 @@ class EndToEndTestManager:
                 storage_mode=CredentialStorage.ENCRYPTED_LOCAL,
                 require_password=False  # Semplifica per test
             )
-            
+
             self.wallet = AcademicStudentWallet(wallet_config)
-            
+
             # 5. Verification Engine
             self.verification_engine = CredentialVerificationEngine(
                 "Test Verifying University",
                 self.cert_manager
             )
-            
+
             # 6. Integration Manager
             self.integration_manager = UniversityIntegrationManager(
                 self.verification_engine
             )
-            
+
             print(f"✅ Ambiente di test configurato")
             return True
-            
+
         except Exception as e:
             print(f"❌ Errore setup ambiente: {e}")
             return False
-    
+        
     def run_all_tests(self) -> Dict[str, Any]:
         """
         Esegue tutti i test configurati

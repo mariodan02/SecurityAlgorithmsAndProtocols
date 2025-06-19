@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import uuid
 import base64
+import hashlib
 
 # Cryptography imports
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -725,48 +726,49 @@ class AcademicStudentWallet:
             return False
         
         return True
-    
+
     def _save_encrypted_keys(self, password: str):
         """Salva chiavi cifrate con password"""
         try:
             # Deriva chiave di cifratura dalla password
             password_bytes = password.encode('utf-8')
-            key = self.crypto_utils.sha256_hash(password_bytes)[:32]  # 256 bit key
-            
+            # USARE .digest() per ottenere i bytes, non hexdigest() che restituisce una stringa
+            key = hashlib.sha256(password_bytes).digest()  # Questo produce una chiave di 32 bytes (256 bit)
+
             # Serializza chiave privata
             private_pem = self.key_manager.serialize_private_key(self.wallet_private_key)
             public_pem = self.key_manager.serialize_public_key(self.wallet_public_key)
-            
+
             # Combina chiavi
             keys_data = {
                 'private_key': private_pem.decode('utf-8'),
                 'public_key': public_pem.decode('utf-8')
             }
-            
+
             keys_json = json.dumps(keys_data).encode('utf-8')
-            
+
             # Cifra con AES
             iv = os.urandom(16)  # IV per AES
             cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
             encryptor = cipher.encryptor()
-            
+
             # Padding PKCS7
             pad_length = 16 - (len(keys_json) % 16)
             padded_data = keys_json + bytes([pad_length] * pad_length)
-            
+
             encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
-            
+
             # Salva IV + dati cifrati
             final_data = iv + encrypted_data
-            
+
             with open(self.keys_file, 'wb') as f:
                 f.write(final_data)
-            
+
             # Protegge file
             os.chmod(self.keys_file, 0o600)
-            
+
         except Exception as e:
-            raise RuntimeError(f"Errore salvataggio chiavi: {e}")
+            raise RuntimeError(f"Errore salvataggio chiavi: {e}")    
     
     def _load_encrypted_keys(self, password: str) -> bool:
         """Carica chiavi cifrate con password"""
@@ -774,41 +776,42 @@ class AcademicStudentWallet:
             if not self.keys_file.exists():
                 print("❌ File chiavi non trovato")
                 return False
-            
+
             # Deriva chiave di cifratura
             password_bytes = password.encode('utf-8')
-            key = self.crypto_utils.sha256_hash(password_bytes)[:32]
-            
+            # USARE .digest() anche qui per coerenza
+            key = hashlib.sha256(password_bytes).digest()
+
             # Legge dati cifrati
             with open(self.keys_file, 'rb') as f:
                 encrypted_data = f.read()
-            
+
             # Estrae IV e dati
             iv = encrypted_data[:16]
             ciphertext = encrypted_data[16:]
-            
+
             # Decifra
             cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
             decryptor = cipher.decryptor()
-            
+
             padded_data = decryptor.update(ciphertext) + decryptor.finalize()
-            
+
             # Rimuove padding
             pad_length = padded_data[-1]
             keys_json = padded_data[:-pad_length]
-            
+
             # Deserializza chiavi
             keys_data = json.loads(keys_json.decode('utf-8'))
-            
+
             self.wallet_private_key = self.key_manager.deserialize_private_key(
                 keys_data['private_key'].encode('utf-8')
             )
             self.wallet_public_key = self.key_manager.deserialize_public_key(
                 keys_data['public_key'].encode('utf-8')
             )
-            
+
             return True
-            
+
         except Exception as e:
             print(f"❌ Errore caricamento chiavi: {e}")
             return False

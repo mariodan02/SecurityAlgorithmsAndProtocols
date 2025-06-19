@@ -1,0 +1,58 @@
+
+/* Academic Credentials Dashboard CSS */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+.card {
+    border: none;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.btn {
+    border-radius: 25px;
+}
+
+.btn-block {
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.alert {
+    border-radius: 10px;
+}
+
+/* Custom colors */
+.bg-primary { background-color: #4e73df !important; }
+.bg-success { background-color: #1cc88a !important; }
+.bg-warning { background-color: #f6c23e !important; }
+.bg-info { background-color: #36b9cc !important; }
+
+/* Animations */
+.card:hover {
+    transform: translateY(-5px);
+    transition: all 0.3s ease;
+}
+
+/* Loading spinner */
+.spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 2s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

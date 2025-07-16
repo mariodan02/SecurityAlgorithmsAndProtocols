@@ -265,11 +265,14 @@ class AcademicCredentialsDashboard:
             
             session_id = f"session_{datetime.datetime.utcnow().timestamp()}"
             
+            # FIX: Assegna permessi di scrittura anche al ruolo 'issuer'
+            user_permissions = ["read", "write"] if username in ["admin", "issuer"] else ["read"]
+            
             user_session = UserSession(
                 user_id=username,
                 university_name="Demo University",
                 role=username,
-                permissions=["read", "write"] if username == "admin" else ["read"],
+                permissions=user_permissions,
                 login_time=datetime.datetime.utcnow(),
                 last_activity=datetime.datetime.utcnow()
             )

@@ -1,30 +1,107 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h4>🔐 Login</h4>
-            </div>
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">📈 Monitoring di Sistema</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-white bg-success">
             <div class="card-body">
-                {% if error %}
-                <div class="alert alert-danger">{{ error }}</div>
-                {% endif %}
-                <form method="post">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
-                        <small class="form-text text-muted">Demo: admin, issuer, verifier</small>
-                    </div>
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                        <small class="form-text text-muted">Demo: demo123</small>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Login</button>
-                </form>
+                <h5 class="card-title">Stato API</h5>
+                <p class="card-text">Operativo</p>
+                <p class="display-6">99.9% <small>Uptime</small></p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <h5 class="card-title">Nodo Blockchain</h5>
+                <p class="card-text">{{ system_health.blockchain_status }}</p>
+                <p class="display-6">120ms <small>Ping</small></p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-white bg-secondary">
+            <div class="card-body">
+                <h5 class="card-title">Database</h5>
+                <p class="card-text">{{ system_health.database_status }}</p>
+                <p class="display-6">25ms <small>Query</small></p>
+            </div>
+        </div>
+    </div>
+     <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">OCSP Responder</h5>
+                <p class="card-text">Operativo</p>
+                <p class="display-6">50ms <small>Resp.</small></p>
             </div>
         </div>
     </div>
 </div>
+
+<div class="row">
+    <div class="col-lg-12">
+        <div class="card">
+            <div class="card-header">
+                Tempo di Risposta API (ms)
+            </div>
+            <div class="card-body">
+                <canvas id="responseTimeChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('responseTimeChart').getContext('2d');
+    const responseTimeChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: ['17:10', '17:11', '17:12', '17:13', '17:14', '17:15', '17:16', '17:17', '17:18', '17:19', '17:20'],
+            datasets: [{
+                label: 'Tempo di Risposta Medio (ms)',
+                data: [110, 125, 120, 130, 115, 118, 122, 140, 135, 128, 120], // Dati simulati
+                fill: true,
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                tension: 0.3
+            }]
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    suggestedMin: 50,
+                    suggestedMax: 200
+                }
+            },
+            animation: {
+                duration: 1000
+            }
+        }
+    });
+
+    // Simula aggiornamento dati in tempo reale
+    setInterval(function() {
+        const chart = responseTimeChart;
+        const lastLabel = chart.data.labels[chart.data.labels.length - 1];
+        const newTime = new Date();
+        const newLabel = `${newTime.getHours()}:${String(newTime.getMinutes()).padStart(2, '0')}`;
+
+        if (newLabel !== lastLabel) {
+            chart.data.labels.push(newLabel);
+            chart.data.datasets[0].data.push(Math.floor(Math.random() * (150 - 100 + 1)) + 100);
+            
+            if(chart.data.labels.length > 15) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+            }
+            chart.update();
+        }
+    }, 5000); // Aggiorna ogni 5 secondi
+</script>
 {% endblock %}

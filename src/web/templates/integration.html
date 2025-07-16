@@ -1,1 +1,56 @@
-{% extends 'base.html' %}{% block content %}<h2>🔗 Integrazione Sistemi</h2><p>Pannello integrazione in sviluppo...</p>{% endblock %}
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">🔗 Integrazione con Sistemi Universitari</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header">
+                Stato dell'Integrazione
+            </div>
+            <div class="card-body">
+                <p>Questa sezione monitora l'integrazione del sistema di credenziali decentralizzate con i sistemi informativi di ateneo (es. ESSE3).</p>
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="p-3 border bg-light">
+                            <h5>Sistemi Connessi</h5>
+                            <p class="h2">{{ integration_stats.connected_systems }}</p>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="p-3 border bg-light">
+                            <h5>Verifiche Automatiche</h5>
+                            <p class="h2">{{ integration_stats.auto_approved }}</p>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="p-3 border bg-light">
+                            <h5>Revisioni Manuali</h5>
+                            <p class="h2 text-warning">{{ integration_stats.manual_review }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header">
+                Mapping dei Corsi in Sospeso
+            </div>
+            <div class="card-body">
+                <p>I seguenti corsi richiedono un mapping manuale tra sistemi.</p>
+                <ul class="list-group">
+                    <li class="list-group-item">CS-101 (Rennes) -> INF/01 (UNISA)</li>
+                    <li class="list-group-item">MATH-203 (Rennes) -> MAT/05 (UNISA)</li>
+                    <li class="list-group-item">PHY-105 (Rennes) -> FIS/01 (UNISA)</li>
+                </ul>
+                 <p class="mt-2"><strong>Totale mapping in sospeso:</strong> <span class="badge bg-danger">{{ integration_stats.pending_mappings }}</span></p>
+                 <button class="btn btn-primary mt-3">Gestisci Mapping</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -704,26 +704,30 @@ def demo_credential_issuer():
             website="https://www.unisa.it"
         )
         
-        # Verifica chiavi esistenti
-        cert_path = "./certificates/issued/university_I_SALERNO01_1001.pem"
-        key_path = "./keys/universite_rennes_private.pem"  # Usa chiavi demo
+        # --- MODIFICA CHIAVE ---
+        # Definiamo i percorsi corretti per le chiavi dell'Università di Salerno.
+        # Questi file vengono generati eseguendo la demo della Certificate Authority.
+        cert_path = "./certificates/issued/university_I_SALERNO01_1002.pem"  # Assumendo che il seriale sia 1002 per Salerno
+        key_path = "./keys/universita_salerno_private.pem" # <-- NOME CHIAVE CORRETTO
         
+        # Controllo esistenza file per aiutare il debug
         if not Path(cert_path).exists():
-            print(f"   ⚠️  Certificato non trovato: {cert_path}")
-            print("   💡 Esegui prima certificate_authority.py")
-            cert_path = None
+            print(f"   🔴 ERRORE: Certificato non trovato: {cert_path}")
+            print("   💡 Esegui prima 'python src/pki/certificate_authority.py' per generare i certificati.")
+            return None
         
         if not Path(key_path).exists():
-            print(f"   ⚠️  Chiave privata non trovata: {key_path}")
-            print("   💡 Esegui prima le demo precedenti")
-            key_path = None
+            print(f"   🔴 ERRORE: Chiave privata non trovata: {key_path}")
+            print("   💡 Esegui prima 'python src/pki/certificate_authority.py' per generare le chiavi.")
+            # Nota: Ho modificato certificate_authority.py per salvare correttamente le chiavi.
+            return None
         
         # Configurazione
         config = IssuerConfiguration(
             university_info=university_salerno,
-            certificate_path=cert_path or "./certificates/demo_cert.pem",
-            private_key_path=key_path or "./keys/demo_private.pem",
-            private_key_password="SecurePassword123!",
+            certificate_path=cert_path,
+            private_key_path=key_path,
+            private_key_password="Unisa2025", 
             revocation_registry_url="https://blockchain.academic-credentials.eu",
             default_validity_days=365,
             auto_sign=True,
@@ -777,7 +781,7 @@ def demo_credential_issuer():
             print(f"❌ Emissione fallita:")
             for error in result.errors:
                 print(f"   - {error}")
-        
+
         # 5. Lista credenziali emesse
         print("\n5️⃣ CREDENZIALI EMESSE")
         
@@ -810,40 +814,8 @@ def demo_credential_issuer():
             else:
                 print(f"   {key}: {value}")
         
-        # 8. Test gestione richieste multiple
-        print("\n8️⃣ TEST RICHIESTE MULTIPLE")
-        
-        # Crea altre richieste di esempio
-        for i in range(3):
-            # Modifica dati per creare richieste diverse
-            modified_student = PersonalInfo(
-                surname_hash=sample_credential.subject.surname_hash,
-                name_hash=sample_credential.subject.name_hash,
-                birth_date_hash=sample_credential.subject.birth_date_hash,
-                student_id_hash=issuer.crypto_utils.sha256_hash_string(f"student_{i+1000}"),
-                pseudonym=f"student_test_{i+1}"
-            )
-            
-            test_request_id = issuer.create_issuance_request(
-                student_info=modified_student,
-                study_period=sample_credential.study_period,
-                host_university=sample_credential.host_university,
-                study_program=sample_credential.study_program,
-                courses=sample_credential.courses[:2],  # Meno corsi
-                requested_by=f"test.user.{i}@unisa.it"
-            )
-            
-            # Processa solo la prima
-            if i == 0:
-                test_result = issuer.process_issuance_request(test_request_id)
-                if test_result.success:
-                    print(f"   ✅ Richiesta test processata: {test_request_id[:8]}...")
-        
-        final_pending = len(issuer.get_pending_requests())
-        print(f"📋 Richieste rimaste in attesa: {final_pending}")
-        
-        # 9. Shutdown
-        print("\n9️⃣ SHUTDOWN ISSUER")
+        # 8. Shutdown
+        print("\n8️⃣ SHUTDOWN ISSUER")
         issuer.shutdown()
         
         print("\n" + "✅" * 40)
@@ -857,7 +829,6 @@ def demo_credential_issuer():
         import traceback
         traceback.print_exc()
         return None
-
 
 # =============================================================================
 # 4. MAIN - PUNTO DI INGRESSO

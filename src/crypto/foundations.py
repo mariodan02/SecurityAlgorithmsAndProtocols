@@ -548,6 +548,33 @@ class CryptoUtils:
         return hashlib.sha256(text.encode('utf-8')).hexdigest()
     
     @staticmethod
+    def derive_key_from_password(password: str, salt: bytes) -> bytes:
+        """
+        Deriva una chiave di 32-byte per Fernet da una password usando PBKDF2.
+        Questo è un modo sicuro per trasformare una password leggibile in una chiave
+        crittografica robusta.
+
+        Args:
+            password (str): La password fornita dall'utente.
+            salt (bytes): Un valore casuale per prevenire attacchi rainbow table.
+
+        Returns:
+            bytes: Una chiave crittografica codificata in Base64 URL-safe.
+        """
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32, # Lunghezza della chiave per AES-256 (usato da Fernet)
+            salt=salt,
+            iterations=100000, # Numero di iterazioni raccomandato per la sicurezza
+            backend=default_backend()
+        )
+        # La chiave viene codificata in Base64 per essere compatibile con Fernet
+        key = base64.urlsafe_b64encode(kdf.derive(password.encode('utf-8')))
+        return key
+
+    @staticmethod
     def encode_base64(data: bytes) -> str:
         """
         Codifica dati in Base64

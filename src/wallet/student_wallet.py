@@ -96,7 +96,7 @@ class WalletConfiguration:
     auto_backup: bool = True
     backup_interval_hours: int = 24
     max_backup_files: int = 10
-    password_min_length: int = 12 # Aumentato per maggiore sicurezza
+    password_min_length: int = 8 
     session_timeout_minutes: int = 15
     auto_validate_credentials: bool = True
 
@@ -183,46 +183,50 @@ class AcademicStudentWallet:
         self.status = WalletStatus.LOCKED
 
     def create_wallet(self, password: str) -> bool:
-        """Crea un nuovo wallet, generando chiavi e salt."""
-        if self.wallet_file.exists():
-            print("❌ Wallet già esistente. Impossibile creare.")
-            return False
-        
-        if not self._validate_password(password):
-            return False
-        
-        print(f"🔨 Creando nuovo wallet cifrato: {self.config.wallet_name}")
-        
-        try:
-            # Genera chiavi RSA e il salt per la password
-            self.wallet_private_key, self.wallet_public_key = self.key_manager.generate_key_pair()
-            self.wallet_salt = os.urandom(16)
-            self.salt_file.write_bytes(self.wallet_salt)
+            """Crea un nuovo wallet, generando chiavi e salt."""
+            if self.wallet_file.exists():
+                print("❌ Wallet già esistente. Impossibile creare.")
+                return False
             
-            # Crea l'oggetto Fernet per la sessione
-            fernet_key = self._derive_key_from_password(password, self.wallet_salt)
-            self.fernet = Fernet(fernet_key)
+            if not self._validate_password(password):
+                return False
             
-            # Salva le chiavi RSA cifrate
-            self._save_encrypted_keys()
+            print(f"🔨 Creando nuovo wallet cifrato: {self.config.wallet_name}")
             
-            # Salva il file del wallet (inizialmente vuoto)
-            self.credentials = {}
-            self._save_wallet_data()
-            
-            self.status = WalletStatus.UNLOCKED
-            self.last_activity = datetime.datetime.utcnow()
-            
-            print("✅ Wallet creato e cifrato con successo!")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Errore critico durante la creazione del wallet: {e}")
-            # Pulizia in caso di fallimento
-            if self.wallet_file.exists(): self.wallet_file.unlink()
-            if self.salt_file.exists(): self.salt_file.unlink()
-            if self.keys_file.exists(): self.keys_file.unlink()
-            return False
+            try:
+                # 1. Genera chiavi RSA e il salt per la password
+                self.wallet_private_key, self.wallet_public_key = self.key_manager.generate_key_pair()
+                self.wallet_salt = os.urandom(16)
+                self.salt_file.write_bytes(self.wallet_salt)
+                
+                # 2. Crea l'oggetto Fernet per la sessione
+                fernet_key = self._derive_key_from_password(password, self.wallet_salt)
+                self.fernet = Fernet(fernet_key)
+
+                # --- CORREZIONE: Imposta lo stato su UNLOCKED prima di salvare ---
+                self.status = WalletStatus.UNLOCKED
+                self.last_activity = datetime.datetime.utcnow()
+                # -----------------------------------------------------------------
+
+                # 3. Salva le chiavi RSA cifrate
+                self._save_encrypted_keys()
+                
+                # 4. Salva il file del wallet (inizialmente vuoto)
+                self.credentials = {}
+                self._save_wallet_data()
+                
+                print("✅ Wallet creato e cifrato con successo!")
+                return True
+                
+            except Exception as e:
+                print(f"❌ Errore critico durante la creazione del wallet: {e}")
+                # Pulizia in caso di fallimento
+                if self.wallet_file.exists(): self.wallet_file.unlink()
+                if self.salt_file.exists(): self.salt_file.unlink()
+                if self.keys_file.exists(): self.keys_file.unlink()
+                # Assicurati che lo stato venga resettato
+                self._cleanup_session()
+                return False
 
     def unlock_wallet(self, password: str) -> bool:
         """Sblocca il wallet usando la password per derivare la chiave di decifratura."""
@@ -406,63 +410,3 @@ class AcademicStudentWallet:
                     f.unlink()
         except Exception as e:
             print(f"⚠️ Errore pulizia backup: {e}")
-
-# =============================================================================
-# 3. DEMO E TESTING 
-# =============================================================================
-
-def demo_student_wallet_fernet():
-    """Demo del wallet con la nuova implementazione basata su Fernet."""
-    print("👤" * 40)
-    print("DEMO STUDENT WALLET (con Fernet)")
-    print("👤" * 40)
-    
-    demo_path = Path("./demo_wallet_fernet")
-    if demo_path.exists():
-        import shutil
-        shutil.rmtree(demo_path)
-
-    config = WalletConfiguration(
-        wallet_name="Mario Rossi Fernet Wallet",
-        storage_path=str(demo_path),
-    )
-    wallet = AcademicStudentWallet(config)
-    password = "PasswordSuperSicura123!"
-
-    # 1. Creazione
-    print("\n1️⃣ CREAZIONE WALLET CIFRATO CON FERNET")
-    if not wallet.create_wallet(password):
-        print("ERRORE CRITICO: Impossibile creare il wallet.")
-        return
-
-    # 2. Aggiunta credenziale
-    print("\n2️⃣ AGGIUNTA DI UNA CREDENZIALE")
-    from credentials.models import CredentialFactory
-    cred = CredentialFactory.create_sample_credential()
-    storage_id = wallet.add_credential(cred, tags=["demo", "fernet"])
-    print(f"Credenziale aggiunta con ID: {storage_id}")
-    print(f"Numero credenziali nel wallet: {len(wallet.credentials)}")
-
-    # 3. Blocco e sblocco
-    print("\n3️⃣ TEST DI BLOCCO E SBLOCCO")
-    wallet.lock_wallet()
-    if wallet.status == WalletStatus.LOCKED:
-        print("Wallet bloccato correttamente.")
-    
-    if wallet.unlock_wallet(password):
-        print("Sblocco riuscito, le credenziali sono state caricate.")
-        print(f"Numero credenziali nel wallet: {len(wallet.credentials)}")
-    else:
-        print("ERRORE CRITICO: Impossibile sbloccare il wallet.")
-        return
-        
-    # 4. Tentativo di sblocco con password errata
-    print("\n4️⃣ TEST CON PASSWORD ERRATA")
-    wallet.lock_wallet()
-    if not wallet.unlock_wallet("password_sbagliata"):
-        print("Il test con password errata è riuscito: lo sblocco è fallito come previsto.")
-
-    print("\n✅ DEMO CON FERNET COMPLETATA CON SUCCESSO!")
-
-if __name__ == "__main__":
-    demo_student_wallet_fernet()

@@ -48,7 +48,6 @@ class UserSession(BaseModel):
     role: str
     permissions: List[str]
 
-# --- MODIFICA CHIAVE: Password semplice ma valida ---
 SIMPLE_PASSWORD = "Unisa2025"
 
 DEMO_USERS = {

@@ -244,16 +244,57 @@ def require_auth(request: Request, session_manager: SessionManager) -> UserSessi
         )
     return user
 
-def require_permission(permission: str):
-    """Decorator per richiedere un permesso specifico"""
-    def dependency(user: UserSession = Depends(require_auth)) -> UserSession:
-        if permission not in user.permissions:
-            raise HTTPException(
-                status_code=HTTP_403_FORBIDDEN,
-                detail=f"Permesso '{permission}' richiesto"
-            )
-        return user
-    return dependency
+def check_user_permission(user: UserSession, permission: str) -> bool:
+    """Controlla se l'utente ha un permesso specifico"""
+    return permission in user.permissions
+
+def require_write_permission(request: Request, session_manager: SessionManager) -> UserSession:
+    """Dependency che richiede il permesso di scrittura"""
+    user = get_current_user(request, session_manager)
+    if not user:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Autenticazione richiesta"
+        )
+    
+    if "write" not in user.permissions:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Permesso di scrittura richiesto"
+        )
+    return user
+
+def require_verify_permission(request: Request, session_manager: SessionManager) -> UserSession:
+    """Dependency che richiede il permesso di verifica"""
+    user = get_current_user(request, session_manager)
+    if not user:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Autenticazione richiesta"
+        )
+    
+    if "verify" not in user.permissions:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Permesso di verifica richiesto"
+        )
+    return user
+
+def require_admin_permission(request: Request, session_manager: SessionManager) -> UserSession:
+    """Dependency che richiede il permesso di amministrazione"""
+    user = get_current_user(request, session_manager)
+    if not user:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Autenticazione richiesta"
+        )
+    
+    if "admin" not in user.permissions:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Permesso di amministrazione richiesto"
+        )
+    return user
 
 # =============================================================================
 # CLASSE PRINCIPALE DASHBOARD
@@ -287,6 +328,10 @@ class AcademicCredentialsDashboard:
         self._setup_templates()
         self._setup_middleware()
         self._setup_static_files()
+        
+        # Crea le dependency di autenticazione
+        self.auth_deps = self._create_auth_dependencies()
+        
         self._setup_routes()
         self._initialize_system_components()
     
@@ -326,6 +371,74 @@ class AcademicCredentialsDashboard:
     def _setup_static_files(self) -> None:
         """Configura i file statici"""
         self.app.mount("/static", StaticFiles(directory=str(self.static_dir)), name="static")
+    
+    def _create_auth_dependencies(self):
+        """Crea le dependency di autenticazione che chiudono su session_manager"""
+        
+        def get_current_user_dep(request: Request) -> Optional[UserSession]:
+            return get_current_user(request, self.session_manager)
+        
+        def require_auth_dep(request: Request) -> UserSession:
+            user = get_current_user(request, self.session_manager)
+            if not user:
+                raise HTTPException(
+                    status_code=HTTP_403_FORBIDDEN,
+                    detail="Autenticazione richiesta"
+                )
+            return user
+        
+        def require_write_permission_dep(request: Request) -> UserSession:
+            user = get_current_user(request, self.session_manager)
+            if not user:
+                raise HTTPException(
+                    status_code=HTTP_403_FORBIDDEN,
+                    detail="Autenticazione richiesta"
+                )
+            
+            if "write" not in user.permissions:
+                raise HTTPException(
+                    status_code=HTTP_403_FORBIDDEN,
+                    detail="Permesso di scrittura richiesto"
+                )
+            return user
+        
+        def require_verify_permission_dep(request: Request) -> UserSession:
+            user = get_current_user(request, self.session_manager)
+            if not user:
+                raise HTTPException(
+                    status_code=HTTP_403_FORBIDDEN,
+                    detail="Autenticazione richiesta"
+                )
+            
+            if "verify" not in user.permissions:
+                raise HTTPException(
+                    status_code=HTTP_403_FORBIDDEN,
+                    detail="Permesso di verifica richiesto"
+                )
+            return user
+        
+        def require_admin_permission_dep(request: Request) -> UserSession:
+            user = get_current_user(request, self.session_manager)
+            if not user:
+                raise HTTPException(
+                    status_code=HTTP_403_FORBIDDEN,
+                    detail="Autenticazione richiesta"
+                )
+            
+            if "admin" not in user.permissions:
+                raise HTTPException(
+                    status_code=HTTP_403_FORBIDDEN,
+                    detail="Permesso di amministrazione richiesto"
+                )
+            return user
+        
+        return {
+            'get_current_user': get_current_user_dep,
+            'require_auth': require_auth_dep,
+            'require_write': require_write_permission_dep,
+            'require_verify': require_verify_permission_dep,
+            'require_admin': require_admin_permission_dep
+        }
     
     def _initialize_system_components(self) -> None:
         """Inizializza i componenti del sistema"""
@@ -378,12 +491,10 @@ class AcademicCredentialsDashboard:
     def _setup_routes(self) -> None:
         """Configura tutte le route dell'applicazione"""
         
-        # === ROUTE DI AUTENTICAZIONE ===
-        
         @self.app.get("/", response_class=HTMLResponse)
         async def home(request: Request):
             """Pagina principale"""
-            user = get_current_user(request, self.session_manager)
+            user = self.auth_deps['get_current_user'](request)
             if user:
                 redirect_url = "/wallet" if user.role == 'studente' else "/dashboard"
                 return RedirectResponse(url=redirect_url, status_code=HTTP_302_FOUND)
@@ -443,7 +554,7 @@ class AcademicCredentialsDashboard:
         @self.app.get("/wallet", response_class=HTMLResponse)
         async def wallet_page(request: Request):
             """Wallet dello studente"""
-            user = get_current_user(request, self.session_manager)
+            user = self.auth_deps['get_current_user'](request)
             if not user or user.role != "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
@@ -459,7 +570,7 @@ class AcademicCredentialsDashboard:
         @self.app.post("/wallet/create-presentation")
         async def create_presentation(request: Request, presentation_req: PresentationRequest):
             """API per creare una presentazione selettiva"""
-            user = get_current_user(request, self.session_manager)
+            user = self.auth_deps['get_current_user'](request)
             if not user or user.role != "studente":
                 raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Accesso negato")
             
@@ -489,7 +600,7 @@ class AcademicCredentialsDashboard:
         @self.app.get("/dashboard", response_class=HTMLResponse)
         async def dashboard(request: Request):
             """Dashboard principale"""
-            user = get_current_user(request, self.session_manager)
+            user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
@@ -507,7 +618,7 @@ class AcademicCredentialsDashboard:
         @self.app.get("/credentials", response_class=HTMLResponse)
         async def credentials_page(request: Request):
             """Pagina gestione credenziali"""
-            user = get_current_user(request, self.session_manager)
+            user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
@@ -521,7 +632,7 @@ class AcademicCredentialsDashboard:
         @self.app.get("/credentials/issue", response_class=HTMLResponse)
         async def issue_credential_page(request: Request):
             """Pagina per emettere nuove credenziali"""
-            user = require_permission("write")(user=require_auth(request, self.session_manager))
+            user = self.auth_deps['require_write'](request)
             
             return self.templates.TemplateResponse("issue_credential.html", {
                 "request": request,
@@ -530,35 +641,78 @@ class AcademicCredentialsDashboard:
             })
         
         @self.app.post("/credentials/issue")
-        async def handle_issue_credential(request: Request, student_pseudonym: str = Form(...)):
+        async def handle_issue_credential(request: Request):
             """Gestisce l'emissione di una nuova credenziale"""
-            user = require_permission("write")(user=require_auth(request, self.session_manager))
+            user = self.auth_deps['require_write'](request)
             
             try:
-                if not self.issuer:
-                    raise HTTPException(status_code=500, detail="Servizio di emissione non disponibile")
+                # Leggi i dati dal form
+                form_data = await request.form()
+                
+                # Estrai i dati necessari
+                student_name = form_data.get("student_name", "")
+                student_id = form_data.get("student_id", "")
+                credential_type = form_data.get("credential_type", "")
+                study_period_start = form_data.get("study_period_start", "")
+                study_period_end = form_data.get("study_period_end", "")
+                
+                # Validazione base
+                if not student_name or not student_id:
+                    return JSONResponse({
+                        "success": False,
+                        "message": "Nome studente e matricola sono obbligatori"
+                    }, status_code=400)
+                
+                # Raccogli i corsi se presenti
+                courses = []
+                course_names = form_data.getlist("course_name")
+                course_cfus = form_data.getlist("course_cfu") 
+                course_grades = form_data.getlist("course_grade")
+                course_dates = form_data.getlist("course_date")
+                
+                for i in range(len(course_names)):
+                    if course_names[i]:  # Solo se il nome corso non è vuoto
+                        courses.append({
+                            "name": course_names[i],
+                            "cfu": course_cfus[i] if i < len(course_cfus) else "",
+                            "grade": course_grades[i] if i < len(course_grades) else "",
+                            "date": course_dates[i] if i < len(course_dates) else ""
+                        })
                 
                 # Simula l'emissione di una credenziale
                 credential_id = f"cred_{uuid.uuid4()}"
                 
-                self.logger.info(f"User {user.user_id} issued credential for {student_pseudonym}")
+                # Log dell'operazione
+                self.logger.info(f"User {user.user_id} issued credential {credential_id} for student {student_name} ({student_id})")
                 
-                return RedirectResponse(
-                    url="/dashboard?message=Credential-issued-successfully",
-                    status_code=HTTP_302_FOUND
-                )
+                # Se l'issuer è disponibile, puoi fare operazioni più avanzate
+                if self.issuer:
+                    # Qui potresti creare una credenziale reale
+                    # credential = self.issuer.create_credential(...)
+                    pass
+                
+                return JSONResponse({
+                    "success": True,
+                    "message": f"Credenziale emessa con successo per {student_name}",
+                    "credential_id": credential_id,
+                    "student_name": student_name,
+                    "student_id": student_id,
+                    "courses_count": len(courses),
+                    "issued_by": user.user_id,
+                    "issued_at": datetime.datetime.utcnow().isoformat()
+                })
                 
             except Exception as e:
                 self.logger.error(f"Error issuing credential: {e}")
-                return RedirectResponse(
-                    url="/credentials/issue?error=creation-failed",
-                    status_code=HTTP_302_FOUND
-                )
+                return JSONResponse({
+                    "success": False,
+                    "message": f"Errore durante l'emissione della credenziale: {str(e)}"
+                }, status_code=500)
         
         @self.app.get("/verification", response_class=HTMLResponse)
         async def verification_page(request: Request):
             """Pagina di verifica credenziali"""
-            user = get_current_user(request, self.session_manager)
+            user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
@@ -571,7 +725,7 @@ class AcademicCredentialsDashboard:
         @self.app.post("/verification/verify")
         async def verify_presentation(request: Request, verification_req: VerificationRequest):
             """API per verificare una presentazione"""
-            user = require_permission("verify")(user=require_auth(request, self.session_manager))
+            user = self.auth_deps['require_verify'](request)
             
             try:
                 # Simula la verifica
@@ -603,7 +757,7 @@ class AcademicCredentialsDashboard:
         @self.app.get("/api/verification/pending")
         async def get_pending_verifications(request: Request):
             """API per ottenere le verifiche in sospeso"""
-            user = get_current_user(request, self.session_manager)
+            user = self.auth_deps['get_current_user'](request)
             if not user:
                 raise HTTPException(status_code=HTTP_403_FORBIDDEN)
             
@@ -613,7 +767,7 @@ class AcademicCredentialsDashboard:
         @self.app.get("/integration", response_class=HTMLResponse)
         async def integration_page(request: Request):
             """Pagina integrazione sistemi"""
-            user = get_current_user(request, self.session_manager)
+            user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
@@ -629,7 +783,7 @@ class AcademicCredentialsDashboard:
         @self.app.get("/monitoring", response_class=HTMLResponse)
         async def monitoring_page(request: Request):
             """Pagina monitoraggio sistema"""
-            user = get_current_user(request, self.session_manager)
+            user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
@@ -645,7 +799,7 @@ class AcademicCredentialsDashboard:
         @self.app.get("/testing", response_class=HTMLResponse)
         async def testing_page(request: Request):
             """Pagina esecuzione test (solo admin)"""
-            user = require_permission("admin")(user=require_auth(request, self.session_manager))
+            user = self.auth_deps['require_admin'](request)
             
             test_results = self.mock_data.get_test_results()
             
@@ -659,7 +813,7 @@ class AcademicCredentialsDashboard:
         @self.app.post("/testing/run")
         async def run_tests(request: Request):
             """API per eseguire i test del sistema"""
-            user = require_permission("admin")(user=require_auth(request, self.session_manager))
+            user = self.auth_deps['require_admin'](request)
             
             try:
                 # Simula l'esecuzione dei test

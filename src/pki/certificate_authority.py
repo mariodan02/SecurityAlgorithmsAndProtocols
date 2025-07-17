@@ -7,6 +7,7 @@
 import os
 import datetime
 from pathlib import Path
+import sys
 
 # Import crittografici
 from cryptography import x509

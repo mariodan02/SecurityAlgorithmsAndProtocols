@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Any, Union
 import asyncio
 import logging
 from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional, Any, Union  
 
 # FastAPI e web dependencies
 from fastapi import FastAPI, Request, HTTPException, Depends, Form, File, UploadFile
@@ -622,11 +623,52 @@ class AcademicCredentialsDashboard:
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
+            # Carica credenziali reali dal filesystem
+            credentials = []
+            
+            try:
+                # Directory base delle credenziali
+                credentials_base_dir = Path("./src/credentials")
+                
+                if credentials_base_dir.exists():
+                    # Cerca in tutte le directory utente
+                    for user_dir in credentials_base_dir.iterdir():
+                        if user_dir.is_dir():
+                            # Cerca file di credenziali in questa directory
+                            for credential_file in user_dir.glob("credential_*.json"):
+                                try:
+                                    with open(credential_file, 'r', encoding='utf-8') as f:
+                                        from credentials.models import AcademicCredential
+                                        credential_data = json.load(f)
+                                        credential = AcademicCredential.from_dict(credential_data)
+                                        
+                                        # Estrae informazioni per la tabella
+                                        summary = credential.get_summary()
+                                        credentials.append({
+                                            'credential_id': summary['credential_id'],
+                                            'student_name': summary['subject_pseudonym'],
+                                            'issued_at': summary['issued_at'][:19],  # Remove microseconds
+                                            'issued_by': credential.issuer.name,
+                                            'status': summary['status'].title(),
+                                            'total_courses': summary['total_courses'],
+                                            'total_ects': summary['total_ects'],
+                                            'file_path': str(credential_file)
+                                        })
+                                except Exception as e:
+                                    self.logger.warning(f"Error loading credential {credential_file}: {e}")
+                                    continue
+                
+                # Ordina per data di emissione (più recenti prima)
+                credentials.sort(key=lambda x: x['issued_at'], reverse=True)
+                
+            except Exception as e:
+                self.logger.error(f"Error loading credentials: {e}")
+            
             return self.templates.TemplateResponse("credentials.html", {
                 "request": request,
                 "user": user,
                 "title": "Gestione Credenziali",
-                "credentials": []  # TODO: Implementare recupero credenziali reali
+                "credentials": credentials
             })
         
         @self.app.get("/credentials/issue", response_class=HTMLResponse)
@@ -641,74 +683,194 @@ class AcademicCredentialsDashboard:
             })
         
         @self.app.post("/credentials/issue")
-        async def handle_issue_credential(request: Request):
-            """Gestisce l'emissione di una nuova credenziale"""
+        async def handle_issue_credential(
+            request: Request,
+            student_name: str = Form(...),
+            student_id: str = Form(...),
+            credential_type: str = Form(...),
+            study_period_start: str = Form(...),
+            study_period_end: str = Form(...),
+            course_name: List[str] = Form([]),
+            course_cfu: List[str] = Form([]),
+            course_grade: List[str] = Form([]),
+            course_date: List[str] = Form([])
+        ):
+            """Gestisce l'emissione reale di una nuova credenziale"""
             user = self.auth_deps['require_write'](request)
             
             try:
-                # Leggi i dati dal form
-                form_data = await request.form()
+                if not self.issuer:
+                    raise HTTPException(status_code=500, detail="Servizio di emissione non disponibile")
                 
-                # Estrai i dati necessari
-                student_name = form_data.get("student_name", "")
-                student_id = form_data.get("student_id", "")
-                credential_type = form_data.get("credential_type", "")
-                study_period_start = form_data.get("study_period_start", "")
-                study_period_end = form_data.get("study_period_end", "")
+                # Importa modelli necessari
+                from credentials.models import (
+                    PersonalInfo, Course, StudyPeriod, StudyProgram, University,
+                    ExamGrade, GradeSystem, StudyType, EQFLevel
+                )
+                from crypto.foundations import CryptoUtils
                 
-                # Validazione base
-                if not student_name or not student_id:
-                    return JSONResponse({
-                        "success": False,
-                        "message": "Nome studente e matricola sono obbligatori"
-                    }, status_code=400)
+                crypto_utils = CryptoUtils()
                 
-                # Raccogli i corsi se presenti
+                # Crea directory per l'utente
+                user_dir = Path(f"./src/credentials/{user.user_id}")
+                user_dir.mkdir(parents=True, exist_ok=True)
+                
+                # 1. Crea PersonalInfo con hash per privacy
+                student_info = PersonalInfo(
+                    surname_hash=crypto_utils.sha256_hash_string(student_name.split()[-1]),  # Ultimo nome
+                    name_hash=crypto_utils.sha256_hash_string(student_name.split()[0]),      # Primo nome
+                    birth_date_hash=crypto_utils.sha256_hash_string("1990-01-01"),         # Data fittizia
+                    student_id_hash=crypto_utils.sha256_hash_string(student_id),
+                    pseudonym=f"student_{student_name.lower().replace(' ', '_')}"
+                )
+                
+                # 2. Crea StudyPeriod
+                study_period = StudyPeriod(
+                    start_date=datetime.datetime.fromisoformat(study_period_start + "T00:00:00+00:00"),
+                    end_date=datetime.datetime.fromisoformat(study_period_end + "T23:59:59+00:00"),
+                    study_type=StudyType.ERASMUS,
+                    academic_year=f"{datetime.datetime.fromisoformat(study_period_start).year}/{datetime.datetime.fromisoformat(study_period_start).year + 1}",
+                    semester="Fall/Spring"
+                )
+                
+                # 3. Università ospitante (dove lo studente ha studiato)
+                host_university = University(
+                    name="Université de Rennes",
+                    country="FR",
+                    erasmus_code="F RENNES01",
+                    city="Rennes",
+                    website="https://www.univ-rennes1.fr"
+                )
+                
+                # 4. Programma di studio
+                study_program = StudyProgram(
+                    name="Computer Science and Engineering",
+                    isced_code="0613",
+                    eqf_level=EQFLevel.LEVEL_7,
+                    program_type="Master's Degree",
+                    field_of_study="Computer Science"
+                )
+                
+                # 5. Crea lista corsi
                 courses = []
-                course_names = form_data.getlist("course_name")
-                course_cfus = form_data.getlist("course_cfu") 
-                course_grades = form_data.getlist("course_grade")
-                course_dates = form_data.getlist("course_date")
+                for i in range(len(course_name)):
+                    if course_name[i] and course_cfu[i] and course_grade[i]:
+                        # Parsea il voto
+                        grade_score = course_grade[i]
+                        passed = not grade_score.lower() in ['f', 'fail', 'insufficiente']
+                        
+                        # Determina sistema di voti
+                        if '/' in grade_score:
+                            grade_system = GradeSystem.ITALIAN_30
+                            ects_grade = "B"  # Default
+                        else:
+                            grade_system = GradeSystem.ECTS_GRADE
+                            ects_grade = grade_score.upper()
+                        
+                        exam_grade = ExamGrade(
+                            score=grade_score,
+                            passed=passed,
+                            grade_system=grade_system,
+                            ects_grade=ects_grade
+                        )
+                        
+                        # Data esame
+                        exam_date = datetime.datetime.fromisoformat(course_date[i] + "T10:00:00+00:00") if course_date[i] else study_period.end_date
+                        
+                        course = Course(
+                            course_name=course_name[i],
+                            course_code=f"RENNES-{i+1:03d}",
+                            isced_code="0613",
+                            grade=exam_grade,
+                            exam_date=exam_date,
+                            ects_credits=int(course_cfu[i]),
+                            professor=f"Prof. {chr(65+i%26)}. Dupont",
+                            course_description=f"Corso di {course_name[i]}",
+                            prerequisites=[],
+                            learning_outcomes=[]
+                        )
+                        courses.append(course)
                 
-                for i in range(len(course_names)):
-                    if course_names[i]:  # Solo se il nome corso non è vuoto
-                        courses.append({
-                            "name": course_names[i],
-                            "cfu": course_cfus[i] if i < len(course_cfus) else "",
-                            "grade": course_grades[i] if i < len(course_grades) else "",
-                            "date": course_dates[i] if i < len(course_dates) else ""
-                        })
+                if not courses:
+                    raise ValueError("Almeno un corso deve essere specificato")
                 
-                # Simula l'emissione di una credenziale
-                credential_id = f"cred_{uuid.uuid4()}"
+                # 6. Crea richiesta di emissione
+                self.logger.info(f"Creating issuance request for {student_info.pseudonym}")
                 
-                # Log dell'operazione
-                self.logger.info(f"User {user.user_id} issued credential {credential_id} for student {student_name} ({student_id})")
+                request_id = self.issuer.create_issuance_request(
+                    student_info=student_info,
+                    study_period=study_period,
+                    host_university=host_university,
+                    study_program=study_program,
+                    courses=courses,
+                    requested_by=user.user_id,
+                    notes=f"Credenziale di tipo: {credential_type}"
+                )
                 
-                # Se l'issuer è disponibile, puoi fare operazioni più avanzate
-                if self.issuer:
-                    # Qui potresti creare una credenziale reale
-                    # credential = self.issuer.create_credential(...)
-                    pass
+                # 7. Processa la richiesta per emettere la credenziale
+                self.logger.info(f"Processing issuance request {request_id}")
+                issuance_result = self.issuer.process_issuance_request(request_id)
                 
+                if not issuance_result.success:
+                    error_msg = "; ".join(issuance_result.errors)
+                    raise ValueError(f"Errore emissione credenziale: {error_msg}")
+                
+                # 8. Salva la credenziale nella directory utente
+                credential = issuance_result.credential
+                credential_filename = f"credential_{issuance_result.credential_id}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                credential_path = user_dir / credential_filename
+                
+                with open(credential_path, 'w', encoding='utf-8') as f:
+                    f.write(credential.to_json())
+                
+                # 9. Salva anche un summary leggibile
+                summary_path = user_dir / f"summary_{issuance_result.credential_id}.txt"
+                with open(summary_path, 'w', encoding='utf-8') as f:
+                    summary = credential.get_summary()
+                    f.write("=== CREDENZIALE ACCADEMICA ===\n")
+                    f.write(f"ID: {summary['credential_id']}\n")
+                    f.write(f"Emessa da: {summary['issuer']}\n")
+                    f.write(f"Per: {summary['subject_pseudonym']}\n")
+                    f.write(f"Università ospitante: {summary['host_university']}\n")
+                    f.write(f"Programma: {summary['program']}\n")
+                    f.write(f"Periodo: {summary['study_period']}\n")
+                    f.write(f"Corsi: {summary['total_courses']}\n")
+                    f.write(f"ECTS: {summary['total_ects']}\n")
+                    f.write(f"Media: {summary['average_grade']}\n")
+                    f.write(f"Stato: {summary['status']}\n")
+                    f.write(f"Firmata: {'Sì' if summary['signed'] else 'No'}\n")
+                    f.write(f"Emessa il: {summary['issued_at']}\n")
+                
+                self.logger.info(f"Credential successfully issued and saved: {credential_path}")
+                self.logger.info(f"User {user.user_id} issued credential {issuance_result.credential_id} for {student_info.pseudonym}")
+                
+                # Return success con dettagli
                 return JSONResponse({
                     "success": True,
-                    "message": f"Credenziale emessa con successo per {student_name}",
-                    "credential_id": credential_id,
-                    "student_name": student_name,
-                    "student_id": student_id,
-                    "courses_count": len(courses),
-                    "issued_by": user.user_id,
-                    "issued_at": datetime.datetime.utcnow().isoformat()
+                    "message": "Credenziale emessa con successo!",
+                    "credential_id": issuance_result.credential_id,
+                    "file_path": str(credential_path),
+                    "issued_at": issuance_result.issued_at.isoformat() if issuance_result.issued_at else None,
+                    "total_courses": len(courses),
+                    "total_ects": sum(c.ects_credits for c in courses)
                 })
+                
+            except ValueError as e:
+                self.logger.error(f"Validation error: {e}")
+                return JSONResponse({
+                    "success": False,
+                    "message": f"Errore di validazione: {str(e)}"
+                }, status_code=400)
                 
             except Exception as e:
                 self.logger.error(f"Error issuing credential: {e}")
+                import traceback
+                traceback.print_exc()
                 return JSONResponse({
                     "success": False,
-                    "message": f"Errore durante l'emissione della credenziale: {str(e)}"
+                    "message": f"Errore interno del server: {str(e)}"
                 }, status_code=500)
-        
+            
         @self.app.get("/verification", response_class=HTMLResponse)
         async def verification_page(request: Request):
             """Pagina di verifica credenziali"""

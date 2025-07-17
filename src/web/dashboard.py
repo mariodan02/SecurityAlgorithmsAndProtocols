@@ -31,12 +31,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     # Moduli principali del sistema
-    from credentials.models import AcademicCredential, CredentialFactory
-    from credentials.issuer import AcademicCredentialIssuer
+    from credentials.models import AcademicCredential, CredentialFactory, University, PersonalInfo, StudyPeriod, StudyProgram, Course, ExamGrade, GradeSystem
+    from credentials.issuer import AcademicCredentialIssuer, IssuerConfiguration
     from verification.verification_engine import CredentialVerificationEngine
     from pki.certificate_manager import CertificateManager
 
     # Import della funzione di setup per la PKI personalizzata
+    # Assumiamo che questo file esista in 'src/' come da precedente struttura
     from run_verificationCA import setup_validator_with_custom_pki
     print("✅ Moduli di sistema e configurazione PKI importati correttamente.")
 
@@ -46,6 +47,7 @@ except ImportError as e:
     # Imposta i moduli a None per evitare che il server si blocchi completamente all'avvio
     CredentialVerificationEngine = None
     CertificateManager = None
+    AcademicCredentialIssuer = None
     setup_validator_with_custom_pki = None
 
 # =============================================================================
@@ -105,6 +107,22 @@ class AcademicCredentialsDashboard:
         self.verification_engine: Optional[CredentialVerificationEngine] = None
         
         try:
+            # Inizializza l'issuer se possibile
+            if AcademicCredentialIssuer:
+                issuer_config = IssuerConfiguration(
+                    university_info=University(name="Université de Rennes", country="FR", city="Rennes", erasmus_code="F RENNES01", website="https://www.univ-rennes1.fr"),
+                    # NOTA: I percorsi sono fittizi per la demo, assicurati che esistano se necessario
+                    certificate_path="./certificates/issued/university_F_RENNES01_1001.pem",
+                    private_key_path="./keys/universite_rennes_private.pem",
+                    private_key_password="SecurePassword123!"
+                )
+                self.issuer = AcademicCredentialIssuer(config=issuer_config)
+                print("\n👍 Issuer inizializzato correttamente per Université de Rennes.")
+            else:
+                 print("\n⚠️ ATTENZIONE: Modulo Issuer non caricato.")
+
+
+            # Inizializza il motore di verifica con validatore personalizzato
             if CredentialVerificationEngine and CertificateManager and setup_validator_with_custom_pki:
                 custom_validator = setup_validator_with_custom_pki()
                 if custom_validator:
@@ -118,6 +136,7 @@ class AcademicCredentialsDashboard:
                 print("\n⚠️ ATTENZIONE: Moduli necessari non caricati. L'engine di verifica non sarà disponibile.")
         except Exception as e:
             print(f"🔥 ERRORE CRITICO durante l'inizializzazione: {e}")
+            self.issuer = None
             self.verification_engine = None
         
         print("="*50 + "\n")
@@ -161,9 +180,11 @@ class AcademicCredentialsDashboard:
             if username in valid_users and password == "Unisa2025":
                 session_id = f"session_{uuid.uuid4()}"
                 user_info = valid_users[username]
+                permissions = ["read", "share"] if user_info["role"] == "studente" else ["read", "write"]
+                
                 self.sessions[session_id] = UserSession(
                     user_id=username, university_name=user_info["university"], role=user_info["role"],
-                    permissions=["read", "share"] if user_info["role"] == "studente" else ["read", "write"],
+                    permissions=permissions,
                     login_time=datetime.datetime.utcnow(), last_activity=datetime.datetime.utcnow()
                 )
                 request.session["session_id"] = session_id
@@ -172,7 +193,7 @@ class AcademicCredentialsDashboard:
                 print(f"✅ Accesso per {username} (ruolo: {user_info['role']}). Reindirizzamento a {redirect_url}")
                 return RedirectResponse(url=redirect_url, status_code=302)
 
-            return self.templates.TemplateResponse("login.html", {"request": request, "error": "Credenziali non valide"})
+            return self.templates.TemplateResponse("login.html", {"request": request, "error": "Credenziali non valide", "title": "Login"})
 
         @self.app.get("/logout")
         async def logout(request: Request):
@@ -194,19 +215,64 @@ class AcademicCredentialsDashboard:
             user = self._get_current_user(request)
             if not user or user.role == "studente": return RedirectResponse(url="/login", status_code=302)
             stats = self._get_dashboard_stats()
-            return self.templates.TemplateResponse("dashboard.html", {"request": request, "user": user, "stats": stats, "title": "Dashboard"})
+            message = request.query_params.get("message")
+            return self.templates.TemplateResponse("dashboard.html", {"request": request, "user": user, "stats": stats, "title": "Dashboard", "message": message})
         
         @self.app.get("/credentials", response_class=HTMLResponse)
         async def credentials_page(request: Request):
             user = self._get_current_user(request)
             if not user or user.role == "studente": return RedirectResponse(url="/login", status_code=302)
-            return self.templates.TemplateResponse("credentials.html", {"request": request, "user": user})
+            # Qui si potrebbero elencare le credenziali già emesse da self.issuer
+            return self.templates.TemplateResponse("credentials.html", {"request": request, "user": user, "title": "Gestione Credenziali"})
 
         @self.app.get("/verification", response_class=HTMLResponse)
         async def verification_page(request: Request):
             user = self._get_current_user(request)
             if not user or user.role == "studente": return RedirectResponse(url="/login", status_code=302)
-            return self.templates.TemplateResponse("verification.html", {"request": request, "user": user})
+            return self.templates.TemplateResponse("verification.html", {"request": request, "user": user, "title": "Verifica Credenziali"})
+            
+        # === NUOVE ROTTE PER L'EMISSIONE ===
+        @self.app.get("/credentials/issue", response_class=HTMLResponse)
+        async def issue_credential_page(request: Request):
+            user = self._get_current_user(request)
+            # Solo utenti con permesso di scrittura possono accedere
+            if not user or "write" not in user.permissions:
+                return RedirectResponse(url="/dashboard?error=permission-denied", status_code=302)
+            
+            return self.templates.TemplateResponse("issue_credential.html", {
+                "request": request, "user": user, "title": "Emetti Nuova Credenziale"
+            })
+
+        @self.app.post("/credentials/issue")
+        async def handle_issue_credential_submission(self, request: Request, student_pseudonym: str = Form(...)):
+            user = self._get_current_user(request)
+            if not user or "write" not in user.permissions:
+                raise HTTPException(status_code=403, detail="Permessi insufficienti per emettere credenziali.")
+
+            if not self.issuer:
+                 raise HTTPException(status_code=500, detail="Il servizio di emissione non è attivo.")
+
+            try:
+                # Per la demo, creiamo una credenziale di esempio usando il factory
+                sample_cred = CredentialFactory.create_sample_credential()
+                sample_cred.subject.pseudonym = student_pseudonym # Personalizziamo lo pseudonimo
+                
+                # Aggiungiamo la credenziale al "database" dell'issuer
+                self.issuer.credentials_db[str(sample_cred.metadata.credential_id)] = sample_cred
+                
+                # Simuliamo la firma
+                if self.issuer.config.auto_sign:
+                    self.issuer.sign_credential(sample_cred)
+
+                self.mock_data["issued_credentials"] += 1
+                print(f"✅ {user.user_id} ha emesso una nuova credenziale per {student_pseudonym}")
+
+            except Exception as e:
+                print(f"🔥 ERRORE durante l'emissione: {e}")
+                return RedirectResponse(url="/credentials/issue?error=creation-failed", status_code=303)
+
+            return RedirectResponse(url="/dashboard?message=Credential-issued-successfully", status_code=303)
+
 
     def _get_dashboard_stats(self) -> DashboardStats:
         return DashboardStats(
@@ -226,6 +292,11 @@ class AcademicCredentialsDashboard:
             ]
         }
 
+    def run(self, host: str = "127.0.0.1", port: int = 8000):
+        import uvicorn
+        print(f"🚀 Avvio Web Dashboard su http://{host}:{port}")
+        uvicorn.run(self.app, host=host, port=port)
+
 # =============================================================================
 # 3. PUNTO DI INGRESSO PER UVICORN
 # =============================================================================
@@ -235,4 +306,4 @@ app = dashboard_app_instance.app
 
 if __name__ == "__main__":
     print("🌐 Avvio Web Dashboard in modalità standalone (per debug)...")
-    dashboard_app_instance.run(host="127.0.0.1", port=8000)
+    dashboard_app_instance.run()

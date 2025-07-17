@@ -1,27 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h4>🔐 Login</h4>
+<div class="row justify-content-center mt-5">
+    <div class="col-md-5">
+        <div class="card shadow-sm">
+            <div class="card-header text-center">
+                <h4>🔐 Accesso al Sistema</h4>
             </div>
-            <div class="card-body">
+            <div class="card-body p-4">
                 {% if error %}
-                <div class="alert alert-danger">{{ error }}</div>
+                <div class="alert alert-danger" role="alert">
+                    {{ error }}
+                </div>
                 {% endif %}
-                <form action="/login" method="post">
+                <form method="post">
                     <div class="mb-3">
                         <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
-                        <small class="form-text text-muted">Demo: admin, issuer, verifier</small>
+                        <input type="text" class="form-control" id="username" name="username" required placeholder="es. studente_mariorossi">
+                        <div class="form-text">Utenti demo: issuer_rennes, verifier_unisa, studente_mariorossi</div>
                     </div>
                     <div class="mb-3">
                         <label for="password" class="form-label">Password</label>
                         <input type="password" class="form-control" id="password" name="password" required>
-                        <small class="form-text text-muted">Demo: demo123</small>
+                        <div class="form-text">Password demo: Unisa2025</div>
                     </div>
-                    <button type="submit" class="btn btn-primary">Login</button>
+                    <button type="submit" class="btn btn-primary w-100 mt-3">Accedi</button>
                 </form>
             </div>
         </div>

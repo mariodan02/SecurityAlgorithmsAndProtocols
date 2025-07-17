@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Il Mio Wallet di Credenziali</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#presentationModal">
+            ✨ Crea Presentazione Selettiva
+        </button>
+    </div>
+</div>
+<p>Qui puoi visualizzare le tue credenziali accademiche e creare presentazioni verificabili da condividere.</p>
+
+<div id="alert-placeholder"></div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th><input type="checkbox" id="selectAllCredentials" /></th>
+                <th>Emessa da</th>
+                <th>Data Emissione</th>
+                <th>N. Corsi</th>
+                <th>Stato</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cred in credentials %}
+            <tr data-credential-id="{{ cred.credential_id }}">
+                <td><input type="checkbox" class="credential-checkbox" value="{{ cred.credential_id }}"></td>
+                <td>{{ cred.issuer }}</td>
+                <td>{{ cred.issue_date }}</td>
+                <td>{{ cred.total_courses }}</td>
+                <td><span class="badge bg-success">{{ cred.status }}</span></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" class="text-center">Nessuna credenziale nel wallet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="presentationModal" tabindex="-1" aria-labelledby="presentationModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="presentationModalLabel">Crea Presentazione Selettiva</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="presentationForm">
+            <div class="mb-3">
+                <label for="purpose" class="form-label">Scopo della Presentazione</label>
+                <input type="text" class="form-control" id="purpose" name="purpose" placeholder="Es. Riconoscimento crediti per l'Università di Salerno" required>
+            </div>
+             <div class="mb-3">
+                <label for="recipient" class="form-label">Destinatario (Opzionale)</label>
+                <input type="text" class="form-control" id="recipient" name="recipient" placeholder="Es. Ufficio Mobilità Internazionale">
+            </div>
+            <hr>
+            <h6>Credenziali da Includere</h6>
+            <div id="selected-credentials-list">
+                <p class="text-muted">Seleziona una o più credenziali dalla tabella per iniziare.</p>
+            </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-primary" id="generatePresentationBtn" disabled>Genera e Firma</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const presentationModal = new bootstrap.Modal(document.getElementById('presentationModal'));
+    const form = document.getElementById('presentationForm');
+    const selectedCredentialsList = document.getElementById('selected-credentials-list');
+    const generateBtn = document.getElementById('generatePresentationBtn');
+    const checkboxes = document.querySelectorAll('.credential-checkbox');
+    const selectAllCheckbox = document.getElementById('selectAllCredentials');
+
+    function updateModal() {
+        selectedCredentialsList.innerHTML = '';
+        let selectionCount = 0;
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                selectionCount++;
+                const row = cb.closest('tr');
+                const issuer = row.cells[1].textContent;
+                const credentialId = cb.value;
+
+                const credentialDiv = document.createElement('div');
+                credentialDiv.className = 'card mb-2';
+                credentialDiv.innerHTML = `
+                    <div class="card-body">
+                        <h6 class="card-title">${issuer}</h6>
+                        <p class="card-text small text-muted">ID: ${credentialId.substring(0,8)}...</p>
+                        <label for="disclosure-${credentialId}" class="form-label">Livello di Divulgazione:</label>
+                        <select class="form-select form-select-sm" id="disclosure-${credentialId}" data-credential-id="${credentialId}">
+                            <option value="standard" selected>Standard (Dati principali, senza voti)</option>
+                            <option value="detailed">Dettagliato (Corsi e voti)</option>
+                            <option value="minimal">Minimo (Solo verifica iscrizione)</option>
+                        </select>
+                    </div>
+                `;
+                selectedCredentialsList.appendChild(credentialDiv);
+            }
+        });
+
+        if (selectionCount === 0) {
+            selectedCredentialsList.innerHTML = '<p class="text-muted">Seleziona una o più credenziali dalla tabella per iniziare.</p>';
+            generateBtn.disabled = true;
+        } else {
+            generateBtn.disabled = false;
+        }
+    }
+
+    checkboxes.forEach(cb => cb.addEventListener('change', updateModal));
+    selectAllCheckbox.addEventListener('change', () => {
+        checkboxes.forEach(cb => cb.checked = selectAllCheckbox.checked);
+        updateModal();
+    });
+
+    generateBtn.addEventListener('click', async function () {
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        const payload = {
+            purpose: document.getElementById('purpose').value,
+            recipient: document.getElementById('recipient').value,
+            credentials: []
+        };
+
+        const disclosureSelects = selectedCredentialsList.querySelectorAll('select');
+        disclosureSelects.forEach(select => {
+            payload.credentials.push({
+                credential_id: select.dataset.credentialId,
+                disclosure_level: select.value
+            });
+        });
+
+        try {
+            const response = await fetch('/wallet/create-presentation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            
+            let alertClass = result.success ? 'alert-success' : 'alert-danger';
+            let alertHtml = `<div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                                ${result.message}
+                                ${result.success ? `Link per il download: <a href='${result.download_link}' class='alert-link'>${result.download_link.split('/').pop()}</a>` : ''}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                             </div>`;
+            document.getElementById('alert-placeholder').innerHTML = alertHtml;
+
+            if(result.success) {
+                presentationModal.hide();
+                form.reset();
+                checkboxes.forEach(cb => cb.checked = false);
+                selectAllCheckbox.checked = false;
+                updateModal();
+            }
+
+        } catch (error) {
+            console.error('Errore:', error);
+             document.getElementById('alert-placeholder').innerHTML = `<div class="alert alert-danger">Errore di comunicazione con il server.</div>`;
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -204,15 +204,15 @@ class AcademicStudentWallet:
         """
         try:
             if self.wallet_file.exists():
-                print("❌ Wallet già esistente")
+                print("❌ Wallet già esistente in questo percorso.")
                 return False
             
-            # Valida password
+            # Valida password e ferma l'esecuzione se non valida
             if not self._validate_password(password):
-                return False
+                # Il messaggio di errore specifico viene già stampato da _validate_password
+                raise ValueError("Validazione password fallita. Impossibile creare il wallet.")
             
-            print(f"🔨 Creando nuovo wallet: {self.config.wallet_name}")
-            
+            print(f"🔨 Creando nuovo wallet: {self.config.wallet_name}")            
             # 1. Genera chiavi del wallet
             print("   1️⃣ Generazione chiavi...")
             self.wallet_private_key, self.wallet_public_key = self.key_manager.generate_key_pair()
@@ -238,9 +238,11 @@ class AcademicStudentWallet:
             return True
             
         except Exception as e:
-            print(f"❌ Errore creazione wallet: {e}")
+            print(f"❌ Errore critico durante la creazione del wallet: {e}")
+            # Ci assicuriamo che lo stato rimanga bloccato in caso di fallimento
+            self.status = WalletStatus.LOCKED
             return False
-    
+            
     def unlock_wallet(self, password: str) -> bool:
         """
         Sblocca il wallet con password

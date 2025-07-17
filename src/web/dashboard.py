@@ -1,66 +1,52 @@
 # =============================================================================
-# FASE 9: INTERFACCE E DEPLOYMENT - WEB DASHBOARD (CORRETTO E PULITO)
+# FASE 9: INTERFACCE E DEPLOYMENT - WEB DASHBOARD
 # File: web/dashboard.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
 
 import os
+import sys
 import json
+import uuid
 import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-import asyncio
-import sys
+from pydantic import BaseModel
 
-# --- Blocco di importazione robusto per i moduli del progetto ---
+# --- Blocco di Importazione Robusto ---
 try:
-    # Trova la directory 'src' risalendo dall'attuale file
+    # Trova dinamicamente la cartella 'src' e la aggiunge al path
     src_path = Path(__file__).resolve().parent.parent
-    if src_path.name != 'src':
-        project_root = Path(__file__).resolve().parent.parent.parent
-        src_path = project_root / 'src'
-        if not src_path.exists():
-             src_path = Path.cwd() / 'src'
-
     if str(src_path) not in sys.path:
         sys.path.insert(0, str(src_path))
     
-    print(f"✅ Percorso 'src' aggiunto al path: {src_path}")
+    print(f"✅ Percorso 'src' aggiunto al system path: {src_path}")
 
-    from credentials.models import AcademicCredential, CredentialFactory
-    from credentials.issuer import AcademicCredentialIssuer
-    from verification.verification_engine import CredentialVerificationEngine, VerificationLevel
-    from verification.university_integration import UniversityIntegrationManager
-    from wallet.presentation import PresentationManager
-    # --- MODIFICA CHIAVE: Import dal file corretto 'blockchain_client' ---
-    from blockchain.blockchain_client import RevocationRegistryManager
-    from testing.end_to_end_testing import EndToEndTestManager
+    from credentials.models import (
+        AcademicCredential, CredentialFactory, PersonalInfo, StudyPeriod,
+        University, StudyProgram, Course, ExamGrade, GradeSystem, StudyType, EQFLevel
+    )
+    from credentials.issuer import AcademicCredentialIssuer, IssuerConfiguration
+    from pki.certificate_manager import CertificateManager
+    from crypto.foundations import CryptoUtils
     MODULES_LOADED = True
+    print("✅ Moduli principali del progetto caricati con successo.")
 except ImportError as e:
-    print(f"⚠️  Import dei moduli principali fallito: {e}")
-    print(f"   Verifica che la struttura del progetto sia corretta e che i moduli siano presenti.")
+    print(f"❌ ERRORE CRITICO: Import dei moduli principali fallito: {e}")
+    print("   Assicurati che la struttura delle cartelle sia corretta e che l'ambiente virtuale sia attivo.")
     MODULES_LOADED = False
-# --- Fine del blocco di importazione ---
+# --- Fine del Blocco di Importazione ---
 
-
-# FastAPI e web dependencies
+# Dipendenze Web
 from fastapi import FastAPI, Request, HTTPException, Depends, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
-# Pydantic per validazione
-from pydantic import BaseModel
-from starlette.middleware.sessions import SessionMiddleware
-
-
-# =============================================================================
-# 1. MODELLI DATI WEB
-# =============================================================================
-
+# Modelli Pydantic per la validazione dei dati API
 class UserSession(BaseModel):
     user_id: str
     university_name: str
@@ -79,207 +65,257 @@ class DashboardStats(BaseModel):
     last_updated: datetime.datetime
 
 # =============================================================================
-# 2. WEB DASHBOARD PRINCIPALE
+# Classe Principale della Dashboard
 # =============================================================================
 
 class AcademicCredentialsDashboard:
-    """Dashboard web per gestione credenziali accademiche"""
-    
+    """Dashboard web per la gestione delle credenziali accademiche."""
+
     def __init__(self):
+        """Inizializza l'applicazione FastAPI e i suoi componenti."""
         self.app = FastAPI(title="Academic Credentials Dashboard", version="1.0.0")
-        self.secret_key = "demo_secret_key_change_in_production"
-        self.templates_dir = Path(__file__).resolve().parent / "templates"
-        self.static_dir = Path(__file__).resolve().parent / "static"
+        self.secret_key = os.urandom(24).hex() # Chiave di sessione sicura
+        
+        base_path = Path(__file__).resolve().parent
+        self.templates_dir = base_path / "templates"
+        self.static_dir = base_path / "static"
         
         self.templates_dir.mkdir(parents=True, exist_ok=True)
         self.static_dir.mkdir(parents=True, exist_ok=True)
         
         self.templates = Jinja2Templates(directory=str(self.templates_dir))
         
-        if MODULES_LOADED:
-            self.issuer: Optional[AcademicCredentialIssuer] = None
-            self.verification_engine: Optional[CredentialVerificationEngine] = None
-            self.integration_manager: Optional[UniversityIntegrationManager] = None
-            self.test_manager: Optional[EndToEndTestManager] = None
-        
         self.sessions: Dict[str, UserSession] = {}
-        self.mock_data = self._initialize_mock_data()
+        
+        # Inizializza i componenti del sistema solo se i moduli sono stati caricati
+        self.issuer: Optional[AcademicCredentialIssuer] = None
+        if MODULES_LOADED:
+            self._initialize_system_components()
         
         self._setup_middleware()
-        self._setup_static_files()
         self._setup_routes()
         
-        print("🌐 Academic Credentials Dashboard inizializzato")
-    
+        print("🌐 Academic Credentials Dashboard inizializzato.")
+
+    def _initialize_system_components(self):
+        """Inizializza i componenti di business logic come l'Issuer."""
+        try:
+            self.crypto_utils = CryptoUtils()
+            # Configurazione per l'Issuer dell'Università di Salerno
+            issuer_config = IssuerConfiguration(
+                university_info=University(
+                    name="Università degli Studi di Salerno",
+                    country="IT",
+                    city="Fisciano",
+                    erasmus_code="I SALERNO01"
+                ),
+                certificate_path="./certificates/issued/university_I_SALERNO01_1001.pem",
+                private_key_path="./keys/universite_rennes_private.pem",
+                private_key_password="SecurePassword123!",
+                auto_sign=True,
+                backup_enabled=False # Disabilitato per la demo web
+            )
+            self.issuer = AcademicCredentialIssuer(issuer_config)
+            print("✅ Issuer Reale inizializzato correttamente.")
+        except Exception as e:
+            print(f"❌ ERRORE: Impossibile inizializzare l'Issuer. L'emissione non funzionerà.")
+            print(f"   Dettagli errore: {e}")
+            print("   Verifica che i file di certificato e chiave privata esistano nei percorsi specificati.")
+            self.issuer = None
+            
     def _setup_middleware(self):
-        self.app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+        """Configura i middleware dell'applicazione (CORS, Sessioni)."""
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"], # Per sviluppo; in produzione, restringere
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         self.app.add_middleware(SessionMiddleware, secret_key=self.secret_key)
     
-    def _setup_static_files(self):
-        self.app.mount("/static", StaticFiles(directory=str(self.static_dir)), name="static")
-    
     def _setup_routes(self):
-        # Home e autenticazione
-        @self.app.get("/", response_class=HTMLResponse)
-        async def home(request: Request): return await self._render_home(request)
-        @self.app.get("/login", response_class=HTMLResponse)
-        async def login_page(request: Request): return await self._render_login(request)
-        @self.app.post("/login")
-        async def login(request: Request, username: str = Form(...), password: str = Form(...)): return await self._handle_login(request, username, password)
-        @self.app.get("/logout")
-        async def logout(request: Request): return await self._handle_logout(request)
+        """Associa gli URL (routes) alle funzioni handler."""
+        # Mappatura delle routes principali
+        self.app.get("/", response_class=HTMLResponse)(self.render_home)
+        self.app.get("/login", response_class=HTMLResponse)(self.render_login_page)
+        self.app.post("/login")(self.handle_login)
+        self.app.get("/logout")(self.handle_logout)
         
-        # Pagine principali
-        @self.app.get("/dashboard", response_class=HTMLResponse)
-        async def dashboard(request: Request): return await self._render_dashboard(request)
-        @self.app.get("/credentials", response_class=HTMLResponse)
-        async def credentials_page(request: Request): return await self._render_credentials(request)
-        @self.app.get("/credentials/issue", response_class=HTMLResponse)
-        async def issue_credential_page(request: Request): return await self._render_issue_credential(request)
-        @self.app.post("/credentials/issue")
-        async def issue_credential(request: Request): return await self._handle_issue_credential(request)
-        @self.app.get("/verification", response_class=HTMLResponse)
-        async def verification_page(request: Request): return await self._render_verification(request)
-        @self.app.get("/integration", response_class=HTMLResponse)
-        async def integration_page(request: Request): return await self._render_integration(request)
-        @self.app.get("/monitoring", response_class=HTMLResponse)
-        async def monitoring_page(request: Request): return await self._render_monitoring(request)
-        @self.app.get("/testing", response_class=HTMLResponse)
-        async def testing_page(request: Request): return await self._render_testing(request)
+        # Dashboard e sezioni
+        self.app.get("/dashboard", response_class=HTMLResponse)(self.render_dashboard)
+        self.app.get("/credentials", response_class=HTMLResponse)(self.render_credentials_page)
+        self.app.get("/credentials/issue", response_class=HTMLResponse)(self.render_issue_credential_page)
+        self.app.post("/credentials/issue")(self.handle_issue_credential)
+        self.app.get("/verification", response_class=HTMLResponse)(self.render_verification_page)
+        self.app.get("/integration", response_class=HTMLResponse)(self.render_integration_page)
+        self.app.get("/monitoring", response_class=HTMLResponse)(self.render_monitoring_page)
+        self.app.get("/testing", response_class=HTMLResponse)(self.render_testing_page)
 
-    # --- HANDLERS ---
-    
-    async def _render_home(self, request: Request):
-        if request.session.get("session_id") in self.sessions:
-            return RedirectResponse(url="/dashboard", status_code=302)
-        return self.templates.TemplateResponse("home.html", {"request": request, "title": "Home"})
+        # Serve i file statici
+        self.app.mount("/static", StaticFiles(directory=str(self.static_dir)), name="static")
 
-    async def _render_login(self, request: Request):
-        return self.templates.TemplateResponse("login.html", {"request": request, "title": "Login"})
+    # --- Handler per Autenticazione e Sessioni ---
 
-    async def _handle_login(self, request: Request, username: str, password: str):
+    def get_current_user(self, request: Request) -> Optional[UserSession]:
+        """Recupera l'utente corrente dalla sessione."""
+        session_id = request.session.get("session_id")
+        user = self.sessions.get(session_id)
+        if user:
+            user.last_activity = datetime.datetime.now(datetime.timezone.utc)
+        return user
+
+    async def handle_login(self, request: Request, username: str = Form(...), password: str = Form(...)):
+        """Gestisce il tentativo di login dell'utente."""
         if username in ["admin", "issuer", "verifier"] and password == "demo123":
-            # --- MODIFICA: Utilizzo di datetime.now(timezone.utc) ---
             utc_now = datetime.datetime.now(datetime.timezone.utc)
-            session_id = f"session_{utc_now.timestamp()}"
+            session_id = f"session_{uuid.uuid4()}"
+            permissions = {"admin": ["read", "write", "admin"], "issuer": ["read", "write"], "verifier": ["read"]}.get(username, [])
             
-            permissions = []
-            if username == "admin": permissions = ["read", "write", "admin"]
-            elif username == "issuer": permissions = ["read", "write"]
-            else: permissions = ["read"]
-            
-            user_session = UserSession(
+            self.sessions[session_id] = UserSession(
                 user_id=username, university_name="Demo University", role=username, permissions=permissions,
                 login_time=utc_now, last_activity=utc_now
             )
-            self.sessions[session_id] = user_session
             request.session["session_id"] = session_id
             return RedirectResponse(url="/dashboard", status_code=302)
         
         return self.templates.TemplateResponse("login.html", {"request": request, "title": "Login", "error": "Credenziali non valide"})
 
-    async def _handle_logout(self, request: Request):
-        session_id = request.session.get("session_id")
-        if session_id and session_id in self.sessions:
+    async def handle_logout(self, request: Request):
+        """Gestisce il logout dell'utente."""
+        session_id = request.session.pop("session_id", None)
+        if session_id in self.sessions:
             del self.sessions[session_id]
-        request.session.clear()
         return RedirectResponse(url="/", status_code=302)
 
-    def _get_current_user(self, request: Request) -> Optional[UserSession]:
-        session_id = request.session.get("session_id")
-        if session_id and session_id in self.sessions:
-            user = self.sessions[session_id]
-            user.last_activity = datetime.datetime.now(datetime.timezone.utc)
-            return user
-        return None
+    # --- Handler per le Pagine HTML ---
 
-    async def _render_dashboard(self, request: Request):
-        user = self._get_current_user(request)
-        if not user: return RedirectResponse(url="/login", status_code=302)
-        stats = await self._get_dashboard_stats()
+    async def render_home(self, request: Request):
+        if self.get_current_user(request):
+            return RedirectResponse(url="/dashboard", status_code=302)
+        return self.templates.TemplateResponse("home.html", {"request": request, "title": "Home"})
+
+    async def render_login_page(self, request: Request):
+        return self.templates.TemplateResponse("login.html", {"request": request, "title": "Login"})
+    
+    async def render_dashboard(self, request: Request):
+        user = self.get_current_user(request)
+        if not user: return RedirectResponse(url="/login")
+        stats = self._get_dashboard_stats()
         return self.templates.TemplateResponse("dashboard.html", {"request": request, "user": user, "stats": stats, "title": "Dashboard"})
 
-    async def _render_credentials(self, request: Request):
-        user = self._get_current_user(request)
-        if not user: return RedirectResponse(url="/login", status_code=302)
-        return self.templates.TemplateResponse("credentials.html", {"request": request, "user": user, "credentials": self.mock_data["issued_credentials"], "title": "Gestione Credenziali"})
+    async def render_credentials_page(self, request: Request):
+        user = self.get_current_user(request)
+        if not user: return RedirectResponse(url="/login")
+        credentials = self.issuer.list_credentials() if self.issuer else []
+        return self.templates.TemplateResponse("credentials.html", {"request": request, "user": user, "credentials": credentials, "title": "Gestione Credenziali"})
 
-    async def _render_issue_credential(self, request: Request):
-        user = self._get_current_user(request)
-        if not user: return RedirectResponse(url="/login", status_code=302)
-        if "write" not in user.permissions: raise HTTPException(status_code=403, detail="Permessi insufficienti")
+    async def render_issue_credential_page(self, request: Request):
+        user = self.get_current_user(request)
+        if not user or "write" not in user.permissions: raise HTTPException(403)
         return self.templates.TemplateResponse("issue_credential.html", {"request": request, "user": user, "title": "Emissione Credenziale"})
 
-    async def _handle_issue_credential(self, request: Request):
-        user = self._get_current_user(request)
-        if not user or "write" not in user.permissions: raise HTTPException(status_code=403, detail="Non autorizzato")
-        form_data = await request.form()
-        try:
-            if not MODULES_LOADED: raise ImportError("Modulo 'credentials' non caricato.")
-            credential = CredentialFactory.create_sample_credential()
-            if form_data.get("student_name"): credential.subject.pseudonym = form_data["student_name"]
-            
-            credential_data = {
-                "credential_id": str(credential.metadata.credential_id), "student_name": form_data.get("student_name", "Unknown"),
-                "issued_at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "issued_by": user.user_id, "status": "active"
-            }
-            self.mock_data["issued_credentials"].append(credential_data)
-            return JSONResponse({"success": True, "message": "Credenziale emessa con successo", "credential_id": credential_data["credential_id"]})
-        except Exception as e:
-            return JSONResponse({"success": False, "message": f"Errore emissione: {e}"}, status_code=400)
+    # --- Handler Logica di Business ---
 
-    # (altri handler rimangono simili)
-    async def _render_verification(self, request: Request):
-        user = self._get_current_user(request)
-        if not user: return RedirectResponse(url="/login", status_code=302)
-        return self.templates.TemplateResponse("verification.html", {"request": request, "user": user, "title": "Verifica"})
-    
-    async def _render_integration(self, request: Request):
-        user = self._get_current_user(request)
-        if not user: return RedirectResponse(url="/login", status_code=302)
-        return self.templates.TemplateResponse("integration.html", {"request": request, "user": user, "title": "Integrazione"})
+    async def handle_issue_credential(self, request: Request):
+        """Gestisce la creazione e l'emissione di una nuova credenziale."""
+        user = self.get_current_user(request)
+        if not user or "write" not in user.permissions:
+            raise HTTPException(status_code=403, detail="Non autorizzato")
         
-    async def _render_monitoring(self, request: Request):
-        user = self._get_current_user(request)
-        if not user: return RedirectResponse(url="/login", status_code=302)
+        if not self.issuer:
+            return JSONResponse({"success": False, "message": "Servizio di emissione non configurato correttamente."}, status_code=503)
+
+        form_data = await request.form()
+        
+        try:
+            student_info = PersonalInfo(
+                surname_hash=self.crypto_utils.sha256_hash_string(form_data.get("cognome", "")),
+                name_hash=self.crypto_utils.sha256_hash_string(form_data.get("nome", "")),
+                birth_date_hash=self.crypto_utils.sha256_hash_string("01/01/2000"), # Placeholder
+                student_id_hash=self.crypto_utils.sha256_hash_string(form_data.get("matricola", "")),
+                pseudonym=f"student_{form_data.get('nome','').lower()}"
+            )
+            
+            study_period = StudyPeriod(
+                start_date=datetime.datetime.fromisoformat(form_data.get("inizio_periodo")),
+                end_date=datetime.datetime.fromisoformat(form_data.get("fine_periodo")),
+                study_type=StudyType.ERASMUS,
+                academic_year="2024/2025"
+            )
+
+            courses = [Course(
+                course_name=form_data.get("nome_corso", "Corso di Prova"),
+                course_code="DEMO-01", isced_code="0613",
+                grade=ExamGrade(score=f"{form_data.get('voto', '18')}/30", passed=True, grade_system=GradeSystem.ITALIAN_30),
+                exam_date=datetime.datetime.now(datetime.timezone.utc),
+                ects_credits=int(form_data.get("cfu", 0)), professor="Prof. Demo"
+            )]
+
+            request_id = self.issuer.create_issuance_request(
+                student_info=student_info, study_period=study_period,
+                host_university=University(name="Université de Rennes", country="FR", city="Rennes"),
+                study_program=StudyProgram(name="Ingegneria Informatica", isced_code="0613", eqf_level=EQFLevel.LEVEL_7, program_type="Laurea Magistrale", field_of_study="Informatica"),
+                courses=courses, requested_by=user.user_id
+            )
+            
+            result = self.issuer.process_issuance_request(request_id)
+            
+            if result.success:
+                return JSONResponse({"success": True, "message": "Credenziale emessa e firmata con successo!", "credential_id": result.credential_id})
+            else:
+                return JSONResponse({"success": False, "message": "Errore durante l'emissione.", "errors": result.errors}, status_code=400)
+
+        except Exception as e:
+            return JSONResponse({"success": False, "message": f"Errore server inaspettato: {str(e)}"}, status_code=500)
+
+    # --- Handler Pagine Aggiuntive (attualmente mock) ---
+    
+    async def render_verification_page(self, request: Request):
+        user = self.get_current_user(request)
+        if not user: return RedirectResponse(url="/login")
+        return self.templates.TemplateResponse("verification.html", {"request": request, "user": user, "title": "Verifica"})
+
+    async def render_integration_page(self, request: Request):
+        user = self.get_current_user(request)
+        if not user: return RedirectResponse(url="/login")
+        return self.templates.TemplateResponse("integration.html", {"request": request, "user": user, "title": "Integrazione"})
+
+    async def render_monitoring_page(self, request: Request):
+        user = self.get_current_user(request)
+        if not user: return RedirectResponse(url="/login")
         return self.templates.TemplateResponse("monitoring.html", {"request": request, "user": user, "title": "Monitoring"})
 
-    async def _render_testing(self, request: Request):
-        user = self._get_current_user(request)
-        if not user: return RedirectResponse(url="/login", status_code=302)
-        if user.role != "admin": raise HTTPException(status_code=403, detail="Solo admin")
+    async def render_testing_page(self, request: Request):
+        user = self.get_current_user(request)
+        if not user or "admin" not in user.permissions: raise HTTPException(403)
         return self.templates.TemplateResponse("testing.html", {"request": request, "user": user, "title": "Testing"})
 
-    async def _get_dashboard_stats(self) -> DashboardStats:
+    def _get_dashboard_stats(self) -> DashboardStats:
+        """Fornisce statistiche per la dashboard."""
+        total_issued = len(self.issuer.list_credentials()) if self.issuer else 0
         return DashboardStats(
-            total_credentials_issued=len(self.mock_data["issued_credentials"]), total_credentials_verified=45,
-            pending_verifications=len(self.mock_data["pending_verifications"]), active_students=128,
-            total_credits_processed=2450, success_rate=94.5,
-            last_updated=datetime.datetime.now(datetime.timezone.utc)
+            total_credentials_issued=total_issued, total_credentials_verified=45,
+            pending_verifications=12, active_students=128, total_credits_processed=2450, 
+            success_rate=94.5, last_updated=datetime.datetime.now(datetime.timezone.utc)
         )
 
-    def _initialize_mock_data(self) -> Dict[str, Any]:
-        return {
-            "issued_credentials": [
-                {"credential_id": "cred_001", "student_name": "Mario Rossi", "issued_at": "2024-12-15T10:30:00Z", "issued_by": "admin", "status": "active"},
-                {"credential_id": "cred_002", "student_name": "Anna Bianchi", "issued_at": "2024-12-14T15:45:00Z", "issued_by": "issuer", "status": "active"}
-            ],
-            "pending_verifications": [{"verification_id": "ver_001", "student_name": "Giuseppe Verdi", "submitted_at": "2024-12-15T14:20:00Z", "purpose": "Credit Recognition", "status": "pending"}]
-        }
-    
-    def run(self, host: str = "0.0.0.0", port: int = 8000):
-        print(f"🚀 Avviando dashboard su http://{host}:{port}")
-        print(f"   Login demo: admin/demo123, issuer/demo123, verifier/demo123")
-        uvicorn.run(self.app, host=host, port=port)
+# Istanzia l'applicazione per essere usata da Uvicorn
+dashboard_instance = AcademicCredentialsDashboard()
+app = dashboard_instance.app
 
-# =============================================================================
-# 3. MAIN
-# =============================================================================
-
+# Esecuzione del server
 if __name__ == "__main__":
-    print("🌐" * 50)
-    print("ACADEMIC CREDENTIALS WEB DASHBOARD")
-    print("🌐" * 50)
+    print("="*60)
+    print("Avvio del Server Web per la Gestione delle Credenziali Accademiche")
+    print(f"I moduli del progetto sono stati caricati: {'Sì' if MODULES_LOADED else 'NO'}")
+    print("="*60)
+    print("Per avviare il server, esegui questo comando dalla cartella principale del progetto:")
+    print("  uvicorn src.web.dashboard:app --reload --port 8000")
+    print("\nOppure, se sei nella cartella 'src':")
+    print("  uvicorn web.dashboard:app --reload --port 8000")
+    print("\nIl server sarà disponibile su http://127.0.0.1:8000")
     
-    dashboard = AcademicCredentialsDashboard()
-    dashboard.run()
+    # Questo blocco permette anche di eseguire lo script direttamente per test rapidi,
+    # ma il metodo con `uvicorn` è preferibile per lo sviluppo.
+    uvicorn.run(app, host="127.0.0.1", port=8000)

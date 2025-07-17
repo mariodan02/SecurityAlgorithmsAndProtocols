@@ -464,7 +464,7 @@ class AcademicCredentialValidator:
     def _validate_temporal(self, credential: AcademicCredential, report: ValidationReport):
         """Valida aspetti temporali della credenziale"""
         try:
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc)
             
             # Verifica scadenza
             if credential.metadata.expires_at:

@@ -168,17 +168,17 @@ class APIKeyManager:
             "unisa_key_123": {
                 "university": "Università di Salerno",
                 "permissions": ["submit_credential", "validate_credential"],
-                "created_at": datetime.datetime.utcnow().isoformat()
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             },
             "rennes_key_456": {
                 "university": "Université de Rennes", 
                 "permissions": ["submit_credential", "validate_credential"],
-                "created_at": datetime.datetime.utcnow().isoformat()
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             },
             "dashboard_key":{
                 "university": "Dashboard System",
                 "permissions": ["*"],
-                "created_at": datetime.datetime.utcnow().isoformat()
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
         }
     

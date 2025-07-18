@@ -54,8 +54,10 @@ class UserSession(BaseModel):
     university_name: str
     role: str
     permissions: List[str]
-    login_time: datetime.datetime
-    last_activity: datetime.datetime
+    login_time: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
+    last_activity: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
+    is_issuer: bool = False  # Valore predefinito 
+    is_student: bool = False  # Valore predefinito 
 
 class DashboardStats(BaseModel):
     total_credentials_issued: int
@@ -125,13 +127,18 @@ class SessionManager:
         session_id = f"session_{uuid.uuid4()}"
         permissions = AuthenticationService.get_user_permissions(user_info["role"])
         
+        # CALCOLA I VALORI MANCANTI BASATI SUL RUOLO
+        role = user_info["role"]
+        is_issuer = (role == "issuer")
+        is_student = (role == "studente")
+        
         self.sessions[session_id] = UserSession(
             user_id=username,
             university_name=user_info["university"],
-            role=user_info["role"],
+            role=role,
             permissions=permissions,
-            login_time=datetime.datetime.utcnow(),
-            last_activity=datetime.datetime.utcnow()
+            is_issuer=is_issuer,      # Valore aggiunto
+            is_student=is_student       # Valore aggiunto
         )
         
         return session_id
@@ -149,7 +156,7 @@ class SessionManager:
             return None
         
         # Aggiorna l'ultima attività
-        session.last_activity = datetime.datetime.now(datetime.UTC)
+        session.last_activity = datetime.datetime.now(datetime.timezone.utc)
         return session
     
     def destroy_session(self, session_id: str) -> None:
@@ -159,7 +166,7 @@ class SessionManager:
     def _is_session_expired(self, session: UserSession) -> bool:
         """Controlla se una sessione è scaduta"""
         expiry_time = session.last_activity + datetime.timedelta(minutes=self.timeout_minutes)
-        return datetime.datetime.now(datetime.UTC) > expiry_time
+        return datetime.datetime.now(datetime.timezone.utc) > expiry_time
 
 class MockDataService:
     """Servizio per dati mock/demo"""
@@ -171,7 +178,7 @@ class MockDataService:
             total_credentials_verified=32,
             pending_verifications=5,
             success_rate=94.7,
-            last_updated=datetime.datetime.now(datetime.UTC)
+            last_updated=datetime.datetime.utcnow()
         )
     
     @staticmethod
@@ -997,7 +1004,7 @@ class AcademicCredentialsDashboard:
                 verification_result = {
                     "verification_id": f"verify_{uuid.uuid4()}",
                     "result": "valid",
-                    "verified_at": datetime.datetime.utcnow().isoformat(),
+                    "verified_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     "verified_by": user.user_id,
                     "confidence_score": 0.97,
                     "details": {
@@ -1111,7 +1118,7 @@ class AcademicCredentialsDashboard:
             """Health check endpoint"""
             return JSONResponse({
                 "status": "healthy",
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "version": "2.0.0"
             })
     

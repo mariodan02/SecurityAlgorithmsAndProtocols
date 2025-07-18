@@ -390,51 +390,51 @@ class PresentationVerifier:
             return report
     
     async def _verify_student_signature(self, presentation_data: dict, student_public_key_pem: str) -> bool:
-        """Verifica la firma digitale dello studente sulla presentazione."""
+        """Verifica alternativa che replica esattamente la logica di DigitalSignature."""
         try:
             if "signature" not in presentation_data:
-                self.logger.warning("Nessuna firma studente trovata")
                 return False
             
             signature_info = presentation_data["signature"]
-            signature_value = signature_info.get("valore", "")
             
-            # Carica chiave pubblica studente
-            try:
-                public_key = serialization.load_pem_public_key(student_public_key_pem.encode())
-            except Exception as e:
-                self.logger.error(f"Errore caricamento chiave pubblica studente: {e}")
-                return False
+            # Carica chiave pubblica
+            public_key = serialization.load_pem_public_key(student_public_key_pem.encode())
             
-            # Prepara dati senza firma per verifica
-            data_to_verify = presentation_data.copy()
-            data_to_verify.pop("signature", None)
-            data_to_verify.pop("summary", None)
-
-            data_bytes = json.dumps(data_to_verify, sort_keys=True, separators=(',', ':')).encode('utf-8')            
-            # Verifica firma
-            signature_bytes = base64.b64decode(signature_value)
+            # *** METODO ALTERNATIVO: Usa DigitalSignature.verify_document_signature ***
+            # Ricostruisci il documento come era durante la firma
+            document_to_verify = {
+                'presentation_id': presentation_data.get('presentation_id'),
+                'created_at': presentation_data.get('created_at'),
+                'created_by': presentation_data.get('created_by'),
+                'purpose': presentation_data.get('purpose'),
+                'recipient': presentation_data.get('recipient'),
+                'expires_at': presentation_data.get('expires_at'),
+                'status': presentation_data.get('status'),
+                'selective_disclosures': presentation_data.get('selective_disclosures', []),
+                'additional_documents': presentation_data.get('additional_documents', []),
+                'format': presentation_data.get('format'),
+                'verification_url': presentation_data.get('verification_url'),
+                # Aggiungi la firma nel formato che si aspetta verify_document_signature
+                'firma': signature_info
+            }
             
-            public_key.verify(
-                signature_bytes,
-                data_bytes,
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-            )
+            # Usa la stessa classe DigitalSignature per verificare
+            from crypto.foundations import DigitalSignature
+            verifier = DigitalSignature("PSS")
             
-            self.logger.info("✅ Firma studente valida")
-            return True
+            is_valid = verifier.verify_document_signature(public_key, document_to_verify)
             
-        except InvalidSignature:
-            self.logger.warning("❌ Firma studente non valida")
-            return False
+            if is_valid:
+                self.logger.info("✅ Firma studente valida (metodo v2)")
+            else:
+                self.logger.warning("❌ Firma studente non valida (metodo v2)")
+                
+            return is_valid
+            
         except Exception as e:
-            self.logger.error(f"Errore verifica firma studente: {e}")
+            self.logger.error(f"Errore verifica firma studente v2: {e}")
             return False
-    
+
     def _extract_credentials_from_presentation(self, presentation_data: dict) -> list:
         """Estrae le credenziali dalla presentazione."""
         return presentation_data.get("selective_disclosures", [])

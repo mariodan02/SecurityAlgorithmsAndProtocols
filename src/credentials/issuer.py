@@ -853,7 +853,6 @@ if __name__ == "__main__":
         print("✅ Gestione stati credenziali")
         print("✅ Export/Import credenziali")
         print("✅ Backup automatici")
-        print("✅ Statistiche e monitoring")
         print("✅ Revoca credenziali")
         
         print(f"\n🚀 Pronto per integrazione con Validator!")

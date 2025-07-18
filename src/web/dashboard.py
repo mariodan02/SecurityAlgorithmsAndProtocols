@@ -1,7 +1,7 @@
 # =============================================================================
-# ACADEMIC CREDENTIALS DASHBOARD - Clean & Professional Version
+# ACADEMIC CREDENTIALS DASHBOARD - Main Application
 # File: web/dashboard.py
-# Sistema Credenziali Accademiche Decentralizzate
+# Decentralized Academic Credentials System
 # =============================================================================
 
 import base64
@@ -14,19 +14,23 @@ from typing import Dict, List, Optional, Any
 import logging
 from dataclasses import dataclass
 
-# FastAPI e web dependencies
+# FastAPI and web dependencies
 from fastapi import FastAPI, Request, HTTPException, Depends, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
 
-# Pydantic per validazione
+# Wallet-related imports
+from wallet.student_wallet import AcademicStudentWallet, CredentialStorage, WalletConfiguration
+from wallet.presentation import PresentationFormat, PresentationManager
+
+# Pydantic for data validation
 from pydantic import BaseModel, Field
 
-# Import condizionali per evitare errori se i moduli non sono disponibili
+# Conditional imports to prevent errors if modules are unavailable
 try:
     from communication.secure_server import CredentialVerificationRequest
     from credentials.models import AcademicCredential
@@ -35,16 +39,16 @@ try:
     from pki.certificate_manager import CertificateManager
     MODULES_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️ Alcuni moduli non disponibili: {e}")
+    print(f"⚠️ Some modules are not available: {e}")
     MODULES_AVAILABLE = False
 
 # =============================================================================
-# CONFIGURAZIONE E MODELLI DATI
+# DATA MODELS AND CONFIGURATION
 # =============================================================================
 
 @dataclass
 class AppConfig:
-    """Configurazione centralizzata dell'applicazione"""
+    """Centralized application configuration."""
     secret_key: str = "Unisa2025"
     host: str = "127.0.0.1"
     port: int = 8000
@@ -88,7 +92,8 @@ class CredentialIssueRequest(BaseModel):
 class PresentationRequest(BaseModel):
     purpose: str = Field(..., min_length=5, max_length=200)
     recipient: Optional[str] = Field(None, max_length=100)
-    credentials: List[Dict[str, str]]
+    credentials: List[str]
+    format: str = "json"
 
 class VerificationRequest(BaseModel):
     presentation_data: Dict[str, Any]
@@ -100,11 +105,11 @@ class FullVerificationRequest(BaseModel):
     purpose: str
 
 # =============================================================================
-# SERVIZI E UTILITÀ
+# SERVICES AND UTILITIES
 # =============================================================================
 
 class AuthenticationService:
-    """Servizio per la gestione dell'autenticazione"""
+    """Service for handling authentication."""
     
     VALID_USERS = {
         "studente_mariorossi": {"role": "studente", "university": "Università di Salerno"},
@@ -115,14 +120,14 @@ class AuthenticationService:
     
     @classmethod
     def authenticate_user(cls, username: str, password: str) -> Optional[Dict[str, str]]:
-        """Autentica un utente con username e password"""
+        """Authenticates a user with username and password."""
         if username in cls.VALID_USERS and password == "Unisa2025":
             return cls.VALID_USERS[username]
         return None
     
     @classmethod
     def get_user_permissions(cls, role: str) -> List[str]:
-        """Restituisce i permessi dell'utente basati sul ruolo"""
+        """Returns user permissions based on their role."""
         permissions_map = {
             "studente": ["read", "share"],
             "issuer": ["read", "write", "issue"],
@@ -132,14 +137,14 @@ class AuthenticationService:
         return permissions_map.get(role, ["read"])
 
 class SessionManager:
-    """Gestore delle sessioni utente"""
+    """Manages user sessions."""
     
     def __init__(self, timeout_minutes: int = 60):
         self.sessions: Dict[str, UserSession] = {}
         self.timeout_minutes = timeout_minutes
     
     def create_session(self, user_info: Dict[str, str], username: str) -> str:
-        """Crea una nuova sessione utente"""
+        """Creates a new user session."""
         session_id = f"session_{uuid.uuid4()}"
         permissions = AuthenticationService.get_user_permissions(user_info["role"])
         
@@ -159,7 +164,7 @@ class SessionManager:
         return session_id
     
     def get_session(self, session_id: str) -> Optional[UserSession]:
-        """Recupera una sessione esistente"""
+        """Retrieves an existing session."""
         if session_id not in self.sessions:
             return None
             
@@ -173,16 +178,16 @@ class SessionManager:
         return session
     
     def destroy_session(self, session_id: str) -> None:
-        """Distrugge una sessione"""
+        """Destroys a session."""
         self.sessions.pop(session_id, None)
     
     def _is_session_expired(self, session: UserSession) -> bool:
-        """Controlla se una sessione è scaduta"""
+        """Checks if a session has expired."""
         expiry_time = session.last_activity + datetime.timedelta(minutes=self.timeout_minutes)
         return datetime.datetime.now(datetime.timezone.utc) > expiry_time
 
 class MockDataService:
-    """Servizio per dati mock/demo"""
+    """Service for providing mock/demo data."""
     
     @staticmethod
     def get_dashboard_stats() -> DashboardStats:
@@ -202,23 +207,23 @@ class MockDataService:
                 "issuer": "Université de Rennes",
                 "issue_date": "2024-09-15",
                 "total_courses": 5,
-                "status": "Attiva"
+                "status": "Active"
             },
             {
                 "credential_id": "cred_germany_456", 
                 "issuer": "TU München",
                 "issue_date": "2024-02-20",
                 "total_courses": 4,
-                "status": "Attiva"
+                "status": "Active"
             }
         ]
     
     @staticmethod
     def get_pending_verifications() -> List[Dict[str, str]]:
         return [
-            {"student_name": "Mario Rossi", "purpose": "Riconoscimento CFU", "status": "In elaborazione"},
-            {"student_name": "Anna Bianchi", "purpose": "Iscrizione Master", "status": "Documentazione richiesta"},
-            {"student_name": "Luca Verdi", "purpose": "Erasmus+", "status": "In elaborazione"}
+            {"student_name": "Mario Rossi", "purpose": "CFU Recognition", "status": "Processing"},
+            {"student_name": "Anna Bianchi", "purpose": "Master's Enrollment", "status": "Documentation required"},
+            {"student_name": "Luca Verdi", "purpose": "Erasmus+", "status": "Processing"}
         ]
     
     @staticmethod
@@ -233,8 +238,8 @@ class MockDataService:
     @staticmethod
     def get_system_health() -> Dict[str, str]:
         return {
-            "blockchain_status": "Operativo",
-            "database_status": "Operativo"
+            "blockchain_status": "Operational",
+            "database_status": "Operational"
         }
     
     @staticmethod
@@ -247,64 +252,65 @@ class MockDataService:
         }
 
 # =============================================================================
-# MIDDLEWARE E DIPENDENZE
+# MIDDLEWARE AND DEPENDENCIES
 # =============================================================================
 
 def get_current_user(request: Request, session_manager: SessionManager) -> Optional[UserSession]:
-    """Dependency per ottenere l'utente corrente dalla sessione"""
+    """Dependency to get the current user from the session."""
     session_id = request.session.get("session_id")
     if session_id:
         return session_manager.get_session(session_id)
     return None
 
 def require_auth(request: Request, session_manager: SessionManager) -> UserSession:
-    """Dependency che richiede autenticazione"""
+    """Dependency that requires authentication."""
     user = get_current_user(request, session_manager)
     if not user:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
-            detail="Autenticazione richiesta"
+            detail="Authentication required"
         )
     return user
 
 # =============================================================================
-# CLASSE PRINCIPALE DASHBOARD
+# MAIN DASHBOARD CLASS
 # =============================================================================
 
 class AcademicCredentialsDashboard:
     """
-    Dashboard principale per la gestione delle credenziali accademiche.
+    Main dashboard for managing academic credentials.
     """
     
     def __init__(self, config: Optional[AppConfig] = None):
         self.config = config or AppConfig()
         self.app = FastAPI(
             title="Academic Credentials Dashboard",
-            description="Sistema per la gestione decentralizzata delle credenziali accademiche",
+            description="System for the decentralized management of academic credentials.",
             version="2.0.0"
         )
         
-        # Servizi
+        # Services
         self.session_manager = SessionManager(self.config.session_timeout_minutes)
         self.mock_data = MockDataService()
-        
-        # Setup logging
+        self.student_wallets = {}
+
+        # Configure logging
         self._setup_logging()
         
-        # Inizializzazione componenti
+        # Initialize components
         self._setup_directories()
         self._setup_templates()
         self._setup_middleware()
         self._setup_static_files()
         
-        # Crea le dependency di autenticazione
+        # Create authentication dependencies
         self.auth_deps = self._create_auth_dependencies()
         
         self._setup_routes()
         self._initialize_system_components()
     
     def _setup_logging(self) -> None:
-        """Configura il sistema di logging"""
+        """Configures the logging system."""
         logging.basicConfig(
             level=logging.WARNING,
             format='%(levelname)s - %(message)s',
@@ -317,7 +323,7 @@ class AcademicCredentialsDashboard:
         logging.getLogger('uvicorn.access').setLevel(logging.ERROR)
 
     def run(self, host: Optional[str] = None, port: Optional[int] = None):
-        """Avvia il server"""
+        """Starts the web server."""
         import uvicorn
         
         host = host or self.config.host
@@ -332,18 +338,18 @@ class AcademicCredentialsDashboard:
         )
 
     def _setup_directories(self) -> None:
-        """Crea le directory necessarie"""
+        """Creates the necessary directories for the application."""
         self.templates_dir = Path(self.config.templates_dir)
         self.static_dir = Path(self.config.static_dir)
         self.templates_dir.mkdir(parents=True, exist_ok=True)
         self.static_dir.mkdir(parents=True, exist_ok=True)
     
     def _setup_templates(self) -> None:
-        """Configura il sistema di template"""
+        """Configures the template rendering system."""
         self.templates = Jinja2Templates(directory=str(self.templates_dir))
     
     def _setup_middleware(self) -> None:
-        """Configura i middleware"""
+        """Configures application middleware."""
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
@@ -357,11 +363,11 @@ class AcademicCredentialsDashboard:
         )
     
     def _setup_static_files(self) -> None:
-        """Configura i file statici"""
+        """Configures static file serving."""
         self.app.mount("/static", StaticFiles(directory=str(self.static_dir)), name="static")
     
     def _create_auth_dependencies(self):
-        """Crea le dependency di autenticazione"""
+        """Creates authentication dependencies."""
         
         def get_current_user_dep(request: Request) -> Optional[UserSession]:
             return get_current_user(request, self.session_manager)
@@ -369,55 +375,31 @@ class AcademicCredentialsDashboard:
         def require_auth_dep(request: Request) -> UserSession:
             user = get_current_user(request, self.session_manager)
             if not user:
-                raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN,
-                    detail="Autenticazione richiesta"
-                )
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Authentication required")
             return user
         
         def require_write_permission_dep(request: Request) -> UserSession:
             user = get_current_user(request, self.session_manager)
             if not user:
-                raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN,
-                    detail="Autenticazione richiesta"
-                )
-            
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Authentication required")
             if "write" not in user.permissions:
-                raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN,
-                    detail="Permesso di scrittura richiesto"
-                )
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Write permission required")
             return user
         
         def require_verify_permission_dep(request: Request) -> UserSession:
             user = get_current_user(request, self.session_manager)
             if not user:
-                raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN,
-                    detail="Autenticazione richiesta"
-                )
-            
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Authentication required")
             if "verify" not in user.permissions:
-                raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN,
-                    detail="Permesso di verifica richiesto"
-                )
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Verification permission required")
             return user
         
         def require_admin_permission_dep(request: Request) -> UserSession:
             user = get_current_user(request, self.session_manager)
             if not user:
-                raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN,
-                    detail="Autenticazione richiesta"
-                )
-            
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Authentication required")
             if "admin" not in user.permissions:
-                raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN,
-                    detail="Permesso di amministrazione richiesto"
-                )
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Admin permission required")
             return user
         
         return {
@@ -429,12 +411,12 @@ class AcademicCredentialsDashboard:
         }
 
     def _initialize_system_components(self) -> None:
-        """Inizializza i componenti del sistema"""
+        """Initializes core system components."""
         self.issuer = None
         self.verification_engine = None
         
         if not MODULES_AVAILABLE:
-            self.logger.warning("⚠️ Moduli del sistema non disponibili - modalità demo")
+            self.logger.warning("⚠️ Core system modules not available - running in demo mode")
             return
         
         try:
@@ -463,11 +445,11 @@ class AcademicCredentialsDashboard:
             key_path = Path(issuer_config.private_key_path)
             
             if not cert_path.exists():
-                self.logger.error(f"❌ Certificato non trovato: {cert_path}")
+                self.logger.error(f"❌ Certificate not found: {cert_path}")
                 return
                     
             if not key_path.exists():
-                self.logger.error(f"❌ Chiave privata non trovata: {key_path}")
+                self.logger.error(f"❌ Private key not found: {key_path}")
                 return
             
             original_logging_level = self.logger.level
@@ -484,15 +466,15 @@ class AcademicCredentialsDashboard:
             backups_dir.mkdir(parents=True, exist_ok=True)
             
             if self.issuer:
-                self.logger.info("✅ Sistema componenti inizializzato correttamente")
+                self.logger.info("✅ System components initialized successfully")
                 
         except ImportError as e:
-            self.logger.error(f"❌ ERRORE import moduli: {e}")
+            self.logger.error(f"❌ ERROR importing modules: {e}")
         except Exception as e:
-            self.logger.error(f"🔥 ERRORE durante l'inizializzazione: {e}")
+            self.logger.error(f"🔥 ERROR during initialization: {e}")
 
     async def _call_secure_api(self, endpoint: str, payload: dict) -> dict:
-        """Helper per chiamare le API sicure"""
+        """Helper function for calling secure APIs."""
         import httpx
         url = f"{self.config.secure_server_url}{endpoint}"
         headers = {"Authorization": f"Bearer {self.config.secure_server_api_key}"}
@@ -502,33 +484,50 @@ class AcademicCredentialsDashboard:
             response.raise_for_status()
             return response.json()
 
+    def _get_student_wallet(self, user: UserSession) -> AcademicStudentWallet:
+        """Get or create a student wallet instance."""
+        if user.user_id not in self.student_wallets:
+            # Initialize wallet with a demo configuration
+            wallet_config = WalletConfiguration(
+                wallet_name=f"{user.user_id}_wallet",
+                storage_path=f"./wallets/{user.user_id}",
+                storage_mode=CredentialStorage.ENCRYPTED_LOCAL,
+                auto_backup=True
+            )
+            
+            wallet = AcademicStudentWallet(wallet_config)
+            
+            # For demo purposes, auto-unlock with a default password
+            if not wallet.wallet_file.exists():
+                wallet.create_wallet("DemoPassword123!")
+            else:
+                wallet.unlock_wallet("DemoPassword123!")
+            
+            self.student_wallets[user.user_id] = wallet
+        
+        return self.student_wallets[user.user_id]
+
     def _setup_routes(self) -> None:
-        """Configura tutte le route dell'applicazione"""
+        """Configures all application routes."""
         
         @self.app.get("/", response_class=HTMLResponse)
         async def home(request: Request):
-            """Pagina principale"""
+            """Main page."""
             user = self.auth_deps['get_current_user'](request)
             if user:
                 redirect_url = "/wallet" if user.role == 'studente' else "/dashboard"
                 return RedirectResponse(url=redirect_url, status_code=HTTP_302_FOUND)
             
-            return self.templates.TemplateResponse("home.html", {
-                "request": request,
-                "title": "Home"
-            })
+            return self.templates.TemplateResponse("home.html", {"request": request, "title": "Home"})
         
         @self.app.get("/login", response_class=HTMLResponse)
         async def login_page(request: Request):
-            """Pagina di login"""
-            return self.templates.TemplateResponse("login.html", {
-                "request": request,
-                "title": "Login"
-            })
+            """Login page."""
+            return self.templates.TemplateResponse("login.html", {"request": request, "title": "Login"})
         
         @self.app.post("/login")
         async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-            """Gestisce il login dell'utente"""
+            """Handles user login."""
             try:
                 user_info = AuthenticationService.authenticate_user(username, password)
                 if user_info:
@@ -541,22 +540,18 @@ class AcademicCredentialsDashboard:
                     return RedirectResponse(url=redirect_url, status_code=HTTP_302_FOUND)
                 
                 return self.templates.TemplateResponse("login.html", {
-                    "request": request,
-                    "error": "Credenziali non valide",
-                    "title": "Login"
+                    "request": request, "error": "Invalid credentials", "title": "Login"
                 })
                 
             except Exception as e:
                 self.logger.error(f"Login error: {e}")
                 return self.templates.TemplateResponse("login.html", {
-                    "request": request,
-                    "error": "Errore del sistema. Riprova più tardi.",
-                    "title": "Login"
+                    "request": request, "error": "System error. Please try again later.", "title": "Login"
                 })
         
         @self.app.get("/logout")
         async def logout(request: Request):
-            """Logout dell'utente"""
+            """Logs the user out."""
             session_id = request.session.get("session_id")
             if session_id:
                 self.session_manager.destroy_session(session_id)
@@ -565,23 +560,32 @@ class AcademicCredentialsDashboard:
         
         @self.app.get("/wallet", response_class=HTMLResponse)
         async def wallet_page(request: Request):
-            """Wallet dello studente"""
+            """Student's wallet page."""
             user = self.auth_deps['get_current_user'](request)
             if not user or user.role != "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
-            credentials = self.mock_data.get_wallet_credentials()
+            wallet = self._get_student_wallet(user)
+            wallet_creds = wallet.list_credentials()
+            
+            # Format credentials for display
+            credentials = [
+                {
+                    'storage_id': cred['storage_id'],
+                    'issuer': cred['issuer'],
+                    'issue_date': cred['issued_at'],
+                    'total_courses': cred['total_courses'],
+                    'status': cred['status']
+                } for cred in wallet_creds
+            ]
             
             return self.templates.TemplateResponse("student_wallet.html", {
-                "request": request,
-                "user": user,
-                "title": "My Wallet",
-                "credentials": credentials
+                "request": request, "user": user, "title": "My Wallet", "credentials": credentials
             })
-        
+
         @self.app.get("/dashboard", response_class=HTMLResponse)
         async def dashboard(request: Request):
-            """Dashboard principale"""
+            """Main dashboard page."""
             user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
@@ -590,26 +594,19 @@ class AcademicCredentialsDashboard:
             message = request.query_params.get("message")
             
             return self.templates.TemplateResponse("dashboard.html", {
-                "request": request,
-                "user": user,
-                "stats": stats,
-                "title": "Dashboard",
-                "message": message
+                "request": request, "user": user, "stats": stats, "title": "Dashboard", "message": message
             })
         
         @self.app.get("/credentials", response_class=HTMLResponse)
         async def credentials_page(request: Request):
-            """Pagina gestione credenziali"""
+            """Credentials management page."""
             user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
-            # Carica credenziali reali dal filesystem
             credentials = []
-            
             try:
                 credentials_base_dir = Path("./src/credentials")
-                
                 if credentials_base_dir.exists():
                     for user_dir in credentials_base_dir.iterdir():
                         if user_dir.is_dir():
@@ -631,13 +628,13 @@ class AcademicCredentialsDashboard:
                                                 'file_path': str(credential_file)
                                             })
                                         else:
-                                            # Mock data se i moduli non sono disponibili
+                                            # Use mock data if modules are unavailable
                                             credentials.append({
                                                 'credential_id': f"mock_{credential_file.stem}",
                                                 'student_name': "Mario Rossi",
                                                 'issued_at': "2024-01-15 10:30:00",
                                                 'issued_by': "Université de Rennes",
-                                                'status': "Attiva",
+                                                'status': "Active",
                                                 'total_courses': 5,
                                                 'total_ects': 30,
                                                 'file_path': str(credential_file)
@@ -652,51 +649,41 @@ class AcademicCredentialsDashboard:
                 self.logger.error(f"Error loading credentials: {e}")
             
             return self.templates.TemplateResponse("credentials.html", {
-                "request": request,
-                "user": user,
-                "title": "Gestione Credenziali",
-                "credentials": credentials
+                "request": request, "user": user, "title": "Manage Credentials", "credentials": credentials
             })
         
         @self.app.get("/credentials/issue", response_class=HTMLResponse)
         async def issue_credential_page(request: Request):
-            """Pagina per emettere nuove credenziali"""
+            """Page for issuing new credentials."""
             user = self.auth_deps['require_write'](request)
             
             return self.templates.TemplateResponse("issue_credential.html", {
-                "request": request,
-                "user": user,
-                "title": "Emetti Nuova Credenziale"
+                "request": request, "user": user, "title": "Issue New Credential"
             })
         
         @self.app.post("/credentials/issue")
         async def handle_issue_credential(
             request: Request,
-            student_name: str = Form(...),
-            student_id: str = Form(...),
-            credential_type: str = Form(...),
-            study_period_start: str = Form(...),
-            study_period_end: str = Form(...),
-            course_name: List[str] = Form([]),
-            course_cfu: List[str] = Form([]),
-            course_grade: List[str] = Form([]),
+            student_name: str = Form(...), student_id: str = Form(...),
+            credential_type: str = Form(...), study_period_start: str = Form(...),
+            study_period_end: str = Form(...), course_name: List[str] = Form([]),
+            course_cfu: List[str] = Form([]), course_grade: List[str] = Form([]),
             course_date: List[str] = Form([])
         ):
-            """Gestisce l'emissione di una nuova credenziale"""
-            
+            """Handles the issuance of a new credential."""
             try:
                 user = self.auth_deps['require_write'](request)
                 
                 if not MODULES_AVAILABLE or not self.issuer:
                     return JSONResponse({
                         "success": False,
-                        "message": "Servizio di emissione non disponibile - modalità demo"
+                        "message": "Issuance service unavailable - demo mode"
                     }, status_code=503)
                 
-                # Il resto dell'implementazione rimane uguale ma con gestione errori migliorata
+                # Full implementation would process and issue the credential here.
                 return JSONResponse({
                     "success": True,
-                    "message": "Credenziale emessa con successo! (Demo mode)",
+                    "message": "Credential issued successfully! (Demo mode)",
                     "credential_id": f"demo_{uuid.uuid4()}",
                     "file_path": f"./demo/credential_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                     "issued_at": datetime.datetime.now().isoformat(),
@@ -707,26 +694,23 @@ class AcademicCredentialsDashboard:
             except Exception as e:
                 self.logger.error(f"Error issuing credential: {e}")
                 return JSONResponse({
-                    "success": False,
-                    "message": f"Errore interno del server: {str(e)}"
+                    "success": False, "message": f"Internal server error: {str(e)}"
                 }, status_code=500)
         
         @self.app.get("/verification", response_class=HTMLResponse)
         async def verification_page(request: Request):
-            """Pagina di verifica credenziali"""
+            """Credential verification page."""
             user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
             
             return self.templates.TemplateResponse("verification.html", {
-                "request": request,
-                "user": user,
-                "title": "Verifica Credenziali"
+                "request": request, "user": user, "title": "Verify Credentials"
             })
         
         @self.app.get("/integration", response_class=HTMLResponse)
         async def integration_page(request: Request):
-            """Pagina integrazione sistemi"""
+            """Systems integration page."""
             user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
@@ -734,15 +718,12 @@ class AcademicCredentialsDashboard:
             integration_stats = self.mock_data.get_integration_stats()
             
             return self.templates.TemplateResponse("integration.html", {
-                "request": request,
-                "user": user,
-                "title": "Integrazione Sistemi",
-                "integration_stats": integration_stats
+                "request": request, "user": user, "title": "Systems Integration", "integration_stats": integration_stats
             })
         
         @self.app.get("/monitoring", response_class=HTMLResponse)
         async def monitoring_page(request: Request):
-            """Pagina monitoraggio sistema"""
+            """System monitoring page."""
             user = self.auth_deps['get_current_user'](request)
             if not user or user.role == "studente":
                 return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
@@ -750,29 +731,99 @@ class AcademicCredentialsDashboard:
             system_health = self.mock_data.get_system_health()
             
             return self.templates.TemplateResponse("monitoring.html", {
-                "request": request,
-                "user": user,
-                "title": "Monitoring Sistema",
-                "system_health": system_health
+                "request": request, "user": user, "title": "System Monitoring", "system_health": system_health
             })
         
         @self.app.get("/health")
         async def health_check():
-            """Health check endpoint"""
+            """Health check endpoint."""
             return JSONResponse({
                 "status": "healthy",
                 "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "version": "2.0.0"
             })
 
+        @self.app.get("/credentials/{storage_id}", response_class=JSONResponse)
+        async def get_credential_details(
+            storage_id: str, user: UserSession = Depends(self.auth_deps['require_auth'])
+        ):
+            """Get details for a specific credential."""
+            wallet = self._get_student_wallet(user)
+            cred = wallet.get_credential(storage_id)
+            
+            if not cred:
+                raise HTTPException(status_code=404, detail="Credential not found")
+            
+            return {
+                "storage_id": storage_id,
+                "credential_id": str(cred.credential.metadata.credential_id),
+                "issuer": cred.credential.issuer.name,
+                "issue_date": cred.credential.metadata.issued_at.strftime("%Y-%m-%d"),
+                "status": cred.credential.status.value,
+                "total_ects": cred.credential.total_ects_credits,
+                "courses": [
+                    {"name": course.course_name, "grade": course.grade.score}
+                    for course in cred.credential.courses
+                ]
+            }
+
+        @self.app.post("/presentations", response_class=JSONResponse)
+        async def create_presentation(
+            presentation: PresentationRequest, user: UserSession = Depends(self.auth_deps['require_auth'])
+        ):
+            """Creates a new presentation from selected credentials."""
+            wallet = self._get_student_wallet(user)
+            presentation_manager = PresentationManager(wallet)
+            
+            credential_selections = [
+                {'storage_id': storage_id, 'disclosure_level': 'standard'}
+                for storage_id in presentation.credentials
+            ]
+            
+            presentation_id = presentation_manager.create_presentation(
+                purpose=presentation.purpose,
+                credential_selections=credential_selections,
+                recipient=presentation.recipient,
+                expires_hours=72
+            )
+            
+            presentation_manager.sign_presentation(presentation_id)
+            
+            export_dir = Path("./presentations")
+            export_dir.mkdir(exist_ok=True)
+            output_path = export_dir / f"{presentation_id}.json"
+            
+            presentation_manager.export_presentation(
+                presentation_id, 
+                str(output_path),
+                PresentationFormat(presentation.format)
+            )
+            
+            return {
+                "presentation_id": presentation_id,
+                "download_url": f"/presentations/{presentation_id}/download"
+            }
+        
+        @self.app.get("/presentations/{presentation_id}/download")
+        async def download_presentation(
+            presentation_id: str, user: UserSession = Depends(self.auth_deps['require_auth'])
+        ):
+            """Downloads a presentation file."""
+            file_path = Path(f"./presentations/{presentation_id}.json")
+            
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail="Presentation not found")
+            
+            return FileResponse(file_path, filename=f"presentation_{presentation_id[:8]}.json")
+
 # =============================================================================
-# PUNTO DI INGRESSO
+# APPLICATION ENTRY POINT
 # =============================================================================
 
 _dashboard_instance = None
 
 def get_dashboard_app() -> FastAPI:
-    """Factory function per ottenere l'istanza dell'app"""
+    """Factory function to get the application instance."""
     global _dashboard_instance
     if _dashboard_instance is None:
         _dashboard_instance = AcademicCredentialsDashboard()
@@ -781,6 +832,6 @@ def get_dashboard_app() -> FastAPI:
 app = get_dashboard_app()
 
 if __name__ == "__main__":
-    print("🌐 Avvio Academic Credentials Dashboard in modalità standalone...")
+    print("🌐 Starting Academic Credentials Dashboard in standalone mode...")
     dashboard = AcademicCredentialsDashboard()
     dashboard.run()

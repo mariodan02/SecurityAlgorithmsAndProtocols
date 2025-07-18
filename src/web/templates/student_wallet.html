@@ -2,7 +2,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="h4 mb-0">Wallet credenziali</h1>
-    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#presentationModal">
+    <button id="createPresentationBtn" type="button" class="btn btn-sm btn-primary disabled">
         Crea presentazione
     </button>
 </div>
@@ -12,19 +12,30 @@
     <table class="table table-hover">
         <thead>
             <tr>
+                <th></th>
                 <th>Emessa da</th>
                 <th>Data emissione</th>
                 <th>Corsi</th>
                 <th>Stato</th>
+                <th>Azioni</th>
             </tr>
         </thead>
         <tbody>
             {% for cred in credentials %}
             <tr>
+                <td>
+                    <input type="checkbox" class="credential-check" data-id="{{ cred.storage_id }}">
+                </td>
                 <td>{{ cred.issuer }}</td>
                 <td>{{ cred.issue_date }}</td>
                 <td>{{ cred.total_courses }}</td>
                 <td><span class="badge bg-success">{{ cred.status }}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary view-credential" 
+                            data-id="{{ cred.storage_id }}">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -38,6 +49,21 @@
 </div>
 {% endif %}
 
+<!-- Credential Details Modal -->
+<div class="modal fade" id="credentialModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Dettaglio Credenziale</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="credentialDetails"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Presentation Modal -->
 <div class="modal fade" id="presentationModal" tabindex="-1">
   <div class="modal-dialog">
@@ -49,12 +75,25 @@
       <div class="modal-body">
         <form id="presentationForm">
             <div class="mb-3">
-                <label class="form-label">Scopo della presentazione</label>
+                <label class="form-label">Scopo della presentazione*</label>
                 <input type="text" class="form-control" name="purpose" required>
             </div>
             <div class="mb-3">
                 <label class="form-label">Destinatario (opzionale)</label>
                 <input type="text" class="form-control" name="recipient">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Formato presentazione</label>
+                <select class="form-select" name="format">
+                    <option value="json">JSON</option>
+                    <option value="signed_json">JSON Firma Digitale</option>
+                    <option value="verifiable_credential">Verifiable Credential</option>
+                    <option value="pdf_report">PDF Report</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Credenziali selezionate</label>
+                <ul id="selectedCredentials" class="list-group"></ul>
             </div>
         </form>
       </div>
@@ -69,14 +108,110 @@
 </div>
 
 <script>
-// Simplified JavaScript
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', function() {
+    const createBtn = document.getElementById('createPresentationBtn');
+    const checkboxes = document.querySelectorAll('.credential-check');
+    const viewButtons = document.querySelectorAll('.view-credential');
+    const selectedList = document.getElementById('selectedCredentials');
     const generateBtn = document.getElementById('generatePresentationBtn');
-    
-    generateBtn.addEventListener('click', async function() {
-        // Implementation remains mostly the same
-        // with simplified UI updates
+    let selectedCredentials = [];
+
+    // Handle credential selection
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const id = this.dataset.id;
+            
+            if (this.checked) {
+                selectedCredentials.push(id);
+            } else {
+                selectedCredentials = selectedCredentials.filter(item => item !== id);
+            }
+            
+            // Update UI
+            createBtn.disabled = selectedCredentials.length === 0;
+            updateSelectedList();
+        });
     });
+
+    // View credential details
+    viewButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const id = this.dataset.id;
+            fetch(`/credentials/${id}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('credentialDetails').innerHTML = `
+                        <h6>${data.issuer}</h6>
+                        <p><strong>ID:</strong> ${data.credential_id}</p>
+                        <p><strong>Emessa il:</strong> ${data.issue_date}</p>
+                        <p><strong>Stato:</strong> ${data.status}</p>
+                        <p><strong>Crediti ECTS:</strong> ${data.total_ects}</p>
+                        <p><strong>Corsi:</strong></p>
+                        <ul>
+                            ${data.courses.map(course => `<li>${course.name} - ${course.grade}</li>`).join('')}
+                        </ul>
+                    `;
+                    new bootstrap.Modal(document.getElementById('credentialModal')).show();
+                });
+        });
+    });
+
+    // Open presentation modal
+    createBtn.addEventListener('click', function() {
+        updateSelectedList();
+        new bootstrap.Modal(document.getElementById('presentationModal')).show();
+    });
+
+    // Generate presentation
+    generateBtn.addEventListener('click', async function() {
+        const form = document.getElementById('presentationForm');
+        const formData = new FormData(form);
+        const data = {
+            purpose: formData.get('purpose'),
+            recipient: formData.get('recipient'),
+            format: formData.get('format'),
+            credentials: selectedCredentials
+        };
+
+        try {
+            const response = await fetch('/presentations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+            
+            if (response.ok) {
+                alert(`Presentazione creata con successo! ID: ${result.presentation_id}`);
+                // Close modal and reset
+                bootstrap.Modal.getInstance(document.getElementById('presentationModal')).hide();
+                resetSelection();
+            } else {
+                throw new Error(result.detail || 'Errore nella creazione');
+            }
+        } catch (error) {
+            alert(`Errore: ${error.message}`);
+        }
+    });
+
+    function updateSelectedList() {
+        selectedList.innerHTML = '';
+        selectedCredentials.forEach(id => {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            li.textContent = `Credenziale ${id.substring(0, 8)}...`;
+            selectedList.appendChild(li);
+        });
+    }
+
+    function resetSelection() {
+        selectedCredentials = [];
+        checkboxes.forEach(cb => cb.checked = false);
+        createBtn.disabled = true;
+    }
 });
 </script>
 {% endblock %}

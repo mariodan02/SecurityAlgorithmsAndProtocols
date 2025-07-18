@@ -18,7 +18,7 @@ sys.path.insert(0, str(src_dir))
 def main():
     """Avvia entrambi i server"""
     print("PROJECT WORK")
-    print("GRUPPO 1")
+    print("GRUPPO 19")
     
     # Verifica requisiti
     if not check_system_requirements():
@@ -87,7 +87,7 @@ def main():
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n\n👋 Fermando il sistema...")
+        print("\n\n Fermando il sistema...")
         print("✅ Sistema terminato")
 
 def check_system_requirements():

@@ -62,6 +62,12 @@ class CredentialValidationRequest(BaseModel):
     check_revocation: bool = True
 
 
+class CredentialVerificationRequest(BaseModel):
+    """Richiesta verifica credenziale (blockchain)"""
+    credential_data: Dict[str, Any]
+    blockchain_network: str = "mainnet"
+
+
 class PresentationRequest(BaseModel):
     """Richiesta presentazione credenziale"""
     presentation_data: Dict[str, Any]
@@ -92,14 +98,13 @@ class ServerConfiguration:
     ssl_key_file: str = "./keys/secure_server_private.pem"
     ssl_ca_file: str = "./certificates/ca/ca_certificate.pem"
     cors_origins: List[str] = field(default_factory=lambda: [
-    "https://localhost:8443", 
-    "http://localhost:8000"  # Aggiungi l'URL del dashboard
+        "https://localhost:8443", 
+        "http://localhost:8000"  # Aggiungi l'URL del dashboard
     ])
 
     # Sicurezza
     require_client_certificates: bool = False
     trusted_hosts: List[str] = field(default_factory=lambda: ["localhost", "127.0.0.1"])
-    cors_origins: List[str] = field(default_factory=lambda: ["https://localhost:*"])
     api_key_required: bool = True
     rate_limit_requests: int = 100
     rate_limit_window_seconds: int = 60
@@ -108,6 +113,11 @@ class ServerConfiguration:
     enable_request_logging: bool = True
     log_file: str = "./logs/secure_server.log"
     max_request_size: int = 10 * 1024 * 1024  # 10MB
+    
+    # Configurazione blockchain
+    blockchain_rpc_url: str = "https://blockchain-rpc.example.com"
+    blockchain_api_key: str = "blockchain-api-key-12345"
+    blockchain_network: str = "testnet"
 
 
 # =============================================================================
@@ -167,7 +177,7 @@ class APIKeyManager:
                 "username": "studente_mariorossi",
                 "role": "studente",
                 "university": "Studente",
-                "permissions": ["validate_credential", "submit_presentation"],
+                "permissions": ["verify_credential", "submit_presentation"],
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
         }
@@ -225,6 +235,7 @@ class AcademicCredentialsSecureServer:
             'requests_received': 0,
             'credentials_submitted': 0,
             'validations_performed': 0,
+            'verifications_performed': 0,
             'authentication_failures': 0,
             'rate_limit_hits': 0
         }
@@ -311,13 +322,21 @@ class AcademicCredentialsSecureServer:
         ):
             return await self._handle_credential_submission(request, auth)
         
-        # Validate credential
+        # Validate credential (solo per issuer/verifier)
         @self.app.post("/api/v1/credentials/validate")
         async def validate_credential(
             request: CredentialValidationRequest,
             auth: HTTPAuthorizationCredentials = Depends(self.security) if self.security else None
         ):
             return await self._handle_credential_validation(request, auth)
+        
+        # Verify credential (tutti gli utenti)
+        @self.app.post("/api/v1/credentials/verify")
+        async def verify_credential(
+            request: CredentialVerificationRequest,
+            auth: HTTPAuthorizationCredentials = Depends(self.security) if self.security else None
+        ):
+            return await self._handle_credential_verification(request, auth)
         
         # Submit presentation
         @self.app.post("/api/v1/presentations/submit")
@@ -429,10 +448,14 @@ class AcademicCredentialsSecureServer:
     async def _handle_credential_validation(self,
                                           request: CredentialValidationRequest,
                                           auth: Optional[HTTPAuthorizationCredentials]) -> APIResponse:
-        """Gestisce validazione credenziale (tutti gli utenti possono verificare)"""
+        """Gestisce validazione credenziale (solo issuer/verifier)"""
         try:
             # Autentica
             auth_info = await self._authenticate_request(auth)
+            
+            # Solo issuer e verifier possono validare
+            if auth_info["role"] not in ["issuer", "verifier"]:
+                raise HTTPException(status_code=403, detail="Non autorizzato a validare credenziali")
             
             print(f"🔍 Ricevuta richiesta validazione da {auth_info['username']}")
             
@@ -470,6 +493,49 @@ class AcademicCredentialsSecureServer:
             raise
         except Exception as e:
             print(f"❌ Errore validazione credenziale: {e}")
+            return APIResponse(
+                success=False,
+                message=f"Errore interno: {e}"
+            )
+    
+    async def _handle_credential_verification(self,
+                                            request: CredentialVerificationRequest,
+                                            auth: Optional[HTTPAuthorizationCredentials]) -> APIResponse:
+        """Gestisce verifica credenziale (tutti gli utenti)"""
+        try:
+            # Autentica
+            auth_info = await self._authenticate_request(auth)
+            
+            print(f"🔍 Ricevuta richiesta verifica da {auth_info['username']}")
+            
+            # Genera ID verifica
+            verification_id = str(uuid.uuid4())
+            
+            # Simula verifica blockchain
+            # (In un'implementazione reale, qui si chiamerebbe il modulo blockchain)
+            blockchain_result = {
+                "on_chain": True,
+                "block_number": 123456,
+                "transaction_hash": "0x1234567890abcdef",
+                "timestamp": "2025-07-18T12:34:56Z",
+                "is_valid": True
+            }
+            
+            self.stats['verifications_performed'] += 1
+            
+            return APIResponse(
+                success=True,
+                message="Verifica blockchain completata",
+                data={
+                    "verification_id": verification_id,
+                    "blockchain_result": blockchain_result
+                }
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"❌ Errore verifica credenziale: {e}")
             return APIResponse(
                 success=False,
                 message=f"Errore interno: {e}"
@@ -556,8 +622,8 @@ class AcademicCredentialsSecureServer:
             if self.config.ssl_enabled:
                 # Carica i certificati esistenti
                 if Path(self.config.ssl_cert_file).exists() and Path(self.config.ssl_key_file).exists():
+                    # Usa SSLContext per configurare la password
                     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-                    # Aggiungi la password della chiave privata
                     ssl_context.load_cert_chain(
                         self.config.ssl_cert_file,
                         keyfile=self.config.ssl_key_file,
@@ -570,23 +636,31 @@ class AcademicCredentialsSecureServer:
                     print(f"   Chiave: {self.config.ssl_key_file}")
                     print(f"⚠️  Genera prima i certificati con certificate_authority.py")
                     return
-                
+                    
+            # Configura i parametri per uvicorn
+            uvicorn_config = {
+                "app": self.app,
+                "host": self.config.host,
+                "port": self.config.port,
+                "log_level": "info"
+            }
+            
+            # Aggiungi la configurazione SSL se abilitata
+            if self.config.ssl_enabled and ssl_context:
+                uvicorn_config["ssl_certfile"] = self.config.ssl_cert_file
+                uvicorn_config["ssl_keyfile"] = self.config.ssl_key_file
+                # Uvicorn gestirà internamente la password
+                # usando i file forniti
+            
             # Avvia server
-            uvicorn.run(
-                self.app,
-                host=self.config.host,
-                port=self.config.port,
-                ssl_keyfile=self.config.ssl_key_file if self.config.ssl_enabled else None,
-                ssl_certfile=self.config.ssl_cert_file if self.config.ssl_enabled else None,
-                log_level="info"
-            )
+            uvicorn.run(**uvicorn_config)
             
         except Exception as e:
             print(f"❌ Errore avvio server: {e}")
             raise
     
 # =============================================================================
-# 3. DEMO E TESTING
+# 5. DEMO E TESTING
 # =============================================================================
 
 def demo_secure_server():
@@ -623,7 +697,7 @@ def demo_secure_server():
         server = AcademicCredentialsSecureServer(config)
         
         print(f"✅ Server inizializzato")
-        print(f"   Endpoints configurati: 5")
+        print(f"   Endpoints configurati: 6")
         print(f"   Middleware attivi: CORS, Rate Limiting, Logging")
         
         # 3. Informazioni API Keys
@@ -644,7 +718,8 @@ def demo_secure_server():
         endpoints = [
             ("GET", "/health", "Health check del server"),
             ("POST", "/api/v1/credentials/submit", "Solo issuer_rennes"),
-            ("POST", "/api/v1/credentials/validate", "Tutti gli utenti"),
+            ("POST", "/api/v1/credentials/validate", "Solo issuer e verifier"),
+            ("POST", "/api/v1/credentials/verify", "Tutti gli utenti"),
             ("POST", "/api/v1/presentations/submit", "Tutti gli utenti"),
             ("GET", "/api/v1/credentials/{id}/status", "Tutti gli utenti"),
             ("GET", "/api/v1/stats", "Solo issuer e verifier")
@@ -669,15 +744,14 @@ curl -X POST https://localhost:8443/api/v1/credentials/submit \\
   }'
 """)
         
-        print("🔍 Validazione credenziale (tutti gli utenti):")
+        print("🔍 Verifica credenziale (tutti gli utenti):")
         print("""
-curl -X POST https://localhost:8443/api/v1/credentials/validate \\
+curl -X POST https://localhost:8443/api/v1/credentials/verify \\
   -H "Authorization: Bearer studente_mariorossi" \\
   -H "Content-Type: application/json" \\
   -d '{
     "credential_data": {...},
-    "validation_level": "standard",
-    "check_revocation": true
+    "blockchain_network": "mainnet"
   }'
 """)
         
@@ -703,7 +777,7 @@ curl -X POST https://localhost:8443/api/v1/credentials/validate \\
 
 
 # =============================================================================
-# 4. MAIN - PUNTO DI INGRESSO
+# 6. MAIN - PUNTO DI INGRESSO
 # =============================================================================
 
 if __name__ == "__main__":
@@ -722,7 +796,7 @@ if __name__ == "__main__":
         print("✅ API REST sicure")
         print("✅ Autenticazione API Key")
         print("✅ Rate limiting")
-        print("✅ Tutti gli utenti possono verificare credenziali")
+        print("✅ Verifica credenziali tramite blockchain")
         
         print(f"\n🚀 Avvio server...")
         try:

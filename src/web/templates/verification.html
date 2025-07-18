@@ -28,6 +28,28 @@
             </div>
         </div>
 
+        <!-- NUOVO FORM PER VERIFICA COMPLETA -->
+        <div class="card mt-4">
+            <div class="card-body">
+                <h6 class="text-muted mb-3">Verifica completa</h6>
+                <form id="full-verify-form">
+                    <div class="mb-3">
+                        <label class="form-label">File presentazione (.json)</label>
+                        <input class="form-control" type="file" id="fullPresentationFile" accept=".json" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Chiave pubblica studente (PEM)</label>
+                        <textarea class="form-control" id="studentPublicKey" rows="4" required 
+                                  placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="full-verify-button">
+                        <span id="full-verify-text">Verifica completa</span>
+                        <span id="full-verify-spinner" class="spinner-border spinner-border-sm d-none"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
         <div class="card mt-4" id="verification-result-container" style="display: none;">
             <div class="card-body">
                 <h6 class="text-muted mb-3">Risultato verifica</h6>
@@ -51,61 +73,24 @@
 </div>
 
 <script>
-    // Funzione per caricare le verifiche in sospeso
-    async function fetchPendingVerifications() {
-        const list = document.getElementById('pending-verifications-list');
-        const spinner = document.getElementById('pending-spinner');
-        
-        try {
-            const response = await fetch('/api/verification/pending');
-            const data = await response.json();
-            
-            list.innerHTML = ''; // Pulisce la lista
-            if (data.pending && data.pending.length > 0) {
-                data.pending.forEach(item => {
-                    const listItem = document.createElement('li');
-                    listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
-                    listItem.innerHTML = `
-                        <div>
-                            <strong>${item.student_name}</strong>
-                            <small class="d-block text-muted">${item.purpose}</small>
-                        </div>
-                        <span class="badge bg-warning rounded-pill">${item.status}</span>
-                    `;
-                    list.appendChild(listItem);
-                });
-            } else {
-                list.innerHTML = '<li class="list-group-item">Nessuna verifica in sospeso.</li>';
-            }
-        } catch (error) {
-            console.error("Errore nel caricamento delle verifiche in sospeso:", error);
-            list.innerHTML = '<li class="list-group-item text-danger">Impossibile caricare i dati.</li>';
-        } finally {
-            if(spinner) spinner.remove();
-        }
-    }
-
-    // Gestione dell'invio del form di verifica
-    document.getElementById('verify-presentation-form').addEventListener('submit', async function(event) {
+    // Gestione verifica completa
+    document.getElementById('full-verify-form').addEventListener('submit', async function(event) {
         event.preventDefault();
 
-        const button = document.getElementById('verify-button');
-        const buttonText = document.getElementById('verify-button-text');
-        const spinner = document.getElementById('verify-spinner');
-        const resultContainer = document.getElementById('verification-result-container');
-        const resultContent = document.getElementById('result-content');
-        const fileInput = document.getElementById('presentationFile');
+        const button = document.getElementById('full-verify-button');
+        const buttonText = document.getElementById('full-verify-text');
+        const spinner = document.getElementById('full-verify-spinner');
+        const fileInput = document.getElementById('fullPresentationFile');
+        const publicKey = document.getElementById('studentPublicKey').value;
 
-        if (fileInput.files.length === 0) {
-            alert("Per favore, seleziona un file.");
+        if (fileInput.files.length === 0 || !publicKey) {
+            alert("Compila tutti i campi");
             return;
         }
 
-        // Prepara l'interfaccia per la richiesta
         buttonText.style.display = 'none';
-        spinner.style.display = 'inline-block';
+        spinner.classList.remove('d-none');
         button.disabled = true;
-        resultContainer.style.display = 'none';
 
         const file = fileInput.files[0];
         const reader = new FileReader();
@@ -113,33 +98,30 @@
         reader.onload = async (e) => {
             try {
                 const presentationData = JSON.parse(e.target.result);
-                const purpose = document.getElementById('verificationPurpose').value;
-
-                // Invia i dati all'endpoint API
-                const response = await fetch('/verification/verify', {
+                
+                const response = await fetch('/verification/full-verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         presentation_data: presentationData,
-                        purpose: purpose
+                        student_public_key: publicKey,
+                        purpose: "credit_recognition"
                     })
                 });
 
                 const result = await response.json();
-
+                
                 if (response.ok && result.success) {
-                    displayVerificationResult(result.verification_result);
+                    displayVerificationReport(result.verification_report);
                 } else {
-                    throw new Error(result.message || 'Errore durante la verifica.');
+                    throw new Error(result.message || 'Errore durante la verifica completa');
                 }
 
             } catch (error) {
-                resultContent.innerHTML = `<div class="alert alert-danger"><strong>Errore:</strong> ${error.message}</div>`;
-                resultContainer.style.display = 'block';
+                alert(`Errore: ${error.message}`);
             } finally {
-                // Ripristina il bottone
-                buttonText.style.display = 'inline-block';
-                spinner.style.display = 'none';
+                buttonText.style.display = 'inline';
+                spinner.classList.add('d-none');
                 button.disabled = false;
             }
         };
@@ -147,48 +129,142 @@
         reader.readAsText(file);
     });
 
-    // Funzione per mostrare il risultato della verifica in modo formattato
-    function displayVerificationResult(result) {
+    // Mostra report dettagliato
+    function displayVerificationReport(report) {
         const resultContent = document.getElementById('result-content');
         const resultContainer = document.getElementById('verification-result-container');
-
-        const isValid = result.result === 'valid';
-        const alertClass = isValid ? 'alert-success' : 'alert-danger';
-        const resultText = isValid ? 'VALIDA' : 'NON VALIDA';
-
-        resultContent.innerHTML = `
-            <div class="alert ${alertClass} d-flex align-items-center" role="alert">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-check-circle-fill flex-shrink-0 me-2" viewBox="0 0 16 16" role="img" aria-label="Success:">
-                    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
-                </svg>
-                <div>
-                    <strong>Esito della Verifica: ${resultText}</strong>
-                </div>
+        
+        let htmlContent = `
+            <div class="alert ${report.is_valid ? 'alert-success' : 'alert-danger'}">
+                <h5>Risultato verifica: ${report.overall_result}</h5>
+                <p>Credenziale: ${report.credential_id}</p>
             </div>
-            <ul class="list-group">
-                <li class="list-group-item"><strong>ID Verifica:</strong> <code>${result.verification_id}</code></li>
-                <li class="list-group-item"><strong>Data Verifica:</strong> ${new Date(result.verified_at).toLocaleString('it-IT')}</li>
-                <li class="list-group-item"><strong>Verificato da:</strong> ${result.verified_by}</li>
-                <li class="list-group-item"><strong>Punteggio di Confidenza:</strong> 
-                    <div class="progress">
-                        <div class="progress-bar" role="progressbar" style="width: ${result.confidence_score * 100}%;" aria-valuenow="${result.confidence_score * 100}" aria-valuemin="0" aria-valuemax="100">${(result.confidence_score * 100).toFixed(1)}%</div>
-                    </div>
-                </li>
-                <li class="list-group-item"><strong>Dettagli:</strong>
-                    <ul>
-                        <li>Credenziali Verificate: ${result.details.credentials_verified}</li>
-                        <li>Attributi Controllati: ${result.details.attributes_checked}</li>
-                        <li>Controlli di Sicurezza Superati: ${result.details.security_checks_passed}</li>
-                    </ul>
-                </li>
-            </ul>
+            <div class="mt-3">
+                <h6>Dettagli tecnici:</h6>
+                <ul>
+                    <li>Firma studente: ${report.technical_details.student_signature_valid ? '✅ Valida' : '❌ Non valida'}</li>
+                    <li>Firma università: ${report.technical_details.signature_valid ? '✅ Valida' : '❌ Non valida'}</li>
+                    <li>Merkle Tree: ${report.technical_details.merkle_tree_valid ? '✅ Valido' : '❌ Non valido'}</li>
+                    <li>Revoca blockchain: ${report.technical_details.blockchain_status || 'Non verificato'}</li>
+                    <li>Validità temporale: ${report.technical_details.temporal_valid ? '✅ Valida' : '❌ Non valida'}</li>
+                </ul>
         `;
+        
+        if (report.errors.length > 0) {
+            htmlContent += `<h6 class="mt-3">Errori:</h6><ul>`;
+            report.errors.forEach(error => {
+                htmlContent += `<li>${error.message} [${error.code}]</li>`;
+            });
+            htmlContent += `</ul>`;
+        }
+        
+        if (report.warnings.length > 0) {
+            htmlContent += `<h6 class="mt-3">Warning:</h6><ul>`;
+            report.warnings.forEach(warning => {
+                htmlContent += `<li>${warning.message} [${warning.code}]</li>`;
+            });
+            htmlContent += `</ul>`;
+        }
+        
+        resultContent.innerHTML = htmlContent;
         resultContainer.style.display = 'block';
     }
+    
+    // Aggiungere solo il nuovo codice per la verifica completa:
+    document.getElementById('full-verify-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
 
-    // Carica i dati all'avvio della pagina
-    document.addEventListener('DOMContentLoaded', () => {
-        fetchPendingVerifications();
+        const button = document.getElementById('full-verify-button');
+        const buttonText = document.getElementById('full-verify-text');
+        const spinner = document.getElementById('full-verify-spinner');
+        const fileInput = document.getElementById('fullPresentationFile');
+        const publicKeyTextarea = document.getElementById('studentPublicKey');
+
+        if (fileInput.files.length === 0 || !publicKeyTextarea.value.trim()) {
+            alert("Per favore, carica un file e inserisci la chiave pubblica");
+            return;
+        }
+
+        button.disabled = true;
+        buttonText.style.display = 'none';
+        spinner.classList.remove('d-none');
+
+        try {
+            const file = fileInput.files[0];
+            const publicKey = publicKeyTextarea.value.trim();
+            const presentationData = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(JSON.parse(e.target.result));
+                reader.onerror = (e) => reject(new Error("Errore lettura file"));
+                reader.readAsText(file);
+            });
+
+            const response = await fetch('/verification/full-verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    presentation_data: presentationData,
+                    student_public_key: publicKey,
+                    purpose: "credit_recognition"
+                })
+            });
+
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+                displayVerificationReport(result.verification_report);
+            } else {
+                throw new Error(result.message || 'Errore durante la verifica');
+            }
+        } catch (error) {
+            alert(`Errore: ${error.message}`);
+        } finally {
+            button.disabled = false;
+            buttonText.style.display = 'inline';
+            spinner.classList.add('d-none');
+        }
     });
+
+    function displayVerificationReport(report) {
+        const resultContent = document.getElementById('result-content');
+        const resultContainer = document.getElementById('verification-result-container');
+        
+        let html = `<div class="alert ${report.is_valid ? 'alert-success' : 'alert-danger'}">`;
+        html += `<h5>Risultato verifica: ${report.overall_result.toUpperCase()}</h5>`;
+        html += `<p>Credenziale: ${report.credential_id}</p>`;
+        html += `<p>Livello validazione: ${report.validation_level}</p>`;
+        html += `</div>`;
+        
+        html += `<div class="mt-4"><h6>Dettagli tecnici:</h6>`;
+        html += `<ul class="list-group">`;
+        html += `<li class="list-group-item">Firma studente: ${report.technical_details.student_signature_valid ? '✅ VALIDA' : '❌ NON VALIDA'}</li>`;
+        html += `<li class="list-group-item">Firma università: ${report.technical_details.signature_valid ? '✅ VALIDA' : '❌ NON VALIDA'}</li>`;
+        html += `<li class="list-group-item">Merkle Tree: ${report.technical_details.merkle_tree_valid ? '✅ VALIDO' : '❌ NON VALIDO'}</li>`;
+        html += `<li class="list-group-item">Revoca blockchain: ${report.technical_details.blockchain_status || 'Non verificato'}</li>`;
+        html += `<li class="list-group-item">Validità temporale: ${report.technical_details.temporal_valid ? '✅ VALIDA' : '❌ NON VALIDA'}</li>`;
+        html += `</ul></div>`;
+        
+        if (report.errors.length > 0) {
+            html += `<div class="mt-4"><h6>Errori riscontrati:</h6><ul>`;
+            report.errors.forEach(error => {
+                html += `<li class="text-danger">${error.message} [codice: ${error.code}]</li>`;
+            });
+            html += `</ul></div>`;
+        }
+        
+        if (report.warnings.length > 0) {
+            html += `<div class="mt-3"><h6>Avvertenze:</h6><ul>`;
+            report.warnings.forEach(warning => {
+                html += `<li class="text-warning">${warning.message} [codice: ${warning.code}]</li>`;
+            });
+            html += `</ul></div>`;
+        }
+        
+        resultContent.innerHTML = html;
+        resultContainer.style.display = 'block';
+        
+        // Scroll automatico ai risultati
+        resultContainer.scrollIntoView({ behavior: 'smooth' });
+    }
 </script>
 {% endblock %}

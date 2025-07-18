@@ -3,20 +3,33 @@
 # File: web/dashboard.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
+import sys
+import os
 
+# Aggiungi la directory genitore al percorso di sistema
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+import base64
 import os
 import json
 import uuid
 import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Union
-import asyncio
+from typing import Dict, List, Optional, Any
 import logging
-from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional, Any, Union  
+from dataclasses import dataclass
+
+# Verifica
+from src.communication.secure_server import CredentialVerificationRequest
+from src.credentials.models import AcademicCredential
+from src.crypto.foundations import CryptoUtils, DigitalSignature
+from src.credentials.validator import AcademicCredentialValidator, ValidationLevel, ValidationResult, ValidatorConfiguration
+from src.pki.certificate_manager import CertificateManager
 
 # FastAPI e web dependencies
-from fastapi import FastAPI, Request, HTTPException, Depends, Form, File, UploadFile
+from fastapi import FastAPI, Request, HTTPException, Depends, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -25,7 +38,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
 
 # Pydantic per validazione
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 
 # =============================================================================
 # CONFIGURAZIONE E MODELLI DATI
@@ -81,6 +94,11 @@ class PresentationRequest(BaseModel):
 
 class VerificationRequest(BaseModel):
     presentation_data: Dict[str, Any]
+    purpose: str
+
+class FullVerificationRequest(BaseModel):
+    presentation_data: Dict[str, Any]
+    student_public_key: str  # Chiave pubblica dello studente in PEM
     purpose: str
 
 # =============================================================================
@@ -562,6 +580,17 @@ class AcademicCredentialsDashboard:
     def _setup_routes(self) -> None:
         """Configura tutte le route dell'applicazione"""
 
+    async def _call_secure_api(self, endpoint: str, payload: dict) -> dict:
+        """Helper per chiamare le API sicure"""
+        import httpx
+        url = f"{self.config.secure_server_url}{endpoint}"
+        headers = {"Authorization": f"Bearer {self.config.secure_server_api_key}"}
+        
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        
         @self.app.get("/debug/force-init")
         async def force_initialization(request: Request):
             try:
@@ -636,6 +665,78 @@ class AcademicCredentialsDashboard:
             request.session.clear()
             return RedirectResponse(url="/", status_code=HTTP_302_FOUND)
         
+        @self.app.post("/verification/full-verify")
+        async def full_verify_presentation(
+            request: FullVerificationRequest,
+            user: UserSession = Depends(require_verify_permission)
+        ):
+            """Verifica completa di una presentazione"""
+            try:
+                # 1. Verifica firma studente
+                crypto_utils = CryptoUtils()
+                presentation = request.presentation_data
+                student_signature = presentation.get("student_signature")
+                presentation_data = presentation["credential_data"]
+                
+                # Calcola hash dei dati della presentazione
+                json_data = json.dumps(presentation_data, sort_keys=True, separators=(',', ':')).encode('utf-8')
+                data_hash = crypto_utils.sha256_hash(json_data)
+                
+                # Verifica firma
+                signer = DigitalSignature("PSS")
+                public_key = CertificateManager.load_public_key(request.student_public_key)
+                is_valid = signer.verify_signature(public_key, data_hash, base64.b64decode(student_signature))
+                
+                if not is_valid:
+                    return JSONResponse({
+                        "success": False,
+                        "message": "Firma studente non valida"
+                    }, status_code=400)
+                
+                # 2. Verifica credenziale
+                credential = AcademicCredential.from_dict(presentation_data)
+                validator_config = ValidatorConfiguration(
+                    trusted_ca_certificates=["./certificates/ca/ca_certificate.pem"]
+                )
+                validator = AcademicCredentialValidator(validator_config)
+                report = validator.validate_credential(credential, ValidationLevel.COMPLETE)
+                
+                # 3. Verifica revoca sulla blockchain
+                verification_req = CredentialVerificationRequest(
+                    credential_data=presentation_data,
+                    blockchain_network="mainnet"
+                )
+                secure_response = await self._call_secure_api(
+                    "/api/v1/credentials/verify", 
+                    verification_req.dict()
+                )
+                
+                if not secure_response.get("success") or not secure_response["data"]["blockchain_result"]["is_valid"]:
+                    report.overall_result = ValidationResult.REVOKED
+                    report.add_error("BLOCKCHAIN_REVOKED", "Credenziale revocata sulla blockchain")
+                
+                # 4. Verifica temporale
+                now = datetime.datetime.now(datetime.timezone.utc)
+                if (credential.metadata.expires_at and now > credential.metadata.expires_at):
+                    report.add_error("CREDENTIAL_EXPIRED", "Credenziale scaduta")
+                
+                # 5. Verifica periodo di studio
+                for course in credential.courses:
+                    if not (credential.study_period.start_date <= course.exam_date <= credential.study_period.end_date):
+                        report.add_warning("COURSE_DATE_OUT_OF_PERIOD", 
+                                         f"Data esame fuori dal periodo di studio: {course.course_name}")
+                
+                return JSONResponse({
+                    "success": True,
+                    "verification_report": report.to_dict()
+                })
+                
+            except Exception as e:
+                return JSONResponse({
+                    "success": False,
+                    "message": f"Errore verifica: {str(e)}"
+                }, status_code=500)
+
         # === ROUTE PER STUDENTI ===
         
         @self.app.get("/wallet", response_class=HTMLResponse)

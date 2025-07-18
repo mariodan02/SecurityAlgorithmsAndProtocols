@@ -277,7 +277,7 @@ def main():
             "common_name": "Academic Credentials Secure Server",
             "country": "IT",
             "organization": "Academic Credentials Project",
-            "password": "ServerSecurePass123!",
+            "password": "Unisa2025",
             "serial": "1003",
             "sans": [
                 {"type": "DNS", "value": "localhost"},

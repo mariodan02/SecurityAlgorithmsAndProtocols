@@ -3,8 +3,13 @@
 # File: credentials/validator.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
-
+import sys
 import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
 import json
 import datetime
 from pathlib import Path
@@ -23,10 +28,10 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from crypto.foundations import DigitalSignature, CryptoUtils, MerkleTree
-    from pki.certificate_manager import CertificateManager
-    from pki.ocsp_client import OCSPClient, OCSPStatus
-    from credentials.models import (
+    from src.crypto.foundations import DigitalSignature, CryptoUtils, MerkleTree
+    from src.pki.certificate_manager import CertificateManager
+    from src.pki.ocsp_client import OCSPClient, OCSPStatus
+    from src.credentials.models import (
         AcademicCredential, CredentialStatus, Course,
         CredentialFactory
     )
@@ -469,13 +474,9 @@ class AcademicCredentialValidator:
             # Verifica scadenza
             if credential.metadata.expires_at:
                 if now > credential.metadata.expires_at:
-                    if self.config.accept_expired_credentials:
-                        report.add_warning("CREDENTIAL_EXPIRED", 
-                                         f"Credenziale scaduta il {credential.metadata.expires_at}")
-                    else:
-                        report.add_error("CREDENTIAL_EXPIRED", 
-                                       f"Credenziale scaduta il {credential.metadata.expires_at}")
-                        return
+                    report.add_error("CREDENTIAL_EXPIRED", 
+                                   f"Credenziale scaduta il {credential.metadata.expires_at}")
+                    return
             
             # Verifica date emissione
             if credential.metadata.issued_at > now:
@@ -486,19 +487,12 @@ class AcademicCredentialValidator:
             if credential.study_period.start_date >= credential.study_period.end_date:
                 report.add_error("INVALID_STUDY_PERIOD", "Periodo di studio non valido")
             
-            # Verifica che gli esami siano nel periodo
-            for i, course in enumerate(credential.courses):
-                if not (credential.study_period.start_date <= course.exam_date <= credential.study_period.end_date):
-                    report.add_warning("COURSE_DATE_OUT_OF_PERIOD", 
-                                     f"Corso {course.course_name} fuori dal periodo di studio",
-                                     field=f"courses[{i}].exam_date")
-            
             report.temporal_valid = True
             report.add_info("TEMPORAL_VALID", "Validazione temporale superata")
             
         except Exception as e:
             report.add_error("TEMPORAL_VALIDATION_ERROR", f"Errore validazione temporale: {e}")
-    
+                
     def _validate_merkle_tree(self, credential: AcademicCredential, report: ValidationReport):
         """Valida integrità Merkle Tree"""
         try:

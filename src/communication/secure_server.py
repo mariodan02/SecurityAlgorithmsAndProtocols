@@ -518,7 +518,8 @@ class AcademicCredentialsSecureServer:
                 "block_number": 123456,
                 "transaction_hash": "0x1234567890abcdef",
                 "timestamp": "2025-07-18T12:34:56Z",
-                "is_valid": True
+                "is_valid": True,
+                "revoked": False  # Nuovo campo
             }
             
             self.stats['verifications_performed'] += 1
@@ -627,7 +628,7 @@ class AcademicCredentialsSecureServer:
                     ssl_context.load_cert_chain(
                         self.config.ssl_cert_file,
                         keyfile=self.config.ssl_key_file,
-                        password="ServerSecurePass123!"  # Password usata nella generazione
+                        password="Unisa2025"  # Password usata nella generazione
                     )
                     print(f"✅ SSL configurato con certificati esistenti")
                 else:

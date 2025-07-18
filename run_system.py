@@ -18,7 +18,7 @@ sys.path.insert(0, str(src_dir))
 def main():
     """Avvia entrambi i server"""
     print("PROJECT WORK")
-    print("GRUPPO 19")
+    print("GRUPPO 1")
     
     # Verifica requisiti
     if not check_system_requirements():

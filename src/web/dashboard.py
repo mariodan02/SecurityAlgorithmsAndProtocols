@@ -34,12 +34,12 @@ from pydantic import BaseModel, Field, validator
 @dataclass
 class AppConfig:
     """Configurazione centralizzata dell'applicazione"""
-    secret_key: str = "una_chiave_segreta_molto_sicura_da_cambiare"
+    secret_key: str = "Unisa2025"
     host: str = "127.0.0.1"
     port: int = 8000
     debug: bool = True
-    templates_dir: str = "./web/templates"
-    static_dir: str = "./web/static"
+    templates_dir: str = "./src//web/templates"
+    static_dir: str = "./src//web/static"
     session_timeout_minutes: int = 60
     max_file_size_mb: int = 10
 
@@ -443,7 +443,7 @@ class AcademicCredentialsDashboard:
     
     def _initialize_system_components(self) -> None:
         """Inizializza i componenti del sistema"""
-        self.logger.info("Inizializzazione componenti di sistema...")
+        self.logger.info("🚀 INIZIO Inizializzazione componenti di sistema...")
         
         # Import dei moduli del sistema (con gestione errori)
         self.issuer = None
@@ -451,16 +451,21 @@ class AcademicCredentialsDashboard:
         
         try:
             # Import condizionali dei moduli del progetto
+            self.logger.info("📦 Step 1: Aggiungendo path...")
             import sys
             sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.logger.info("✅ Path aggiunto")
             
+            self.logger.info("📦 Step 2: Importando credentials.issuer...")
             from credentials.issuer import AcademicCredentialIssuer, IssuerConfiguration
-            from credentials.models import University
-            from verification.verification_engine import CredentialVerificationEngine
-            from pki.certificate_manager import CertificateManager
-            from run_verificationCA import setup_validator_with_custom_pki
+            self.logger.info("✅ credentials.issuer importato")
             
-            # Inizializza issuer
+            self.logger.info("📦 Step 3: Importando credentials.models...")
+            from credentials.models import University
+            self.logger.info("✅ credentials.models importato")
+            
+            self.logger.info("📦 Step 4: Creando configurazione...")
+            # Configurazione dell'issuer per Université de Rennes
             issuer_config = IssuerConfiguration(
                 university_info=University(
                     name="Université de Rennes",
@@ -471,26 +476,84 @@ class AcademicCredentialsDashboard:
                 ),
                 certificate_path="./certificates/issued/university_F_RENNES01_1001.pem",
                 private_key_path="./keys/universite_rennes_private.pem",
-                private_key_password="SecurePassword123!"
+                private_key_password="SecurePassword123!",
+                backup_enabled=True,
+                backup_directory="./src/credentials/backups"
             )
+            self.logger.info("✅ Configurazione creata")
+            
+            # Verifica esistenza file di certificati e chiavi
+            self.logger.info("🔍 Step 5: Verificando files...")
+            cert_path = Path(issuer_config.certificate_path)
+            key_path = Path(issuer_config.private_key_path)
+            
+            self.logger.info(f"🔍 Controllo certificato: {cert_path}")
+            self.logger.info(f"🔍 Exists: {cert_path.exists()}")
+            
+            self.logger.info(f"🔍 Controllo chiave: {key_path}")
+            self.logger.info(f"🔍 Exists: {key_path.exists()}")
+            
+            if not cert_path.exists():
+                self.logger.error(f"❌ ERRORE: Certificato non trovato: {cert_path}")
+                self.logger.info("💡 Eseguire: cd src/pki && python certificate_authority.py")
+                return
+                
+            if not key_path.exists():
+                self.logger.error(f"❌ ERRORE: Chiave privata non trovata: {key_path}")
+                self.logger.info("💡 Eseguire: cd src/pki && python certificate_authority.py")
+                return
+            
+            self.logger.info("✅ File certificato e chiave trovati")
+            
+            # Inizializza issuer
+            self.logger.info("🏗️ Step 6: Inizializzando issuer...")
+            self.logger.info("🏗️ Chiamando AcademicCredentialIssuer(config=issuer_config)...")
+            
             self.issuer = AcademicCredentialIssuer(config=issuer_config)
             
-            # Inizializza verification engine
-            custom_validator = setup_validator_with_custom_pki()
-            if custom_validator:
-                cert_manager = CertificateManager()
-                self.verification_engine = CredentialVerificationEngine("Dashboard Verifier", cert_manager)
-                self.verification_engine.credential_validator = custom_validator
+            self.logger.info("✅ Credential Issuer inizializzato correttamente")
+            self.logger.info(f"✅ Issuer type: {type(self.issuer)}")
             
-            self.logger.info("✅ Componenti del sistema inizializzati correttamente")
+            # Crea directory base per le credenziali
+            self.logger.info("📁 Step 7: Creando directory...")
+            credentials_dir = Path("./src/credentials")
+            credentials_dir.mkdir(parents=True, exist_ok=True)
+            
+            backups_dir = Path("./src/credentials/backups")
+            backups_dir.mkdir(parents=True, exist_ok=True)
+            
+            self.logger.info("✅ Directory di sistema create")
+            self.logger.info("🎉 FINE: Inizializzazione completata con successo!")
             
         except ImportError as e:
-            self.logger.warning(f"⚠️ Alcuni moduli non disponibili: {e}")
+            self.logger.error(f"❌ ERRORE import moduli: {e}")
+            self.logger.error(f"❌ Traceback completo:")
+            import traceback
+            traceback.print_exc()
         except Exception as e:
-            self.logger.error(f"🔥 Errore durante l'inizializzazione: {e}")
-    
+            self.logger.error(f"🔥 ERRORE durante l'inizializzazione: {e}")
+            self.logger.error(f"🔥 Traceback completo:")
+            import traceback
+            traceback.print_exc()
+
     def _setup_routes(self) -> None:
         """Configura tutte le route dell'applicazione"""
+
+        @self.app.get("/debug/force-init")
+        async def force_initialization(request: Request):
+            try:
+                self.logger.info("🔄 Forzando re-inizializzazione...")
+                self._initialize_system_components()
+                return {
+                    "success": True,
+                    "issuer_initialized": self.issuer is not None,
+                    "issuer_type": type(self.issuer).__name__ if self.issuer else None
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
         
         @self.app.get("/", response_class=HTMLResponse)
         async def home(request: Request):
@@ -500,7 +563,7 @@ class AcademicCredentialsDashboard:
                 redirect_url = "/wallet" if user.role == 'studente' else "/dashboard"
                 return RedirectResponse(url=redirect_url, status_code=HTTP_302_FOUND)
             
-            return self.templates.TemplateResponse("home.html", {
+            return self.templates.TemplateResponse("base.html", {
                 "request": request,
                 "title": "Home"
             })
@@ -661,7 +724,7 @@ class AcademicCredentialsDashboard:
                 # Ordina per data di emissione (più recenti prima)
                 credentials.sort(key=lambda x: x['issued_at'], reverse=True)
                 
-            except Exception as e:
+            except ExcFeption as e:
                 self.logger.error(f"Error loading credentials: {e}")
             
             return self.templates.TemplateResponse("credentials.html", {
@@ -696,12 +759,36 @@ class AcademicCredentialsDashboard:
             course_date: List[str] = Form([])
         ):
             """Gestisce l'emissione reale di una nuova credenziale"""
-            user = self.auth_deps['require_write'](request)
+            
+            # 🔍 DEBUG AUTORIZZAZIONE
+            try:
+                current_user = self.auth_deps['get_current_user'](request)
+                self.logger.info(f"🔍 Current user: {current_user}")
+                
+                if current_user:
+                    self.logger.info(f"🔍 User permissions: {current_user.permissions}")
+                    self.logger.info(f"🔍 User role: {current_user.role}")
+                else:
+                    self.logger.error("❌ No current user found")
+                    
+                user = self.auth_deps['require_write'](request)
+                self.logger.info(f"✅ Authorization passed for user: {user.user_id}")
+                
+            except Exception as e:
+                self.logger.error(f"❌ Authorization failed: {e}")
+                return JSONResponse({
+                    "success": False,
+                    "message": f"Errore autorizzazione: {str(e)}"
+                }, status_code=403)
+            
+            # 🔍 DEBUG ISSUER
+            self.logger.info(f"🔍 DEBUG: self.issuer = {self.issuer}")
             
             try:
                 if not self.issuer:
+                    self.logger.error("❌ Issuer not initialized")
                     raise HTTPException(status_code=500, detail="Servizio di emissione non disponibile")
-                
+                        
                 # Importa modelli necessari
                 from credentials.models import (
                     PersonalInfo, Course, StudyPeriod, StudyProgram, University,

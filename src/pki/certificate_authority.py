@@ -1,5 +1,5 @@
 # =============================================================================
-# FASE 2: GESTIONE CERTIFICATI X.509 - CERTIFICATE AUTHORITY
+# FASE 2: GESTIONE CERTIFICATI X.509 - CERTIFICATE AUTHORITY (CORRETTO)
 # File: pki/certificate_authority.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
@@ -35,10 +35,11 @@ class CertificateAuthority:
     certificati per le entità del sistema, come le università.
     """
 
-    def __init__(self, root_path: str = "./root/ca"):
+    def __init__(self, root_path: str = "./certificates/ca", ca_password: str = "CASecurePassword2025"):
         self.root_path = Path(root_path)
-        self.key_path = self.root_path / "private" / "ca.key.pem"
-        self.cert_path = self.root_path / "certs" / "ca.cert.pem"
+        self.ca_password = ca_password
+        self.key_path = self.root_path / "private" / "ca_private.pem"
+        self.cert_path = self.root_path / "ca_certificate.pem"
         self.index_path = self.root_path / "index.txt"
         self.serial_path = self.root_path / "serial"
 
@@ -56,8 +57,6 @@ class CertificateAuthority:
         print("🏛️  Inizializzazione Certificate Authority...")
         self.root_path.mkdir(parents=True, exist_ok=True)
         (self.root_path / "private").mkdir(exist_ok=True)
-        (self.root_path / "certs").mkdir(exist_ok=True)
-        (self.root_path / "newcerts").mkdir(exist_ok=True)
 
         if self.key_path.exists() and self.cert_path.exists():
             print("CA già esistente. Caricamento in corso...")
@@ -106,9 +105,10 @@ class CertificateAuthority:
 
     def _save_ca_files(self, private_key, certificate):
         """Salva i file della CA (chiave e certificato)."""
-        # Salva la chiave privata
+        # Salva la chiave privata con password
+        password_bytes = self.ca_password.encode('utf-8') if self.ca_password else None
         with open(self.key_path, "wb") as f:
-            f.write(self.key_manager.serialize_private_key(private_key))
+            f.write(self.key_manager.serialize_private_key(private_key, password_bytes))
         os.chmod(self.key_path, 0o600) # Permessi restrittivi
 
         # Salva il certificato
@@ -124,11 +124,19 @@ class CertificateAuthority:
 
     def load_ca(self):
         """Carica una CA esistente dal filesystem."""
-        key_data = self.key_path.read_bytes()
-        cert_data = self.cert_path.read_bytes()
-        self.private_key = self.key_manager.deserialize_private_key(key_data)
-        self.certificate = self.cert_manager.load_certificate_from_bytes(cert_data)
-        print("✅ CA caricata correttamente.")
+        try:
+            key_data = self.key_path.read_bytes()
+            cert_data = self.cert_path.read_bytes()
+            
+            # Usa la password per decifrare la chiave privata
+            password_bytes = self.ca_password.encode('utf-8') if self.ca_password else None
+            self.private_key = self.key_manager.deserialize_private_key(key_data, password_bytes)
+            self.certificate = self.cert_manager.load_certificate_from_bytes(cert_data)
+            print("✅ CA caricata correttamente.")
+        except Exception as e:
+            print(f"❌ Errore caricamento CA: {e}")
+            print("💡 Prova a cancellare la directory ./certificates/ca e ricreare la CA")
+            raise
 
     def sign_certificate(self, csr: x509.CertificateSigningRequest, days_valid: int = 365 * 2) -> x509.Certificate:
         """Firma una Certificate Signing Request (CSR) con la chiave della CA."""
@@ -189,6 +197,7 @@ def main():
             "common_name": "Université de Rennes",
             "country": "FR",
             "organization": "Université de Rennes",
+            "erasmus_code": "F_RENNES01",
             "password": "SecurePassword123!",
             "serial": "1001"
         },
@@ -196,6 +205,7 @@ def main():
             "common_name": "Università degli Studi di Salerno",
             "country": "IT",
             "organization": "Università degli Studi di Salerno",
+            "erasmus_code": "I_SALERNO01",
             "password": "Unisa2025",
             "serial": "1002"
         }
@@ -207,7 +217,7 @@ def main():
 
     # Itera e crea i certificati
     for key_name, info in universities.items():
-        cert_path = Path(f"./certificates/issued/university_{info['country']}_{info['erasmus_code']}_{info['serial']}.pem")
+        cert_path = Path(f"./certificates/issued/university_{info['erasmus_code']}_{info['serial']}.pem")
         key_path = Path(f"./keys/{key_name}_private.pem")
 
         if cert_path.exists() and key_path.exists():
@@ -215,6 +225,7 @@ def main():
             continue
 
         print(f"\n⚙️  Generazione certificato per: {info['common_name']}")
+        
         # 1. Genera coppia di chiavi per l'università
         uni_private_key, uni_public_key = key_manager_2048.generate_key_pair()
 
@@ -240,6 +251,14 @@ def main():
 
         # 5. Salva il certificato firmato
         ca.cert_manager.save_certificate_to_file(university_cert, str(cert_path))
+
+    print("\n🎉 Generazione certificati completata!")
+    print("📁 File generati:")
+    print("   ./certificates/ca/ca_certificate.pem")
+    print("   ./certificates/issued/university_F_RENNES01_1001.pem")
+    print("   ./certificates/issued/university_I_SALERNO01_1002.pem")
+    print("   ./keys/universite_rennes_private.pem")
+    print("   ./keys/universita_salerno_private.pem")
 
 
 if __name__ == "__main__":

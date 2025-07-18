@@ -5,26 +5,29 @@
 # =============================================================================
 
 import os
+import sys
 import datetime
 import ipaddress
 from pathlib import Path
-import sys
+
+try:
+    # Prova l'import assoluto, che funzionerà se 'src' è già nel PYTHONPATH
+    from pki.certificate_manager import CertificateManager
+    from crypto.foundations import RSAKeyManager
+except ImportError:
+    # Se fallisce, aggiungi manualmente 'src' al path e riprova
+    project_root = str(Path(__file__).parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    
+    from pki.certificate_manager import CertificateManager
+    from crypto.foundations import RSAKeyManager
 
 # Import crittografici
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-
-# Import dei moduli interni del progetto
-try:
-    from .certificate_manager import CertificateManager
-    from ..crypto.foundations import RSAKeyManager
-except ImportError:
-    # Fallback per l'esecuzione diretta dello script
-    from certificate_manager import CertificateManager
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from crypto.foundations import RSAKeyManager
 
 
 class CertificateAuthority:

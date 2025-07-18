@@ -25,7 +25,7 @@ from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
 
 # Wallet-related imports
 from credentials.models import Course, EQFLevel, ExamGrade, GradeSystem, PersonalInfo, StudyPeriod, StudyProgram, StudyType
-from wallet.student_wallet import AcademicStudentWallet, CredentialStorage, WalletConfiguration
+from wallet.student_wallet import AcademicStudentWallet, CredentialStorage, WalletConfiguration, WalletStatus
 from wallet.presentation import PresentationFormat, PresentationManager
 
 # Pydantic for data validation
@@ -294,6 +294,7 @@ class AcademicCredentialsDashboard:
         self.session_manager = SessionManager(self.config.session_timeout_minutes)
         self.mock_data = MockDataService()
         self.student_wallets = {}
+        self.wallets_dir = Path("./student_wallets")
 
         # Configure logging
         self._setup_logging()
@@ -342,8 +343,10 @@ class AcademicCredentialsDashboard:
         """Creates the necessary directories for the application."""
         self.templates_dir = Path(self.config.templates_dir)
         self.static_dir = Path(self.config.static_dir)
+        self.wallets_dir = Path("./student_wallets")
         self.templates_dir.mkdir(parents=True, exist_ok=True)
         self.static_dir.mkdir(parents=True, exist_ok=True)
+        self.wallets_dir.mkdir(parents=True, exist_ok=True)
     
     def _setup_templates(self) -> None:
         """Configures the template rendering system."""
@@ -486,28 +489,44 @@ class AcademicCredentialsDashboard:
             return response.json()
 
     def _get_student_wallet(self, user: UserSession) -> AcademicStudentWallet:
-        """Get or create a student wallet instance."""
-        if user.user_id not in self.student_wallets:
-            # Initialize wallet with a demo configuration
-            wallet_config = WalletConfiguration(
-                wallet_name=f"{user.user_id}_wallet",
-                storage_path=f"./wallets/{user.user_id}",
-                storage_mode=CredentialStorage.ENCRYPTED_LOCAL,
-                auto_backup=True
-            )
-            
-            wallet = AcademicStudentWallet(wallet_config)
-            
-            # For demo purposes, auto-unlock with a default password
-            if not wallet.wallet_file.exists():
-                wallet.create_wallet("DemoPassword123!")
-            else:
-                wallet.unlock_wallet("DemoPassword123!")
-            
-            self.student_wallets[user.user_id] = wallet
-        
-        return self.student_wallets[user.user_id]
+        """Helper per ottenere o creare il wallet di uno studente."""
+        if not user or user.role != "studente":
+            return None
 
+        # Deriva common_name e student_id dall'user_id
+        # Esempio: "studente_mariorossi" -> "Mario Rossi"
+        common_name = user.user_id
+        if common_name.startswith("studente_"):
+            common_name = common_name[len("studente_"):].replace('_', ' ').title()
+        else:
+            common_name = common_name.replace('_', ' ').title()
+        
+        student_id = user.user_id  # Usa l'user_id come student_id per il demo
+
+        wallet_name = f"studente_{common_name.replace(' ', '_').lower()}_wallet"
+        wallet_path = self.wallets_dir / wallet_name
+        
+        config = WalletConfiguration(
+            wallet_name=wallet_name,
+            storage_path=str(wallet_path)
+        )
+        wallet = AcademicStudentWallet(config)
+
+        if not wallet.wallet_file.exists():
+            print(f"🔧 Creazione wallet per {common_name}...")
+            
+            wallet.create_wallet(
+                password="Unisa2025",
+                student_common_name=common_name,
+                student_id=student_id
+            )
+
+        # Sblocca il wallet per la sessione corrente
+        if wallet.status == WalletStatus.LOCKED:
+            wallet.unlock_wallet("Unisa2025")
+            
+        return wallet
+    
     def _setup_routes(self) -> None:
         """Configures all application routes."""
         

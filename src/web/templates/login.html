@@ -1,29 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row justify-content-center mt-5">
+<div class="row justify-content-center py-5">
     <div class="col-md-5">
-        <div class="card shadow-sm">
-            <div class="card-header text-center">
-                <h4>🔐 Accesso al Sistema</h4>
-            </div>
+        <div class="card">
             <div class="card-body p-4">
+                <h5 class="text-center mb-4">Accedi al sistema</h5>
+                
                 {% if error %}
-                <div class="alert alert-danger" role="alert">
+                <div class="alert alert-danger small mb-4">
                     {{ error }}
                 </div>
                 {% endif %}
+                
                 <form method="post">
                     <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control" id="username" name="username" required placeholder="es. studente_mariorossi">
-                        <div class="form-text">Utenti demo: issuer_rennes, verifier_unisa, studente_mariorossi</div>
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" name="username" required>
+                        <div class="form-text small">Utenti demo: issuer_rennes, verifier_unisa, studente_mariorossi</div>
                     </div>
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                        <div class="form-text">Password demo: Unisa2025</div>
+                    <div class="mb-4">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" name="password" required>
+                        <div class="form-text small">Password demo: Unisa2025</div>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100 mt-3">Accedi</button>
+                    <button type="submit" class="btn btn-primary w-100">Accedi</button>
                 </form>
             </div>
         </div>

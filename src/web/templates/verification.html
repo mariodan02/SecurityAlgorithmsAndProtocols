@@ -1,65 +1,51 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">🔍 Verifica Credenziali e Presentazioni</h1>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h4 mb-0">Verifica credenziali</h1>
 </div>
 
-<div class="row">
-    <!-- Colonna principale per la verifica -->
+<div class="row g-4">
     <div class="col-lg-8">
-        <div class="card mb-4">
-            <div class="card-header">
-                Carica Presentazione da Verificare
-            </div>
+        <div class="card">
             <div class="card-body">
+                <h6 class="text-muted mb-3">Verifica presentazione</h6>
                 <form id="verify-presentation-form">
                     <div class="mb-3">
-                        <label for="presentationFile" class="form-label">Seleziona file della presentazione (.json)</label>
-                        <input class="form-control" type="file" id="presentationFile" accept=".json" required>
+                        <label class="form-label">File presentazione (.json)</label>
+                        <input class="form-control" type="file" accept=".json" required>
                     </div>
                     <div class="mb-3">
-                        <label for="verificationPurpose" class="form-label">Scopo della Verifica</label>
-                        <select class="form-select" id="verificationPurpose" name="purpose">
-                            <option value="credit_recognition" selected>Riconoscimento Crediti Erasmus</option>
-                            <option value="enrollment">Iscrizione a Corso di Laurea</option>
-                            <option value="identity_verification">Verifica Identità</option>
+                        <label class="form-label">Scopo della verifica</label>
+                        <select class="form-select" name="purpose">
+                            <option value="credit_recognition" selected>Riconoscimento crediti</option>
+                            <option value="enrollment">Iscrizione corso</option>
                         </select>
                     </div>
                     <button type="submit" class="btn btn-primary" id="verify-button">
-                        <span id="verify-button-text">Avvia Verifica</span>
-                        <div id="verify-spinner" class="spinner-border spinner-border-sm" role="status" style="display: none;">
-                            <span class="visually-hidden">Verifica in corso...</span>
-                        </div>
+                        Avvia verifica
                     </button>
                 </form>
             </div>
         </div>
 
-        <!-- Sezione per mostrare i risultati della verifica -->
-        <div id="verification-result-container" style="display: none;">
-            <h3 class="mb-3">Risultato della Verifica</h3>
-            <div class="card">
-                <div class="card-body" id="result-content">
-                    <!-- Il risultato della verifica verrà iniettato qui -->
-                </div>
+        <div class="card mt-4" id="verification-result-container" style="display: none;">
+            <div class="card-body">
+                <h6 class="text-muted mb-3">Risultato verifica</h6>
+                <div id="result-content"></div>
             </div>
         </div>
     </div>
 
-    <!-- Colonna laterale per le verifiche in sospeso -->
     <div class="col-lg-4">
         <div class="card">
-            <div class="card-header">
-                Verifiche in Sospeso
+            <div class="card-body">
+                <h6 class="text-muted mb-3">Verifiche in sospeso</h6>
+                <ul class="list-group list-group-flush" id="pending-verifications-list">
+                    <li class="list-group-item text-center py-4">
+                        <div class="spinner-border spinner-border-sm text-primary"></div>
+                    </li>
+                </ul>
             </div>
-            <ul class="list-group list-group-flush" id="pending-verifications-list">
-                <!-- Caricamento dinamico -->
-                <li class="list-group-item text-center" id="pending-spinner">
-                    <div class="spinner-border spinner-border-sm" role="status">
-                        <span class="visually-hidden">Caricamento...</span>
-                    </div>
-                </li>
-            </ul>
         </div>
     </div>
 </div>

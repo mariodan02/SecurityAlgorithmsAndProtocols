@@ -1,34 +1,31 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">🔗 Integrazione con Sistemi Universitari</h1>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h4 mb-0">Integrazione sistemi</h1>
 </div>
 
-<div class="row">
+<div class="row g-4">
     <div class="col-md-7">
         <div class="card">
-            <div class="card-header">
-                Stato dell'Integrazione
-            </div>
             <div class="card-body">
-                <p>Questa sezione monitora l'integrazione del sistema di credenziali decentralizzate con i sistemi informativi di ateneo (es. ESSE3).</p>
-                <div class="row text-center">
-                    <div class="col-4">
-                        <div class="p-3 border bg-light">
-                            <h5>Sistemi Connessi</h5>
-                            <p class="h2">{{ integration_stats.connected_systems }}</p>
+                <h6 class="text-muted mb-3">Stato integrazione</h6>
+                <div class="row">
+                    <div class="col-4 mb-3">
+                        <div class="p-3 border rounded">
+                            <div class="text-muted small mb-1">Sistemi connessi</div>
+                            <div class="h4">{{ integration_stats.connected_systems }}</div>
                         </div>
                     </div>
-                    <div class="col-4">
-                        <div class="p-3 border bg-light">
-                            <h5>Verifiche Automatiche</h5>
-                            <p class="h2">{{ integration_stats.auto_approved }}</p>
+                    <div class="col-4 mb-3">
+                        <div class="p-3 border rounded">
+                            <div class="text-muted small mb-1">Verifiche automatiche</div>
+                            <div class="h4">{{ integration_stats.auto_approved }}</div>
                         </div>
                     </div>
-                    <div class="col-4">
-                        <div class="p-3 border bg-light">
-                            <h5>Revisioni Manuali</h5>
-                            <p class="h2 text-warning">{{ integration_stats.manual_review }}</p>
+                    <div class="col-4 mb-3">
+                        <div class="p-3 border rounded">
+                            <div class="text-muted small mb-1">Revisioni manuali</div>
+                            <div class="h4 text-warning">{{ integration_stats.manual_review }}</div>
                         </div>
                     </div>
                 </div>
@@ -37,17 +34,12 @@
     </div>
     <div class="col-md-5">
         <div class="card">
-            <div class="card-header">
-                Mapping dei Corsi in Sospeso
-            </div>
             <div class="card-body">
-                <p>I seguenti corsi richiedono un mapping manuale tra sistemi.</p>
-                <ul class="list-group">
-                    <li class="list-group-item">CS-101 (Rennes) -> INF/01 (UNISA)</li>
-                    <li class="list-group-item">MATH-203 (Rennes) -> MAT/05 (UNISA)</li>
-                    <li class="list-group-item">PHY-105 (Rennes) -> FIS/01 (UNISA)</li>
-                </ul>
-                 <p class="mt-2"><strong>Totale mapping in sospeso:</strong> <span class="badge bg-danger">{{ integration_stats.pending_mappings }}</span></p>
+                <h6 class="text-muted mb-3">Mapping corsi in sospeso</h6>
+                <div class="text-muted small mb-3">
+                    Totale mapping in sospeso: 
+                    <span class="badge bg-danger">{{ integration_stats.pending_mappings }}</span>
+                </div>
             </div>
         </div>
     </div>

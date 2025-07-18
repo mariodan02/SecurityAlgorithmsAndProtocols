@@ -1,58 +1,127 @@
-
-/* Academic Credentials Dashboard CSS */
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f8f9fa;
+/* Minimalist design system */
+:root {
+    --primary: #2563eb;
+    --secondary: #64748b;
+    --success: #10b981;
+    --danger: #ef4444;
+    --light: #f8fafc;
+    --dark: #0f172a;
+    --border: #e2e8f0;
+    --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 
-.navbar-brand {
-    font-weight: bold;
+body {
+    background-color: #f8fafc;
+    color: #334155;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    color: #0f172a;
 }
 
 .card {
     border: none;
-    border-radius: 10px;
-    box-shadow: 0 0 20px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
+    border-radius: 8px;
+    box-shadow: var(--card-shadow);
+    background-color: white;
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    background-color: white;
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    color: var(--dark);
 }
 
 .btn {
-    border-radius: 25px;
+    border-radius: 6px;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    transition: all 0.2s ease;
 }
 
-.btn-block {
-    width: 100%;
-    margin-bottom: 10px;
+.btn-primary {
+    background-color: var(--primary);
+    border-color: var(--primary);
+}
+
+.btn-primary:hover {
+    background-color: #1d4ed8;
+    border-color: #1d4ed8;
+}
+
+.btn-outline-primary {
+    color: var(--primary);
+    border-color: var(--primary);
+}
+
+.btn-outline-primary:hover {
+    background-color: var(--primary);
+    color: white;
+}
+
+.form-control, .form-select {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    background-color: white;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
 .alert {
-    border-radius: 10px;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
 }
 
-/* Custom colors */
-.bg-primary { background-color: #4e73df !important; }
-.bg-success { background-color: #1cc88a !important; }
-.bg-warning { background-color: #f6c23e !important; }
-.bg-info { background-color: #36b9cc !important; }
-
-/* Animations */
-.card:hover {
-    transform: translateY(-5px);
-    transition: all 0.3s ease;
+.table {
+    border-collapse: separate;
+    border-spacing: 0;
 }
 
-/* Loading spinner */
-.spinner {
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #3498db;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 2s linear infinite;
-    margin: 0 auto;
+.table th {
+    background-color: #f1f5f9;
+    color: var(--secondary);
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--border);
 }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+.table td {
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: #f8fafc;
+}
+
+.badge {
+    font-weight: 500;
+    padding: 0.35em 0.65em;
+    border-radius: 4px;
+}
+
+.progress {
+    height: 8px;
+    border-radius: 4px;
+    background-color: #e2e8f0;
+}
+
+.modal-content {
+    border-radius: 8px;
+    border: none;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.border-bottom {
+    border-bottom: 1px solid var(--border) !important;
 }

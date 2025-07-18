@@ -329,6 +329,36 @@ class AcademicCredentialsDashboard:
             access_log=False
         )
 
+    def _safe_json_serializer(self, obj):
+            """
+            Custom JSON serializer for handling datetime and other non-serializable objects.
+            """
+            if isinstance(obj, datetime.datetime):
+                return obj.isoformat()
+            elif isinstance(obj, datetime.date):
+                return obj.isoformat()
+            elif isinstance(obj, uuid.UUID):
+                return str(obj)
+            elif hasattr(obj, 'to_dict'):
+                return obj.to_dict()
+            elif hasattr(obj, '__dict__'):
+                return obj.__dict__
+            else:
+                return str(obj)
+
+    def _create_json_response(self, data: Dict[str, Any], status_code: int = 200) -> JSONResponse:
+        """
+        Creates a JSONResponse with safe serialization.
+        """
+        try:
+            # Try normal serialization first
+            json.dumps(data, default=str)
+            return JSONResponse(data, status_code=status_code)
+        except TypeError:
+            # If that fails, use custom serializer
+            safe_data = json.loads(json.dumps(data, default=self._safe_json_serializer))
+            return JSONResponse(safe_data, status_code=status_code)
+
     def _setup_directories(self) -> None:
         """Creates the necessary directories for the application."""
         self.templates_dir = Path(self.config.templates_dir)
@@ -1000,6 +1030,9 @@ class AcademicCredentialsDashboard:
                 # Parse JSON from request body
                 body = await request.json()
                 
+                self.logger.info(f"Creating presentation for user: {user.user_id}")
+                self.logger.info(f"Request body: {body}")
+                
                 if not user.is_student:
                     return JSONResponse(
                         {"success": False, "message": "Solo gli studenti possono creare presentazioni"},
@@ -1027,8 +1060,15 @@ class AcademicCredentialsDashboard:
                         status_code=500
                     )
 
+                # Check if required modules are available
+                if not MODULES_AVAILABLE:
+                    return JSONResponse(
+                        {"success": False, "message": "Moduli wallet non disponibili"},
+                        status_code=503
+                    )
+
                 # Import required modules
-                from wallet.presentation import PresentationManager
+                from wallet.presentation import PresentationManager, PresentationFormat
                 from wallet.selective_disclosure import DisclosureLevel
 
                 # Initialize presentation manager
@@ -1045,15 +1085,27 @@ class AcademicCredentialsDashboard:
                         "total_ects_credits"
                     ]
 
+                self.logger.info(f"Selected attributes: {selected_attributes}")
+
                 # Prepare credential selections with selective disclosure
                 credential_selections = []
                 for storage_id in body.get('credentials'):
+                    # Verify credential exists in wallet
+                    wallet_cred = wallet.get_credential(storage_id)
+                    if not wallet_cred:
+                        return JSONResponse(
+                            {"success": False, "message": f"Credenziale {storage_id} non trovata nel wallet"},
+                            status_code=400
+                        )
+                    
                     selection = {
                         'storage_id': storage_id,
                         'disclosure_level': DisclosureLevel.CUSTOM,
                         'custom_attributes': selected_attributes
                     }
                     credential_selections.append(selection)
+
+                self.logger.info(f"Credential selections prepared: {len(credential_selections)}")
 
                 # Create presentation with selective disclosure
                 presentation_id = presentation_manager.create_presentation(
@@ -1063,6 +1115,8 @@ class AcademicCredentialsDashboard:
                     expires_hours=72
                 )
 
+                self.logger.info(f"Presentation created with ID: {presentation_id}")
+
                 # Sign presentation with student's private key
                 sign_success = presentation_manager.sign_presentation(presentation_id)
                 if not sign_success:
@@ -1071,12 +1125,13 @@ class AcademicCredentialsDashboard:
                         status_code=500
                     )
 
+                self.logger.info("Presentation signed successfully")
+
                 # Export as signed JSON with merkle proofs
                 export_dir = Path("./presentations") 
                 export_dir.mkdir(exist_ok=True)
                 output_path = export_dir / f"{presentation_id}.json"
                 
-                from wallet.presentation import PresentationFormat
                 export_success = presentation_manager.export_presentation(
                     presentation_id,
                     str(output_path), 
@@ -1089,23 +1144,53 @@ class AcademicCredentialsDashboard:
                         status_code=500
                     )
 
+                self.logger.info(f"Presentation exported to: {output_path}")
+
                 # Get presentation details for response
                 presentation = presentation_manager.get_presentation(presentation_id)
-                summary = presentation.get_summary()
+                if not presentation:
+                    return JSONResponse(
+                        {"success": False, "message": "Errore: presentazione non trovata dopo creazione"},
+                        status_code=500
+                    )
 
-                return JSONResponse({
+                # Safely get summary with datetime handling
+                try:
+                    summary = presentation.get_summary()
+                except Exception as e:
+                    self.logger.warning(f"Error getting presentation summary: {e}")
+                    summary = {
+                        'total_disclosures': len(presentation.selective_disclosures),
+                        'total_attributes_disclosed': 0,
+                        'is_signed': presentation.signature is not None
+                    }
+
+                # Prepare response with safe datetime serialization
+                response_data = {
                     "success": True,
-                    "message": "Presentazione creata con successo",
+                    "message": "Presentazione verificabile creata con successo",
                     "presentation_id": presentation_id,
                     "download_url": f"/presentations/{presentation_id}/download",
                     "details": {
-                        "total_disclosures": summary['total_disclosures'],
-                        "attributes_disclosed": summary['total_attributes_disclosed'],
-                        "signed": summary['is_signed'],
-                        "expires_at": presentation.expires_at.isoformat() if presentation.expires_at else None
+                        "total_disclosures": summary.get('total_disclosures', 0),
+                        "attributes_disclosed": summary.get('total_attributes_disclosed', 0),
+                        "signed": summary.get('is_signed', False),
+                        "expires_at": (
+                            presentation.expires_at.isoformat() 
+                            if presentation.expires_at else None
+                        )
                     }
-                })
+                }
 
+                self.logger.info("Presentation creation completed successfully")
+                return self._create_json_response(response_data)
+
+            except ImportError as e:
+                self.logger.error(f"Import error in presentation creation: {e}")
+                return JSONResponse(
+                    {"success": False, "message": "Moduli wallet non disponibili"},
+                    status_code=503
+                )
             except Exception as e:
                 self.logger.error(f"Error creating presentation: {e}", exc_info=True)
                 return JSONResponse(
@@ -1123,14 +1208,18 @@ class AcademicCredentialsDashboard:
                 file_path = Path(f"./presentations/{presentation_id}.json")
                 
                 if not file_path.exists():
+                    self.logger.warning(f"Presentation file not found: {file_path}")
                     raise HTTPException(status_code=404, detail="Presentazione non trovata")
                 
+                self.logger.info(f"Downloading presentation: {presentation_id}")
                 return FileResponse(
                     file_path, 
                     filename=f"presentation_{presentation_id[:8]}.json",
                     media_type='application/json'
                 )
                 
+            except HTTPException:
+                raise
             except Exception as e:
                 self.logger.error(f"Error downloading presentation: {e}")
                 raise HTTPException(status_code=500, detail="Errore durante il download")

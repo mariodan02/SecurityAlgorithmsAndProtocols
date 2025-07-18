@@ -992,53 +992,148 @@ class AcademicCredentialsDashboard:
 
         @self.app.post("/presentations", response_class=JSONResponse)
         async def create_presentation(
-            presentation: PresentationRequest, user: UserSession = Depends(self.auth_deps['require_auth'])
+            request: Request,
+            user: UserSession = Depends(self.auth_deps['require_auth'])
         ):
-            """Creates a new presentation from selected credentials."""
-            wallet = self._get_student_wallet(user)
-            presentation_manager = PresentationManager(wallet)
-            
-            credential_selections = [
-                {'storage_id': storage_id, 'disclosure_level': 'standard'}
-                for storage_id in presentation.credentials
-            ]
-            
-            presentation_id = presentation_manager.create_presentation(
-                purpose=presentation.purpose,
-                credential_selections=credential_selections,
-                recipient=presentation.recipient,
-                expires_hours=72
-            )
-            
-            presentation_manager.sign_presentation(presentation_id)
-            
-            export_dir = Path("./presentations")
-            export_dir.mkdir(exist_ok=True)
-            output_path = export_dir / f"{presentation_id}.json"
-            
-            presentation_manager.export_presentation(
-                presentation_id, 
-                str(output_path),
-                PresentationFormat(presentation.format)
-            )
-            
-            return {
-                "presentation_id": presentation_id,
-                "download_url": f"/presentations/{presentation_id}/download"
-            }
-        
+            """Creates a new presentation from selected credentials with selective disclosure."""
+            try:
+                # Parse JSON from request body
+                body = await request.json()
+                
+                if not user.is_student:
+                    return JSONResponse(
+                        {"success": False, "message": "Solo gli studenti possono creare presentazioni"},
+                        status_code=403
+                    )
+
+                # Validate required fields
+                if not body.get('purpose') or len(body.get('purpose', '').strip()) < 5:
+                    return JSONResponse(
+                        {"success": False, "message": "Lo scopo deve essere di almeno 5 caratteri"},
+                        status_code=400
+                    )
+                
+                if not body.get('credentials') or len(body.get('credentials')) == 0:
+                    return JSONResponse(
+                        {"success": False, "message": "Selezionare almeno una credenziale"},
+                        status_code=400
+                    )
+
+                # Get student wallet
+                wallet = self._get_student_wallet(user)
+                if not wallet or wallet.status != WalletStatus.UNLOCKED:
+                    return JSONResponse(
+                        {"success": False, "message": "Wallet non disponibile o bloccato"},
+                        status_code=500
+                    )
+
+                # Import required modules
+                from wallet.presentation import PresentationManager
+                from wallet.selective_disclosure import DisclosureLevel
+
+                # Initialize presentation manager
+                presentation_manager = PresentationManager(wallet)
+                
+                # Get selected attributes from request (specific attribute selection)
+                selected_attributes = body.get('selected_attributes', [])
+                if not selected_attributes:
+                    # Use default minimal attributes if none specified
+                    selected_attributes = [
+                        "metadata.credential_id",
+                        "subject.pseudonym", 
+                        "issuer.name",
+                        "total_ects_credits"
+                    ]
+
+                # Prepare credential selections with selective disclosure
+                credential_selections = []
+                for storage_id in body.get('credentials'):
+                    selection = {
+                        'storage_id': storage_id,
+                        'disclosure_level': DisclosureLevel.CUSTOM,
+                        'custom_attributes': selected_attributes
+                    }
+                    credential_selections.append(selection)
+
+                # Create presentation with selective disclosure
+                presentation_id = presentation_manager.create_presentation(
+                    purpose=body.get('purpose'),
+                    credential_selections=credential_selections,
+                    recipient=body.get('recipient'),
+                    expires_hours=72
+                )
+
+                # Sign presentation with student's private key
+                sign_success = presentation_manager.sign_presentation(presentation_id)
+                if not sign_success:
+                    return JSONResponse(
+                        {"success": False, "message": "Errore durante la firma della presentazione"},
+                        status_code=500
+                    )
+
+                # Export as signed JSON with merkle proofs
+                export_dir = Path("./presentations") 
+                export_dir.mkdir(exist_ok=True)
+                output_path = export_dir / f"{presentation_id}.json"
+                
+                from wallet.presentation import PresentationFormat
+                export_success = presentation_manager.export_presentation(
+                    presentation_id,
+                    str(output_path), 
+                    PresentationFormat.SIGNED_JSON
+                )
+
+                if not export_success:
+                    return JSONResponse(
+                        {"success": False, "message": "Errore durante l'export della presentazione"},
+                        status_code=500
+                    )
+
+                # Get presentation details for response
+                presentation = presentation_manager.get_presentation(presentation_id)
+                summary = presentation.get_summary()
+
+                return JSONResponse({
+                    "success": True,
+                    "message": "Presentazione creata con successo",
+                    "presentation_id": presentation_id,
+                    "download_url": f"/presentations/{presentation_id}/download",
+                    "details": {
+                        "total_disclosures": summary['total_disclosures'],
+                        "attributes_disclosed": summary['total_attributes_disclosed'],
+                        "signed": summary['is_signed'],
+                        "expires_at": presentation.expires_at.isoformat() if presentation.expires_at else None
+                    }
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error creating presentation: {e}", exc_info=True)
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno: {str(e)}"},
+                    status_code=500
+                )
+
         @self.app.get("/presentations/{presentation_id}/download")
         async def download_presentation(
-            presentation_id: str, user: UserSession = Depends(self.auth_deps['require_auth'])
+            presentation_id: str, 
+            user: UserSession = Depends(self.auth_deps['require_auth'])
         ):
             """Downloads a presentation file."""
-            file_path = Path(f"./presentations/{presentation_id}.json")
-            
-            if not file_path.exists():
-                raise HTTPException(status_code=404, detail="Presentation not found")
-            
-            return FileResponse(file_path, filename=f"presentation_{presentation_id[:8]}.json")
-
+            try:
+                file_path = Path(f"./presentations/{presentation_id}.json")
+                
+                if not file_path.exists():
+                    raise HTTPException(status_code=404, detail="Presentazione non trovata")
+                
+                return FileResponse(
+                    file_path, 
+                    filename=f"presentation_{presentation_id[:8]}.json",
+                    media_type='application/json'
+                )
+                
+            except Exception as e:
+                self.logger.error(f"Error downloading presentation: {e}")
+                raise HTTPException(status_code=500, detail="Errore durante il download")
 # =============================================================================
 # APPLICATION ENTRY POINT
 # =============================================================================

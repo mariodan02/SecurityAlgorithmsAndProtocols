@@ -3,7 +3,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="h4 mb-0">Wallet credenziali</h1>
     <button id="createPresentationBtn" type="button" class="btn btn-sm btn-primary disabled">
-        Crea presentazione
+        Crea presentazione verificabile
     </button>
 </div>
 
@@ -12,7 +12,9 @@
     <table class="table table-hover">
         <thead>
             <tr>
-                <th></th>
+                <th width="50">
+                    <input type="checkbox" id="selectAll" title="Seleziona tutto">
+                </th>
                 <th>Emessa da</th>
                 <th>Data emissione</th>
                 <th>Corsi</th>
@@ -33,7 +35,7 @@
                 <td>
                     <button class="btn btn-sm btn-outline-primary view-credential" 
                         data-id="{{ cred.storage_id }}">
-                        <i class="bi bi-eye"></i> Dettagli
+                        Dettagli
                     </button>
                 </td>
             </tr>
@@ -41,10 +43,21 @@
         </tbody>
     </table>
 </div>
+
+<div class="alert alert-info mt-3">
+    <strong>🔐 Presentazione Verificabile:</strong>
+    <ul class="mb-0">
+        <li><strong>Selettiva:</strong> Scegli quali attributi condividere</li>
+        <li><strong>Sicura:</strong> Con Merkle Proof e firma digitale</li>
+        <li><strong>Verificabile:</strong> Mantiene l'integrità della credenziale originale</li>
+    </ul>
+</div>
+
 {% else %}
 <div class="card">
     <div class="card-body text-center py-5">
         <p class="text-muted">Nessuna credenziale nel wallet</p>
+        <p class="small">Le credenziali emesse appariranno qui automaticamente</p>
     </div>
 </div>
 {% endif %}
@@ -58,49 +71,108 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div id="credentialDetails"></div>
+        <div id="credentialDetails">
+          <div class="text-center py-4">
+            <div class="spinner-border text-primary"></div>
+            <p class="mt-2">Caricamento dettagli...</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Presentation Modal -->
+<!-- Selective Disclosure Presentation Modal -->
 <div class="modal fade" id="presentationModal" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Crea presentazione</h5>
+        <h5 class="modal-title">🔐 Crea Presentazione Verificabile</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <div class="alert alert-info">
+          <strong>Divulgazione Selettiva:</strong> Seleziona solo gli attributi che vuoi condividere. 
+          La presentazione includerà Merkle Proof per garantire autenticità.
+        </div>
+        
         <form id="presentationForm">
             <div class="mb-3">
                 <label class="form-label">Scopo della presentazione*</label>
-                <input type="text" class="form-control" name="purpose" required>
+                <input type="text" class="form-control" name="purpose" required 
+                       placeholder="es. Riconoscimento crediti per Master">
             </div>
+            
             <div class="mb-3">
                 <label class="form-label">Destinatario (opzionale)</label>
-                <input type="text" class="form-control" name="recipient">
+                <input type="text" class="form-control" name="recipient"
+                       placeholder="es. Università di Bologna - Ufficio Didattica">
             </div>
-            <div class="mb-3">
-                <label class="form-label">Formato presentazione</label>
-                <select class="form-select" name="format">
-                    <option value="json">JSON</option>
-                    <option value="signed_json">JSON Firma Digitale</option>
-                    <option value="verifiable_credential">Verifiable Credential</option>
-                    <option value="pdf_report">PDF Report</option>
-                </select>
-            </div>
+
             <div class="mb-3">
                 <label class="form-label">Credenziali selezionate</label>
-                <ul id="selectedCredentials" class="list-group"></ul>
+                <ul id="selectedCredentials" class="list-group mb-3">
+                    <!-- Populated by JavaScript -->
+                </ul>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Attributi da includere (Divulgazione Selettiva)</label>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Informazioni Base</h6>
+                        <div class="form-check">
+                            <input class="form-check-input attribute-check" type="checkbox" value="metadata.credential_id" id="attr_id" checked>
+                            <label class="form-check-label" for="attr_id">ID Credenziale</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input attribute-check" type="checkbox" value="subject.pseudonym" id="attr_pseudo" checked>
+                            <label class="form-check-label" for="attr_pseudo">Pseudonimo Studente</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input attribute-check" type="checkbox" value="issuer.name" id="attr_issuer" checked>
+                            <label class="form-check-label" for="attr_issuer">Università Emittente</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input attribute-check" type="checkbox" value="host_university.name" id="attr_host">
+                            <label class="form-check-label" for="attr_host">Università Ospitante</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Informazioni Accademiche</h6>
+                        <div class="form-check">
+                            <input class="form-check-input attribute-check" type="checkbox" value="total_ects_credits" id="attr_ects">
+                            <label class="form-check-label" for="attr_ects">Crediti ECTS Totali</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input attribute-check" type="checkbox" value="average_grade" id="attr_avg">
+                            <label class="form-check-label" for="attr_avg">Media Voti</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input attribute-check" type="checkbox" value="study_period.start_date" id="attr_start">
+                            <label class="form-check-label" for="attr_start">Data Inizio Studio</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input attribute-check" type="checkbox" value="study_period.end_date" id="attr_end">
+                            <label class="form-check-label" for="attr_end">Data Fine Studio</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <h6 class="text-muted">Corsi Specifici</h6>
+                    <div id="courseAttributes">
+                        <!-- Populated dynamically based on selected credentials -->
+                    </div>
+                </div>
             </div>
         </form>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
         <button type="button" class="btn btn-primary" id="generatePresentationBtn">
-            Genera presentazione
+            <span id="generateText">🔐 Genera Presentazione JSON Firmata</span>
+            <span id="generateSpinner" class="spinner-border spinner-border-sm d-none"></span>
         </button>
       </div>
     </div>
@@ -114,22 +186,49 @@ document.addEventListener('DOMContentLoaded', function() {
     const viewButtons = document.querySelectorAll('.view-credential');
     const selectedList = document.getElementById('selectedCredentials');
     const generateBtn = document.getElementById('generatePresentationBtn');
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const attributeCheckboxes = document.querySelectorAll('.attribute-check');
     let selectedCredentials = [];
 
-    // Handle credential selection
+    console.log('Wallet page loaded. Found checkboxes:', checkboxes.length);
+
+    // Handle "Select All" checkbox
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            const isChecked = this.checked;
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = isChecked;
+                checkbox.dispatchEvent(new Event('change'));
+            });
+        });
+    }
+
+    // Handle individual credential selection
     checkboxes.forEach(checkbox => {
         checkbox.addEventListener('change', function() {
             const id = this.dataset.id;
             
             if (this.checked) {
-                selectedCredentials.push(id);
+                if (!selectedCredentials.includes(id)) {
+                    selectedCredentials.push(id);
+                }
             } else {
                 selectedCredentials = selectedCredentials.filter(item => item !== id);
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.checked = false;
+                }
             }
             
             // Update UI
             createBtn.disabled = selectedCredentials.length === 0;
+            if (selectedCredentials.length === 0) {
+                createBtn.classList.add('disabled');
+            } else {
+                createBtn.classList.remove('disabled');
+            }
+            
             updateSelectedList();
+            updateCourseAttributes();
         });
     });
 
@@ -137,41 +236,126 @@ document.addEventListener('DOMContentLoaded', function() {
     viewButtons.forEach(button => {
         button.addEventListener('click', function() {
             const id = this.dataset.id;
+            
+            // Show loading
+            document.getElementById('credentialDetails').innerHTML = `
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary"></div>
+                    <p class="mt-2">Caricamento dettagli...</p>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('credentialModal'));
+            modal.show();
+            
             fetch(`/credentials/${id}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Errore nel caricamento');
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     document.getElementById('credentialDetails').innerHTML = `
-                        <h6>${data.issuer}</h6>
-                        <p><strong>ID:</strong> ${data.credential_id}</p>
-                        <p><strong>Emessa il:</strong> ${data.issue_date}</p>
-                        <p><strong>Stato:</strong> ${data.status}</p>
-                        <p><strong>Crediti ECTS:</strong> ${data.total_ects}</p>
-                        <p><strong>Corsi:</strong></p>
-                        <ul>
-                            ${data.courses.map(course => `<li>${course.name} - ${course.grade}</li>`).join('')}
-                        </ul>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Informazioni generali</h6>
+                                <p><strong>Emessa da:</strong> ${data.issuer}</p>
+                                <p><strong>ID:</strong> <code>${data.credential_id}</code></p>
+                                <p><strong>Data emissione:</strong> ${data.issue_date}</p>
+                                <p><strong>Stato:</strong> <span class="badge bg-success">${data.status}</span></p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Dettagli accademici</h6>
+                                <p><strong>Crediti ECTS totali:</strong> ${data.total_ects}</p>
+                                <p><strong>Numero corsi:</strong> ${data.courses.length}</p>
+                            </div>
+                        </div>
+                        <hr>
+                        <h6>Corsi inclusi:</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Corso</th>
+                                        <th>Voto</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.courses.map(course => `
+                                        <tr>
+                                            <td>${course.name}</td>
+                                            <td><span class="badge bg-info">${course.grade}</span></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
                     `;
-                    new bootstrap.Modal(document.getElementById('credentialModal')).show();
+                })
+                .catch(error => {
+                    console.error('Error loading credential:', error);
+                    document.getElementById('credentialDetails').innerHTML = `
+                        <div class="alert alert-danger">
+                            <strong>Errore:</strong> Impossibile caricare i dettagli.
+                        </div>
+                    `;
                 });
         });
     });
 
     // Open presentation modal
     createBtn.addEventListener('click', function() {
+        if (selectedCredentials.length === 0) {
+            alert('Seleziona almeno una credenziale');
+            return;
+        }
+        
         updateSelectedList();
-        new bootstrap.Modal(document.getElementById('presentationModal')).show();
+        updateCourseAttributes();
+        const modal = new bootstrap.Modal(document.getElementById('presentationModal'));
+        modal.show();
     });
 
     // Generate presentation
     generateBtn.addEventListener('click', async function() {
         const form = document.getElementById('presentationForm');
         const formData = new FormData(form);
+        const purpose = formData.get('purpose');
+        
+        if (!purpose || purpose.trim().length < 5) {
+            alert('Lo scopo della presentazione deve essere di almeno 5 caratteri');
+            return;
+        }
+
+        // Get selected attributes
+        const selectedAttributes = [];
+        attributeCheckboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                selectedAttributes.push(checkbox.value);
+            }
+        });
+
+        if (selectedAttributes.length === 0) {
+            alert('Seleziona almeno un attributo da includere');
+            return;
+        }
+        
         const data = {
-            purpose: formData.get('purpose'),
-            recipient: formData.get('recipient'),
-            format: formData.get('format'),
-            credentials: selectedCredentials
+            purpose: purpose,
+            recipient: formData.get('recipient') || null,
+            credentials: selectedCredentials,
+            selected_attributes: selectedAttributes
         };
+
+        console.log('Creating presentation with selective disclosure:', data);
+
+        // Show loading
+        const generateText = document.getElementById('generateText');
+        const generateSpinner = document.getElementById('generateSpinner');
+        generateText.style.display = 'none';
+        generateSpinner.classList.remove('d-none');
+        generateBtn.disabled = true;
 
         try {
             const response = await fetch('/presentations', {
@@ -184,34 +368,100 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const result = await response.json();
             
-            if (response.ok) {
-                alert(`Presentazione creata con successo! ID: ${result.presentation_id}`);
+            if (response.ok && result.success) {
+                alert(`✅ Presentazione Verificabile Creata!\n\n` +
+                      `🆔 ID: ${result.presentation_id}\n` +
+                      `🔐 Firmata digitalmente: ${result.details.signed ? 'Sì' : 'No'}\n` +
+                      `📊 Attributi divulgati: ${result.details.attributes_disclosed}\n` +
+                      `🔒 Con Merkle Proof per autenticità\n\n` +
+                      `La presentazione è in formato JSON firmato.`);
+                
                 // Close modal and reset
-                bootstrap.Modal.getInstance(document.getElementById('presentationModal')).hide();
+                const modal = bootstrap.Modal.getInstance(document.getElementById('presentationModal'));
+                modal.hide();
                 resetSelection();
+                
+                // Offer to download
+                if (confirm('Vuoi scaricare la presentazione JSON?')) {
+                    window.open(result.download_url, '_blank');
+                }
             } else {
-                throw new Error(result.detail || 'Errore nella creazione');
+                throw new Error(result.message || 'Errore nella creazione della presentazione');
             }
         } catch (error) {
-            alert(`Errore: ${error.message}`);
+            console.error('Error creating presentation:', error);
+            alert(`❌ Errore: ${error.message}`);
+        } finally {
+            // Reset button
+            generateText.style.display = 'inline';
+            generateSpinner.classList.add('d-none');
+            generateBtn.disabled = false;
         }
     });
 
     function updateSelectedList() {
+        if (!selectedList) return;
+        
         selectedList.innerHTML = '';
+        
+        if (selectedCredentials.length === 0) {
+            selectedList.innerHTML = '<li class="list-group-item text-muted">Nessuna credenziale selezionata</li>';
+            return;
+        }
+        
         selectedCredentials.forEach(id => {
             const li = document.createElement('li');
-            li.className = 'list-group-item';
-            li.textContent = `Credenziale ${id.substring(0, 8)}...`;
+            li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            li.innerHTML = `
+                <span>Credenziale ${id.substring(0, 8)}...</span>
+                <span class="badge bg-primary rounded-pill">Selezionata</span>
+            `;
             selectedList.appendChild(li);
         });
+    }
+
+    function updateCourseAttributes() {
+        const courseContainer = document.getElementById('courseAttributes');
+        if (!courseContainer) return;
+        
+        courseContainer.innerHTML = '';
+        
+        if (selectedCredentials.length > 0) {
+            // Add some example course attributes (in real implementation, fetch from selected credentials)
+            courseContainer.innerHTML = `
+                <div class="form-check">
+                    <input class="form-check-input attribute-check" type="checkbox" value="courses.0.course_name" id="course_0_name">
+                    <label class="form-check-label" for="course_0_name">Nome Primo Corso</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input attribute-check" type="checkbox" value="courses.0.grade.score" id="course_0_grade">
+                    <label class="form-check-label" for="course_0_grade">Voto Primo Corso</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input attribute-check" type="checkbox" value="courses.1.course_name" id="course_1_name">
+                    <label class="form-check-label" for="course_1_name">Nome Secondo Corso</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input attribute-check" type="checkbox" value="courses.1.grade.score" id="course_1_grade">
+                    <label class="form-check-label" for="course_1_grade">Voto Secondo Corso</label>
+                </div>
+            `;
+        }
     }
 
     function resetSelection() {
         selectedCredentials = [];
         checkboxes.forEach(cb => cb.checked = false);
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = false;
+        }
         createBtn.disabled = true;
+        createBtn.classList.add('disabled');
+        updateSelectedList();
     }
+
+    // Initialize
+    updateSelectedList();
 });
 </script>
 {% endblock %}

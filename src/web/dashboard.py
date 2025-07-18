@@ -472,6 +472,14 @@ class AcademicCredentialsDashboard:
             if self.issuer:
                 self.logger.info("✅ System components initialized successfully")
                 
+            self.blockchain_verifier = BlockchainService(
+                provider_url="http://127.0.0.1:7545",
+                pem_filepath="./keys/universita_salerno_private.pem",
+                pem_password="Unisa2025"
+            )
+
+        except Exception as e:
+            self.logger.error(f"🔥 ERROR during initialization: {e}")
         except ImportError as e:
             self.logger.error(f"❌ ERROR importing modules: {e}")
         except Exception as e:
@@ -530,6 +538,25 @@ class AcademicCredentialsDashboard:
     def _setup_routes(self) -> None:
         """Configures all application routes."""
         
+        @self.app.post("/verification/full-verify")
+        async def handle_full_verification(request: FullVerificationRequest, user: UserSession = Depends(self.auth_deps['require_verify'])):
+            # ... (logica di validazione della presentazione) ...
+            
+            credential_id = report.credential_id # Ottieni l'ID dal report di validazione
+            
+            # Verifica lo stato sulla blockchain
+            blockchain_status = "Not Checked"
+            if self.blockchain_verifier:
+                try:
+                    result = self.blockchain_verifier.verify_credential(credential_id)
+                    blockchain_status = result.get('status', 'ERROR')
+                except ValueError as e:
+                    blockchain_status = f"ERROR: {e}"
+
+            report.technical_details['blockchain_status'] = blockchain_status
+            
+            return JSONResponse({"success": True, "verification_report": report.to_dict()})
+
         @self.app.get("/", response_class=HTMLResponse)
         async def home(request: Request):
             """Main page."""

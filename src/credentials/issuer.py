@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import uuid
-
+from blockchain.blockchain_service import BlockchainService
 # Cryptography imports
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -116,7 +116,6 @@ class AcademicCredentialIssuer:
         self.config = config
         self.crypto_utils = CryptoUtils()
         self.cert_manager = CertificateManager()
-        
         # Componenti crittografici
         self.digital_signature = DigitalSignature("PSS")
         
@@ -135,12 +134,22 @@ class AcademicCredentialIssuer:
             'signing_operations': 0,
             'validation_errors': 0
         }
-        
-        # Inizializza
+        self.blockchain_service = BlockchainService()
+        self.web3 = self.blockchain_service.w3
+        self.issuer_account = self.web3.eth.account.from_key(
+            load_private_key_from_pem(config.private_key_path, config.private_key_password)
+        )
         self._initialize_issuer()
         
         print(f"🏛️  Credential Issuer inizializzato per: {config.university_info.name}")
     
+    def _send_signed_transaction(self, transaction):
+        """Funzione helper per firmare e inviare."""
+        signed_tx = self.issuer_account.sign_transaction(transaction)
+        tx_hash = self.web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        return receipt
+
     def _initialize_issuer(self):
         """Inizializza componenti issuer"""
         try:
@@ -174,7 +183,11 @@ class AcademicCredentialIssuer:
             
             # Carica database esistente
             self._load_credentials_database()
-            
+            self.blockchain_service = BlockchainService(
+                provider_url="http://127.0.0.1:7545",
+                pem_filepath=self.config.private_key_path, # La chiave dell'issuer è usata per firmare le transazioni
+                pem_password=self.config.private_key_password
+            )
         except Exception as e:
             print(f"❌ Errore inizializzazione issuer: {e}")
             raise
@@ -271,8 +284,20 @@ class AcademicCredentialIssuer:
             # 4. Registra credenziale
             print("   4️⃣ Registrazione...")
             credential_id = str(credential.metadata.credential_id)
-            self.credentials_db[credential_id] = credential
-            
+            #self.credentials_db[credential_id] = credential
+            if self.blockchain_service:
+                print("   4️⃣ Registrazione su Blockchain...")
+                try:
+                    # 1. Costruisci la transazione
+                    unsigned_tx = self.blockchain_service.build_registration_transaction(
+                        credential_id,
+                        self.issuer_account.address # Passa l'indirizzo del firmatario
+                    )
+                    # 2. Firma e invia la transazione
+                    receipt = self._send_signed_transaction(unsigned_tx)
+                    print(f"✅ Registrazione completata. Hash: {self.web3.to_hex(receipt.transaction_hash)}")
+                except Exception as e:
+                    result.warnings.append(f"Registrazione blockchain fallita: {e}")
             # 5. Backup
             if self.config.backup_enabled:
                 print("   5️⃣ Backup...")
@@ -399,8 +424,17 @@ class AcademicCredentialIssuer:
             credential = self.credentials_db[credential_id]
             credential.status = CredentialStatus.REVOKED
             
-            # TODO: Registrare revoca nel registro blockchain
-            # Qui si dovrebbe chiamare il sistema di revoca decentralizzato
+            if self.blockchain_service:
+                try:
+                    # 1. Costruisci
+                    unsigned_tx = self.blockchain_service.build_revocation_transaction(
+                        credential_id, reason, self.issuer_account.address
+                    )
+                    # 2. Firma e invia
+                    self._send_signed_transaction(unsigned_tx)
+                    print(f"🔗 Credenziale {credential_id} revocata su blockchain.")
+                except Exception as e:
+                     print(f"⚠️  Revoca blockchain fallita: {e}")
             
             print(f"🚫 Credenziale revocata: {credential_id}")
             print(f"   Motivo: {reason}")

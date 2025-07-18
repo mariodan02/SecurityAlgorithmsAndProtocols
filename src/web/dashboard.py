@@ -42,6 +42,8 @@ class AppConfig:
     static_dir: str = "./src//web/static"
     session_timeout_minutes: int = 60
     max_file_size_mb: int = 10
+    secure_server_url: str = "https://localhost:8443"
+    secure_server_api_key: str = "unisa_key_123"  # Chiave API per il backend
 
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
@@ -147,7 +149,7 @@ class SessionManager:
             return None
         
         # Aggiorna l'ultima attività
-        session.last_activity = datetime.datetime.utcnow()
+        session.last_activity = datetime.datetime.now(datetime.UTC)
         return session
     
     def destroy_session(self, session_id: str) -> None:
@@ -157,7 +159,7 @@ class SessionManager:
     def _is_session_expired(self, session: UserSession) -> bool:
         """Controlla se una sessione è scaduta"""
         expiry_time = session.last_activity + datetime.timedelta(minutes=self.timeout_minutes)
-        return datetime.datetime.utcnow() > expiry_time
+        return datetime.datetime.now(datetime.UTC) > expiry_time
 
 class MockDataService:
     """Servizio per dati mock/demo"""
@@ -169,7 +171,7 @@ class MockDataService:
             total_credentials_verified=32,
             pending_verifications=5,
             success_rate=94.7,
-            last_updated=datetime.datetime.utcnow()
+            last_updated=datetime.datetime.now(datetime.UTC)
         )
     
     @staticmethod
@@ -535,6 +537,20 @@ class AcademicCredentialsDashboard:
             self.logger.error(f"🔥 Traceback completo:")
             import traceback
             traceback.print_exc()
+
+    async def _call_secure_api(self, endpoint: str, payload: dict) -> dict:
+        """Helper per chiamare le API sicure"""
+        import requests
+        url = f"{self.config.secure_server_url}{endpoint}"
+        headers = {"Authorization": f"Bearer {self.config.secure_server_api_key}"}
+        
+        try:
+            response = requests.post(url, json=payload, headers=headers, verify=False)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.logger.error(f"API call failed: {e}")
+            raise HTTPException(500, "Errore comunicazione backend")
 
     def _setup_routes(self) -> None:
         """Configura tutte le route dell'applicazione"""

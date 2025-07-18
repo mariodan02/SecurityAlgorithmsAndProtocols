@@ -101,7 +101,11 @@ class ServerConfiguration:
     ssl_cert_file: str = "./certificates/server/server.crt"
     ssl_key_file: str = "./certificates/server/server.key"
     ssl_ca_file: str = "./certificates/ca/ca_certificate.pem"
-    
+    cors_origins: List[str] = field(default_factory=lambda: [
+    "https://localhost:8443", 
+    "http://localhost:8000"  # Aggiungi l'URL del dashboard
+    ])
+
     # Sicurezza
     require_client_certificates: bool = False
     trusted_hosts: List[str] = field(default_factory=lambda: ["localhost", "127.0.0.1"])
@@ -171,8 +175,8 @@ class APIKeyManager:
                 "permissions": ["submit_credential", "validate_credential"],
                 "created_at": datetime.datetime.utcnow().isoformat()
             },
-            "admin_key_789": {
-                "university": "System Administrator",
+            "dashboard_key":{
+                "university": "Dashboard System",
                 "permissions": ["*"],
                 "created_at": datetime.datetime.utcnow().isoformat()
             }
@@ -695,6 +699,14 @@ class AcademicCredentialsSecureServer:
                 else:
                     print(f"⚠️  Certificati SSL non trovati, genero self-signed...")
                     ssl_context = self._generate_self_signed_ssl()
+            
+            # In AcademicCredentialsSecureServer.run
+            if self.config.ssl_enabled and not (
+                Path(self.config.ssl_cert_file).exists() and 
+                Path(self.config.ssl_key_file).exists()
+            ):
+                print("Generating self-signed SSL certificates...")
+                self._generate_self_signed_ssl()
             
             # Avvia server
             uvicorn.run(

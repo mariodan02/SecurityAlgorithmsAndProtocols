@@ -178,7 +178,7 @@ class MockDataService:
             total_credentials_verified=32,
             pending_verifications=5,
             success_rate=94.7,
-            last_updated=datetime.datetime.utcnow()
+            last_updated=datetime.datetime.now(datetime.timezone.utc)
         )
     
     @staticmethod
@@ -747,7 +747,7 @@ class AcademicCredentialsDashboard:
                 # Ordina per data di emissione (più recenti prima)
                 credentials.sort(key=lambda x: x['issued_at'], reverse=True)
                 
-            except ExcFeption as e:
+            except Exception as e:
                 self.logger.error(f"Error loading credentials: {e}")
             
             return self.templates.TemplateResponse("credentials.html", {

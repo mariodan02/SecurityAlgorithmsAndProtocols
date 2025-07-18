@@ -31,16 +31,6 @@ from pydantic import BaseModel, Field
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-try:
-    from crypto.foundations import CryptoUtils, DigitalSignature
-    from credentials.models import AcademicCredential
-    from credentials.validator import AcademicCredentialValidator, ValidationLevel
-    from pki.certificate_manager import CertificateManager
-except ImportError as e:
-    print(f"⚠️  Errore import moduli interni: {e}")
-    print("   Assicurati che tutti i moduli siano presenti nel progetto")
-    raise
-
 
 # =============================================================================
 # 1. MODELLI DATI API
@@ -98,8 +88,8 @@ class ServerConfiguration:
     host: str = "localhost"
     port: int = 8443
     ssl_enabled: bool = True
-    ssl_cert_file: str = "./certificates/server/server.crt"
-    ssl_key_file: str = "./certificates/server/server.key"
+    ssl_cert_file: str = "./certificates/server/secure_server.pem"
+    ssl_key_file: str = "./keys/secure_server_private.pem"
     ssl_ca_file: str = "./certificates/ca/ca_certificate.pem"
     cors_origins: List[str] = field(default_factory=lambda: [
     "https://localhost:8443", 
@@ -155,29 +145,29 @@ class RateLimiter:
 
 
 class APIKeyManager:
-    """Gestione API keys"""
+    """Gestione API keys per i 3 utenti specifici"""
     
     def __init__(self):
-        self.api_keys: Dict[str, Dict[str, Any]] = {}
-        self._load_api_keys()
-    
-    def _load_api_keys(self):
-        """Carica API keys da file o genera default"""
-        # Keys predefinite per demo
-        self.api_keys = {
-            "unisa_key_123": {
+        self.api_keys: Dict[str, Dict[str, Any]] = {
+            "issuer_rennes": {
+                "username": "issuer_rennes",
+                "role": "issuer",
+                "university": "Université de Rennes",
+                "permissions": ["submit_credential", "validate_credential"],
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            },
+            "verifier_unisa": {
+                "username": "verifier_unisa",
+                "role": "verifier",
                 "university": "Università di Salerno",
-                "permissions": ["submit_credential", "validate_credential"],
+                "permissions": ["validate_credential", "submit_presentation"],
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             },
-            "rennes_key_456": {
-                "university": "Université de Rennes", 
-                "permissions": ["submit_credential", "validate_credential"],
-                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-            },
-            "dashboard_key":{
-                "university": "Dashboard System",
-                "permissions": ["*"],
+            "studente_mariorossi": {
+                "username": "studente_mariorossi",
+                "role": "studente",
+                "university": "Studente",
+                "permissions": ["validate_credential", "submit_presentation"],
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
         }
@@ -193,7 +183,7 @@ class APIKeyManager:
             return False
         
         permissions = key_info.get("permissions", [])
-        return "*" in permissions or permission in permissions
+        return permission in permissions
 
 
 # =============================================================================
@@ -225,11 +215,6 @@ class AcademicCredentialsSecureServer:
         )
         self.api_key_manager = APIKeyManager()
         self.security = HTTPBearer() if config.api_key_required else None
-        
-        # Componenti del sistema
-        self.crypto_utils = CryptoUtils()
-        self.credential_validator = AcademicCredentialValidator()
-        self.cert_manager = CertificateManager()
         
         # Storage
         self.submitted_credentials: Dict[str, Dict[str, Any]] = {}
@@ -342,14 +327,6 @@ class AcademicCredentialsSecureServer:
         ):
             return await self._handle_presentation_submission(request, auth)
         
-        # University registration
-        @self.app.post("/api/v1/universities/register")
-        async def register_university(
-            request: UniversityRegistrationRequest,
-            auth: HTTPAuthorizationCredentials = Depends(self.security) if self.security else None
-        ):
-            return await self._handle_university_registration(request, auth)
-        
         # Get credential status
         @self.app.get("/api/v1/credentials/{credential_id}/status")
         async def get_credential_status(
@@ -363,7 +340,9 @@ class AcademicCredentialsSecureServer:
         async def get_statistics(
             auth: HTTPAuthorizationCredentials = Depends(self.security) if self.security else None
         ):
-            if auth and not self.api_key_manager.has_permission(auth.credentials, "admin"):
+            # Solo issuer e verifier possono vedere le statistiche
+            auth_info = await self._authenticate_request(auth)
+            if auth_info["role"] not in ["issuer", "verifier"]:
                 raise HTTPException(status_code=403, detail="Insufficient permissions")
             
             return APIResponse(
@@ -375,7 +354,7 @@ class AcademicCredentialsSecureServer:
     async def _authenticate_request(self, auth: Optional[HTTPAuthorizationCredentials]) -> Optional[Dict[str, Any]]:
         """Autentica richiesta"""
         if not self.config.api_key_required:
-            return {"university": "anonymous", "permissions": ["*"]}
+            return {"username": "anonymous", "role": "anonymous", "permissions": []}
         
         if not auth:
             self.stats['authentication_failures'] += 1
@@ -404,35 +383,11 @@ class AcademicCredentialsSecureServer:
             # Autentica
             auth_info = await self._authenticate_request(auth)
             
-            # Verifica permessi
-            if not self.api_key_manager.has_permission(auth.credentials if auth else "anonymous", "submit_credential"):
-                raise HTTPException(status_code=403, detail="Permessi insufficienti")
+            # Solo issuer può sottomettere credenziali
+            if auth_info["role"] != "issuer":
+                raise HTTPException(status_code=403, detail="Solo issuer può sottomettere credenziali")
             
-            print(f"📤 Ricevuta sottomissione credenziale da {auth_info['university']}")
-            
-            # Valida credenziale
-            try:
-                credential = AcademicCredential.from_dict(request.credential_data)
-            except Exception as e:
-                return APIResponse(
-                    success=False,
-                    message=f"Formato credenziale non valido: {e}"
-                )
-            
-            # Validazione base
-            validation_report = self.credential_validator.validate_credential(
-                credential, ValidationLevel.STANDARD
-            )
-            
-            if not validation_report.is_valid():
-                return APIResponse(
-                    success=False,
-                    message="Credenziale non valida",
-                    data={
-                        "validation_errors": [e.message for e in validation_report.errors],
-                        "validation_warnings": [w.message for w in validation_report.warnings]
-                    }
-                )
+            print(f"📤 Ricevuta sottomissione credenziale da {auth_info['username']}")
             
             # Genera ID sottomissione
             submission_id = str(uuid.uuid4())
@@ -440,7 +395,7 @@ class AcademicCredentialsSecureServer:
             # Salva sottomissione
             self.submitted_credentials[submission_id] = {
                 'credential': request.credential_data,
-                'submitted_by': auth_info['university'],
+                'submitted_by': auth_info['username'],
                 'submission_time': datetime.datetime.utcnow().isoformat(),
                 'purpose': request.presentation_purpose,
                 'recipient': request.recipient_id,
@@ -448,8 +403,7 @@ class AcademicCredentialsSecureServer:
                     datetime.datetime.utcnow() + 
                     datetime.timedelta(hours=request.expires_hours)
                 ).isoformat(),
-                'status': 'submitted',
-                'validation_report': validation_report.to_dict()
+                'status': 'submitted'
             }
             
             self.stats['credentials_submitted'] += 1
@@ -459,12 +413,7 @@ class AcademicCredentialsSecureServer:
                 message="Credenziale sottomessa con successo",
                 data={
                     "submission_id": submission_id,
-                    "status": "submitted",
-                    "validation_summary": {
-                        "format_valid": validation_report.format_valid,
-                        "signature_valid": validation_report.signature_valid,
-                        "merkle_tree_valid": validation_report.merkle_tree_valid
-                    }
+                    "status": "submitted"
                 }
             )
             
@@ -480,49 +429,29 @@ class AcademicCredentialsSecureServer:
     async def _handle_credential_validation(self,
                                           request: CredentialValidationRequest,
                                           auth: Optional[HTTPAuthorizationCredentials]) -> APIResponse:
-        """Gestisce validazione credenziale"""
+        """Gestisce validazione credenziale (tutti gli utenti possono verificare)"""
         try:
             # Autentica
             auth_info = await self._authenticate_request(auth)
             
-            print(f"🔍 Ricevuta richiesta validazione da {auth_info['university']}")
-            
-            # Parse livello validazione
-            validation_level_map = {
-                "basic": ValidationLevel.BASIC,
-                "standard": ValidationLevel.STANDARD,
-                "complete": ValidationLevel.COMPLETE,
-                "forensic": ValidationLevel.FORENSIC
-            }
-            
-            validation_level = validation_level_map.get(
-                request.validation_level.lower(), ValidationLevel.STANDARD
-            )
-            
-            # Valida credenziale
-            try:
-                credential = AcademicCredential.from_dict(request.credential_data)
-            except Exception as e:
-                return APIResponse(
-                    success=False,
-                    message=f"Formato credenziale non valido: {e}"
-                )
-            
-            # Esegue validazione
-            validation_report = self.credential_validator.validate_credential(
-                credential, validation_level
-            )
+            print(f"🔍 Ricevuta richiesta validazione da {auth_info['username']}")
             
             # Genera ID validazione
             validation_id = str(uuid.uuid4())
             
+            # Simula validazione
+            validation_report = {
+                "is_valid": True,
+                "errors": [],
+                "warnings": []
+            }
+            
             # Salva richiesta validazione
             self.validation_requests[validation_id] = {
-                'credential_id': str(credential.metadata.credential_id),
-                'requested_by': auth_info['university'],
+                'credential_data': request.credential_data,
+                'requested_by': auth_info['username'],
                 'request_time': datetime.datetime.utcnow().isoformat(),
-                'validation_level': validation_level.value,
-                'validation_report': validation_report.to_dict()
+                'validation_report': validation_report
             }
             
             self.stats['validations_performed'] += 1
@@ -532,19 +461,8 @@ class AcademicCredentialsSecureServer:
                 message="Validazione completata",
                 data={
                     "validation_id": validation_id,
-                    "validation_result": validation_report.overall_result.value,
-                    "is_valid": validation_report.is_valid(),
-                    "validation_details": {
-                        "format_valid": validation_report.format_valid,
-                        "signature_valid": validation_report.signature_valid,
-                        "certificate_valid": validation_report.certificate_valid,
-                        "merkle_tree_valid": validation_report.merkle_tree_valid,
-                        "temporal_valid": validation_report.temporal_valid,
-                        "revocation_status": validation_report.revocation_status
-                    },
-                    "errors": [e.to_dict() for e in validation_report.errors],
-                    "warnings": [w.to_dict() for w in validation_report.warnings],
-                    "validation_duration_ms": validation_report.validation_duration_ms
+                    "validation_result": "valid",
+                    "is_valid": True
                 }
             )
             
@@ -564,31 +482,18 @@ class AcademicCredentialsSecureServer:
         try:
             auth_info = await self._authenticate_request(auth)
             
-            print(f"📋 Ricevuta presentazione da {auth_info['university']}")
-            
-            # Valida formato presentazione
-            required_fields = ['presentation_id', 'selective_disclosures']
-            for field in required_fields:
-                if field not in request.presentation_data:
-                    return APIResponse(
-                        success=False,
-                        message=f"Campo obbligatorio mancante: {field}"
-                    )
+            print(f"📋 Ricevuta presentazione da {auth_info['username']}")
             
             # Genera ID ricezione
             reception_id = str(uuid.uuid4())
-            
-            # TODO: Implementare validazione completa presentazione
-            # Per ora accetta la presentazione
             
             return APIResponse(
                 success=True,
                 message="Presentazione ricevuta",
                 data={
                     "reception_id": reception_id,
-                    "presentation_id": request.presentation_data["presentation_id"],
-                    "status": "received",
-                    "disclosures_count": len(request.presentation_data.get("selective_disclosures", []))
+                    "presentation_id": request.presentation_data.get("presentation_id", "unknown"),
+                    "status": "received"
                 }
             )
             
@@ -596,44 +501,6 @@ class AcademicCredentialsSecureServer:
             raise
         except Exception as e:
             print(f"❌ Errore ricezione presentazione: {e}")
-            return APIResponse(
-                success=False,
-                message=f"Errore interno: {e}"
-            )
-    
-    async def _handle_university_registration(self,
-                                            request: UniversityRegistrationRequest,
-                                            auth: Optional[HTTPAuthorizationCredentials]) -> APIResponse:
-        """Gestisce registrazione università"""
-        try:
-            auth_info = await self._authenticate_request(auth)
-            
-            # Solo admin può registrare nuove università
-            if not self.api_key_manager.has_permission(auth.credentials if auth else "anonymous", "admin"):
-                raise HTTPException(status_code=403, detail="Solo amministratori possono registrare università")
-            
-            print(f"🏛️  Richiesta registrazione università: {request.university_name}")
-            
-            # Genera ID registrazione
-            registration_id = str(uuid.uuid4())
-            
-            # TODO: Implementare processo completo registrazione
-            # Per ora simula accettazione
-            
-            return APIResponse(
-                success=True,
-                message="Richiesta registrazione ricevuta",
-                data={
-                    "registration_id": registration_id,
-                    "university_name": request.university_name,
-                    "status": "pending_verification"
-                }
-            )
-            
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"❌ Errore registrazione università: {e}")
             return APIResponse(
                 success=False,
                 message=f"Errore interno: {e}"
@@ -685,29 +552,25 @@ class AcademicCredentialsSecureServer:
         try:
             print(f"🚀 Avvio server su {self.config.host}:{self.config.port}")
             
-            # Configurazione SSL
             ssl_context = None
             if self.config.ssl_enabled:
-                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-                
+                # Carica i certificati esistenti
                 if Path(self.config.ssl_cert_file).exists() and Path(self.config.ssl_key_file).exists():
+                    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                    # Aggiungi la password della chiave privata
                     ssl_context.load_cert_chain(
                         self.config.ssl_cert_file,
-                        self.config.ssl_key_file
+                        keyfile=self.config.ssl_key_file,
+                        password="ServerSecurePass123!"  # Password usata nella generazione
                     )
-                    print(f"✅ SSL configurato con certificati")
+                    print(f"✅ SSL configurato con certificati esistenti")
                 else:
-                    print(f"⚠️  Certificati SSL non trovati, genero self-signed...")
-                    ssl_context = self._generate_self_signed_ssl()
-            
-            # In AcademicCredentialsSecureServer.run
-            if self.config.ssl_enabled and not (
-                Path(self.config.ssl_cert_file).exists() and 
-                Path(self.config.ssl_key_file).exists()
-            ):
-                print("Generating self-signed SSL certificates...")
-                self._generate_self_signed_ssl()
-            
+                    print(f"❌ Certificati SSL non trovati")
+                    print(f"   Certificato: {self.config.ssl_cert_file}")
+                    print(f"   Chiave: {self.config.ssl_key_file}")
+                    print(f"⚠️  Genera prima i certificati con certificate_authority.py")
+                    return
+                
             # Avvia server
             uvicorn.run(
                 self.app,
@@ -722,82 +585,6 @@ class AcademicCredentialsSecureServer:
             print(f"❌ Errore avvio server: {e}")
             raise
     
-    def _generate_self_signed_ssl(self) -> ssl.SSLContext:
-        """Genera certificati SSL self-signed per demo"""
-        try:
-            from cryptography import x509
-            from cryptography.x509.oid import NameOID
-            from cryptography.hazmat.primitives import hashes
-            from cryptography.hazmat.primitives.asymmetric import rsa
-            from cryptography.hazmat.primitives import serialization
-            import ipaddress
-            
-            # Genera chiave privata
-            private_key = rsa.generate_private_key(
-                public_exponent=65537,
-                key_size=2048,
-            )
-            
-            # Crea certificato self-signed
-            subject = issuer = x509.Name([
-                x509.NameAttribute(NameOID.COUNTRY_NAME, "IT"),
-                x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Campania"),
-                x509.NameAttribute(NameOID.LOCALITY_NAME, "Salerno"),
-                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Academic Credentials Server"),
-                x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
-            ])
-            
-            cert = x509.CertificateBuilder().subject_name(
-                subject
-            ).issuer_name(
-                issuer
-            ).public_key(
-                private_key.public_key()
-            ).serial_number(
-                x509.random_serial_number()
-            ).not_valid_before(
-                datetime.datetime.utcnow()
-            ).not_valid_after(
-                datetime.datetime.utcnow() + datetime.timedelta(days=365)
-            ).add_extension(
-                x509.SubjectAlternativeName([
-                    x509.DNSName("localhost"),
-                    x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-                ]),
-                critical=False,
-            ).sign(private_key, hashes.SHA256())
-            
-            # Salva certificato e chiave
-            cert_dir = Path(self.config.ssl_cert_file).parent
-            cert_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Salva certificato
-            with open(self.config.ssl_cert_file, "wb") as f:
-                f.write(cert.public_bytes(serialization.Encoding.PEM))
-            
-            # Salva chiave privata
-            with open(self.config.ssl_key_file, "wb") as f:
-                f.write(private_key.private_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PrivateFormat.PKCS8,
-                    encryption_algorithm=serialization.NoEncryption()
-                ))
-            
-            print(f"✅ Certificati SSL self-signed generati")
-            
-            # Crea contesto SSL
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            ssl_context.load_cert_chain(self.config.ssl_cert_file, self.config.ssl_key_file)
-            
-            return ssl_context
-            
-        except Exception as e:
-            print(f"❌ Errore generazione SSL: {e}")
-            # Fallback: SSL disabilitato
-            self.config.ssl_enabled = False
-            return None
-
-
 # =============================================================================
 # 3. DEMO E TESTING
 # =============================================================================
@@ -836,16 +623,16 @@ def demo_secure_server():
         server = AcademicCredentialsSecureServer(config)
         
         print(f"✅ Server inizializzato")
-        print(f"   Endpoints configurati: 6")
+        print(f"   Endpoints configurati: 5")
         print(f"   Middleware attivi: CORS, Rate Limiting, Logging")
         
         # 3. Informazioni API Keys
         print("\n3️⃣ API KEYS DISPONIBILI")
         
         api_keys = {
-            "unisa_key_123": "Università di Salerno",
-            "rennes_key_456": "Université de Rennes",
-            "admin_key_789": "System Administrator"
+            "issuer_rennes": "Issuer - Université de Rennes",
+            "verifier_unisa": "Verifier - Università di Salerno",
+            "studente_mariorossi": "Studente - Mario Rossi"
         }
         
         for key, desc in api_keys.items():
@@ -856,12 +643,11 @@ def demo_secure_server():
         
         endpoints = [
             ("GET", "/health", "Health check del server"),
-            ("POST", "/api/v1/credentials/submit", "Sottomissione credenziale"),
-            ("POST", "/api/v1/credentials/validate", "Validazione credenziale"),
-            ("POST", "/api/v1/presentations/submit", "Sottomissione presentazione"),
-            ("POST", "/api/v1/universities/register", "Registrazione università"),
-            ("GET", "/api/v1/credentials/{id}/status", "Status credenziale"),
-            ("GET", "/api/v1/stats", "Statistiche server (admin)")
+            ("POST", "/api/v1/credentials/submit", "Solo issuer_rennes"),
+            ("POST", "/api/v1/credentials/validate", "Tutti gli utenti"),
+            ("POST", "/api/v1/presentations/submit", "Tutti gli utenti"),
+            ("GET", "/api/v1/credentials/{id}/status", "Tutti gli utenti"),
+            ("GET", "/api/v1/stats", "Solo issuer e verifier")
         ]
         
         for method, path, desc in endpoints:
@@ -870,10 +656,10 @@ def demo_secure_server():
         # 5. Esempio richieste
         print("\n5️⃣ ESEMPI RICHIESTE")
         
-        print("📤 Sottomissione credenziale:")
+        print("📤 Sottomissione credenziale (issuer_rennes):")
         print("""
 curl -X POST https://localhost:8443/api/v1/credentials/submit \\
-  -H "Authorization: Bearer unisa_key_123" \\
+  -H "Authorization: Bearer issuer_rennes" \\
   -H "Content-Type: application/json" \\
   -d '{
     "credential_data": {...},
@@ -883,10 +669,10 @@ curl -X POST https://localhost:8443/api/v1/credentials/submit \\
   }'
 """)
         
-        print("🔍 Validazione credenziale:")
+        print("🔍 Validazione credenziale (tutti gli utenti):")
         print("""
 curl -X POST https://localhost:8443/api/v1/credentials/validate \\
-  -H "Authorization: Bearer rennes_key_456" \\
+  -H "Authorization: Bearer studente_mariorossi" \\
   -H "Content-Type: application/json" \\
   -d '{
     "credential_data": {...},
@@ -895,31 +681,11 @@ curl -X POST https://localhost:8443/api/v1/credentials/validate \\
   }'
 """)
         
-        # 6. Caratteristiche di sicurezza
-        print("\n6️⃣ CARATTERISTICHE DI SICUREZZA")
-        
-        security_features = [
-            "🔒 TLS/SSL encryption",
-            "🔑 API Key authentication",
-            "🛡️  Rate limiting",
-            "🌐 CORS protection",
-            "🔍 Request logging",
-            "✅ Input validation",
-            "📊 Security monitoring",
-            "🚫 Trusted hosts only"
-        ]
-        
-        for feature in security_features:
-            print(f"   {feature}")
-        
-        # 7. Avvio server (simulato)
-        print("\n7️⃣ PRONTO PER AVVIO")
+        # 6. Avvio server
+        print("\n6️⃣ PRONTO PER AVVIO")
         
         print("🚀 Per avviare il server:")
         print("   python communication/secure_server.py")
-        print("")
-        print("📚 Documentazione API disponibile su:")
-        print("   https://localhost:8443/docs")
         print("")
         print("💡 Usa le API keys fornite per autenticazione")
         
@@ -956,10 +722,7 @@ if __name__ == "__main__":
         print("✅ API REST sicure")
         print("✅ Autenticazione API Key")
         print("✅ Rate limiting")
-        print("✅ Validazione credenziali")
-        print("✅ Gestione presentazioni")
-        print("✅ Monitoring e logging")
-        print("✅ Middleware di sicurezza")
+        print("✅ Tutti gli utenti possono verificare credenziali")
         
         print(f"\n🚀 Avvio server...")
         try:

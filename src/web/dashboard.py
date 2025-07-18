@@ -1,5 +1,5 @@
 # =============================================================================
-# ACADEMIC CREDENTIALS DASHBOARD - Main Application
+# ACADEMIC CREDENTIALS DASHBOARD - Main Application (MODIFICATO)
 # File: web/dashboard.py
 # Decentralized Academic Credentials System
 # =============================================================================
@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass
 
 # FastAPI and web dependencies
-from fastapi import FastAPI, Request, HTTPException, Depends, Form, status  # FIXED: Added status import
+from fastapi import FastAPI, Request, HTTPException, Depends, Form, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -594,7 +594,7 @@ class AcademicCredentialsDashboard:
     def _setup_logging(self) -> None:
         """Configures the logging system."""
         logging.basicConfig(
-            level=logging.INFO,  # CHANGED: More verbose logging for debugging
+            level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             force=True
         )
@@ -637,11 +637,9 @@ class AcademicCredentialsDashboard:
         Creates a JSONResponse with safe serialization.
         """
         try:
-            # Try normal serialization first
             json.dumps(data, default=str)
             return JSONResponse(data, status_code=status_code)
         except TypeError:
-            # If that fails, use custom serializer
             safe_data = json.loads(json.dumps(data, default=self._safe_json_serializer))
             return JSONResponse(safe_data, status_code=status_code)
 
@@ -729,11 +727,9 @@ class AcademicCredentialsDashboard:
             return
         
         try:
-            # FIXED: Determine absolute paths based on current working directory
             current_dir = Path.cwd()
             self.logger.info(f"Current working directory: {current_dir}")
             
-            # Try different possible paths for certificates
             possible_cert_paths = [
                 "certificates/issued/university_F_RENNES01_1001.pem",
                 "./certificates/issued/university_F_RENNES01_1001.pem", 
@@ -770,7 +766,6 @@ class AcademicCredentialsDashboard:
                 self.logger.error("   Please run certificate_authority.py first to generate certificates")
                 return
             
-            # Create university info
             university_info = University(
                 name="Université de Rennes",
                 country="FR",
@@ -779,7 +774,6 @@ class AcademicCredentialsDashboard:
                 website="https://www.univ-rennes1.fr"
             )
             
-            # Create issuer configuration
             issuer_config = IssuerConfiguration(
                 university_info=university_info,
                 certificate_path=cert_path,
@@ -817,15 +811,13 @@ class AcademicCredentialsDashboard:
         if not user or user.role != "studente":
             return None
 
-        # Deriva common_name e student_id dall'user_id
-        # Esempio: "studente_mariorossi" -> "Mario Rossi"
         common_name = user.user_id
         if common_name.startswith("studente_"):
             common_name = common_name[len("studente_"):].replace('_', ' ').title()
         else:
             common_name = common_name.replace('_', ' ').title()
         
-        student_id = user.user_id  # Usa l'user_id come student_id per il demo
+        student_id = "0622702628" # Hardcoded ID for the demo user
 
         wallet_name = f"studente_{common_name.replace(' ', '_').lower()}_wallet"
         wallet_path = self.wallets_dir / wallet_name
@@ -841,17 +833,14 @@ class AcademicCredentialsDashboard:
             
             wallet.create_wallet(
                 password="Unisa2025",
-                student_common_name=common_name,
+                student_common_name="Mario Rossi", # Hardcoded for demo user
                 student_id=student_id
             )
 
-            # Sblocca il wallet per aggiungere la credenziale
             if wallet.unlock_wallet("Unisa2025"):
-                 # Aggiunge una credenziale di esempio
                 print("Aggiunta di una credenziale di esempio al nuovo wallet...")
                 if MODULES_AVAILABLE:
                     try:
-                        # Utilizza la factory per creare una credenziale standard
                         sample_credential = CredentialFactory.create_sample_credential()
                         sample_credential.status = CredentialStatus.ACTIVE
                         wallet.add_credential(sample_credential, tags=["esempio", "auto-generata"])
@@ -859,7 +848,6 @@ class AcademicCredentialsDashboard:
                     except Exception as e:
                         print(f"❌ Errore durante l'aggiunta della credenziale di esempio: {e}")
 
-        # Sblocca il wallet per la sessione corrente se necessario
         if wallet.status == WalletStatus.LOCKED:
             wallet.unlock_wallet("Unisa2025")
             
@@ -877,7 +865,6 @@ class AcademicCredentialsDashboard:
             try:
                 self.logger.info(f"🔍 Richiesta verifica completa da {user.user_id}")
                 
-                # Parse request body
                 body = await request.json()
                 
                 presentation_data = body.get("presentation_data")
@@ -890,7 +877,6 @@ class AcademicCredentialsDashboard:
                         status_code=400
                     )
                 
-                # Verifica completa usando il servizio dedicato
                 verification_report = await self.verification_service.verify_presentation_complete(
                     presentation_data, student_public_key, purpose
                 )
@@ -973,7 +959,6 @@ class AcademicCredentialsDashboard:
             wallet = self._get_student_wallet(user)
             wallet_creds = wallet.list_credentials()
             
-            # Format credentials for display
             credentials = [
                 {
                     'storage_id': cred['storage_id'],
@@ -1033,7 +1018,6 @@ class AcademicCredentialsDashboard:
                                                 'file_path': str(credential_file)
                                             })
                                         else:
-                                            # Use mock data if modules are unavailable
                                             credentials.append({
                                                 'credential_id': f"mock_{credential_file.stem}",
                                                 'student_name': "Mario Rossi",
@@ -1080,16 +1064,14 @@ class AcademicCredentialsDashboard:
             course_date: List[str] = Form([])
         ):
             """
-            FIXED: Handles the issuance of a new credential with better error handling and logging
+            Handles the issuance of a new credential with better error handling and logging
             """
             self.logger.info(f"📝 Credential issuance request received for student: {student_name}")
             
             try:
-                # 1. AUTHENTICATION AND PERMISSION CHECK
                 user = self.auth_deps['require_write'](request)
                 self.logger.info(f"✅ User authenticated: {user.user_id}")
                 
-                # 2. CHECK ISSUER SERVICE AVAILABILITY  
                 if not self.issuer:
                     self.logger.error("❌ Issuer service not initialized")
                     raise HTTPException(
@@ -1099,11 +1081,9 @@ class AcademicCredentialsDashboard:
                 
                 self.logger.info("✅ Issuer service available")
 
-                # 3. PREPARE STUDENT DATA
                 self.logger.info("🔧 Preparing student data...")
                 crypto_utils = CryptoUtils()
                 
-                # Handle student name parsing more safely
                 name_parts = student_name.strip().split()
                 first_name = name_parts[0] if name_parts else "Unknown"
                 last_name = name_parts[-1] if len(name_parts) > 1 else "Student"
@@ -1117,7 +1097,6 @@ class AcademicCredentialsDashboard:
                 )
                 self.logger.info("✅ Student info created")
 
-                # 4. PREPARE STUDY PERIOD
                 self.logger.info("🔧 Preparing study period...")
                 try:
                     start_date = datetime.datetime.fromisoformat(study_period_start + "T00:00:00+00:00")
@@ -1135,10 +1114,8 @@ class AcademicCredentialsDashboard:
                     self.logger.error(f"❌ Error creating study period: {e}")
                     raise ValueError(f"Date non valide: {e}")
 
-                # 5. HOST UNIVERSITY (same as issuer for demo)
                 host_university = self.issuer.config.university_info
 
-                # 6. STUDY PROGRAM
                 study_program = StudyProgram(
                     name="Computer Science Exchange Program",
                     isced_code="0613",
@@ -1148,7 +1125,6 @@ class AcademicCredentialsDashboard:
                 )
                 self.logger.info("✅ Study program created")
 
-                # 7. PREPARE COURSES
                 self.logger.info("🔧 Preparing courses...")
                 courses = []
                 
@@ -1162,7 +1138,6 @@ class AcademicCredentialsDashboard:
                                 ects_grade=course_grade[i]
                             )
                             
-                            # Parse exam date more safely
                             if course_date[i]:
                                 exam_date = datetime.datetime.fromisoformat(course_date[i] + "T10:00:00+00:00")
                             else:
@@ -1184,13 +1159,11 @@ class AcademicCredentialsDashboard:
                             self.logger.error(f"❌ Error creating course {i}: {e}")
                             raise ValueError(f"Errore nel corso {course_name[i]}: {e}")
 
-                # 8. VERIFY COURSES
                 if not courses:
                     raise ValueError("È necessario specificare almeno un corso")
                 
                 self.logger.info(f"✅ Created {len(courses)} courses")
 
-                # 9. CREATE ISSUANCE REQUEST
                 self.logger.info("🔧 Creating issuance request...")
                 request_id = self.issuer.create_issuance_request(
                     student_info=student_info,
@@ -1203,7 +1176,6 @@ class AcademicCredentialsDashboard:
                 )
                 self.logger.info(f"✅ Issuance request created: {request_id}")
 
-                # 10. PROCESS REQUEST
                 self.logger.info("⚙️ Processing issuance request...")
                 issuance_result = self.issuer.process_issuance_request(request_id)
                 
@@ -1214,28 +1186,22 @@ class AcademicCredentialsDashboard:
 
                 self.logger.info("✅ Credential issued successfully")
 
-                # 11. SAVE CREDENTIAL
                 credential = issuance_result.credential
                 credential_id_str = str(credential.metadata.credential_id)
                 
-                # Create safe filename
                 import re
                 safe_student_name = re.sub(r'[^\w\s-]', '', student_name).strip().replace(' ', '_')
                 
-                # Create output directory
                 output_dir = Path(f"src/credentials/{user.user_id}/{safe_student_name}/")
                 output_dir.mkdir(parents=True, exist_ok=True)
                 
-                # File path
                 output_path = output_dir / f"{credential_id_str}.json"
                 
-                # Save credential
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(credential.to_json())
                 
                 self.logger.info(f"💾 Credential saved to: {output_path}")
 
-                # 12. PREPARE RESULT
                 result_data = {
                     "success": True,
                     "message": "Credenziale emessa con successo!",
@@ -1344,7 +1310,6 @@ class AcademicCredentialsDashboard:
         ):
             """Creates a new presentation from selected credentials with selective disclosure."""
             try:
-                # Parse JSON from request body
                 body = await request.json()
                 
                 self.logger.info(f"Creating presentation for user: {user.user_id}")
@@ -1356,7 +1321,6 @@ class AcademicCredentialsDashboard:
                         status_code=403
                     )
 
-                # Validate required fields
                 if not body.get('purpose') or len(body.get('purpose', '').strip()) < 5:
                     return JSONResponse(
                         {"success": False, "message": "Lo scopo deve essere di almeno 5 caratteri"},
@@ -1369,7 +1333,6 @@ class AcademicCredentialsDashboard:
                         status_code=400
                     )
 
-                # Get student wallet
                 wallet = self._get_student_wallet(user)
                 if not wallet or wallet.status != WalletStatus.UNLOCKED:
                     return JSONResponse(
@@ -1377,37 +1340,28 @@ class AcademicCredentialsDashboard:
                         status_code=500
                     )
 
-                # Check if required modules are available
                 if not MODULES_AVAILABLE:
                     return JSONResponse(
                         {"success": False, "message": "Moduli wallet non disponibili"},
                         status_code=503
                     )
 
-                # Import required modules
                 from wallet.presentation import PresentationManager, PresentationFormat
                 from wallet.selective_disclosure import DisclosureLevel
 
-                # Initialize presentation manager
                 presentation_manager = PresentationManager(wallet)
                 
-                # Get selected attributes from request (specific attribute selection)
                 selected_attributes = body.get('selected_attributes', [])
                 if not selected_attributes:
-                    # Use default minimal attributes if none specified
                     selected_attributes = [
-                        "metadata.credential_id",
-                        "subject.pseudonym", 
-                        "issuer.name",
-                        "total_ects_credits"
+                        "metadata.credential_id", "subject.pseudonym", 
+                        "issuer.name", "total_ects_credits"
                     ]
 
                 self.logger.info(f"Selected attributes: {selected_attributes}")
 
-                # Prepare credential selections with selective disclosure
                 credential_selections = []
                 for storage_id in body.get('credentials'):
-                    # Verify credential exists in wallet
                     wallet_cred = wallet.get_credential(storage_id)
                     if not wallet_cred:
                         return JSONResponse(
@@ -1424,7 +1378,6 @@ class AcademicCredentialsDashboard:
 
                 self.logger.info(f"Credential selections prepared: {len(credential_selections)}")
 
-                # Create presentation with selective disclosure
                 presentation_id = presentation_manager.create_presentation(
                     purpose=body.get('purpose'),
                     credential_selections=credential_selections,
@@ -1434,7 +1387,6 @@ class AcademicCredentialsDashboard:
 
                 self.logger.info(f"Presentation created with ID: {presentation_id}")
 
-                # Sign presentation with student's private key
                 sign_success = presentation_manager.sign_presentation(presentation_id)
                 if not sign_success:
                     return JSONResponse(
@@ -1444,8 +1396,11 @@ class AcademicCredentialsDashboard:
 
                 self.logger.info("Presentation signed successfully")
 
-                # Export as signed JSON with merkle proofs
-                export_dir = Path("./presentations") 
+                # --- MODIFICA INIZIO ---
+                # Il percorso di export ora dipende dalla directory del wallet dello studente.
+                export_dir = wallet.wallet_dir / "presentations"
+                # --- MODIFICA FINE ---
+                
                 export_dir.mkdir(exist_ok=True)
                 output_path = export_dir / f"{presentation_id}.json"
                 
@@ -1463,7 +1418,6 @@ class AcademicCredentialsDashboard:
 
                 self.logger.info(f"Presentation exported to: {output_path}")
 
-                # Get presentation details for response
                 presentation = presentation_manager.get_presentation(presentation_id)
                 if not presentation:
                     return JSONResponse(
@@ -1471,7 +1425,6 @@ class AcademicCredentialsDashboard:
                         status_code=500
                     )
 
-                # Safely get summary with datetime handling
                 try:
                     summary = presentation.get_summary()
                 except Exception as e:
@@ -1482,7 +1435,6 @@ class AcademicCredentialsDashboard:
                         'is_signed': presentation.signature is not None
                     }
 
-                # Prepare response with safe datetime serialization
                 response_data = {
                     "success": True,
                     "message": "Presentazione verificabile creata con successo",
@@ -1522,13 +1474,18 @@ class AcademicCredentialsDashboard:
         ):
             """Downloads a presentation file."""
             try:
-                file_path = Path(f"./presentations/{presentation_id}.json")
+                # MODIFICA: Il percorso del file ora dipende dal wallet dello studente
+                if not user.is_student:
+                     raise HTTPException(status_code=403, detail="Accesso non autorizzato")
+                
+                wallet = self._get_student_wallet(user)
+                file_path = wallet.wallet_dir / "presentations" / f"{presentation_id}.json"
                 
                 if not file_path.exists():
                     self.logger.warning(f"Presentation file not found: {file_path}")
                     raise HTTPException(status_code=404, detail="Presentazione non trovata")
                 
-                self.logger.info(f"Downloading presentation: {presentation_id}")
+                self.logger.info(f"Downloading presentation: {presentation_id} for user {user.user_id}")
                 return FileResponse(
                     file_path, 
                     filename=f"presentation_{presentation_id[:8]}.json",

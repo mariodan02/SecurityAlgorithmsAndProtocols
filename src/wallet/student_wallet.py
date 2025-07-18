@@ -30,13 +30,10 @@ try:
     from crypto.foundations import RSAKeyManager, DigitalSignature
     from credentials.models import AcademicCredential
     from credentials.validator import AcademicCredentialValidator, ValidationLevel
-    # NUOVO: Import per interagire con la CA
     from pki.certificate_authority import CertificateAuthority
 except ImportError as e:
     print(f"⚠️ Errore import moduli interni: {e}")
     raise
-
-# ... (Le classi Enum e Dataclass rimangono invariate) ...
 
 class WalletStatus(Enum):
     LOCKED = "locked"
@@ -104,7 +101,7 @@ class AcademicStudentWallet:
         self.credentials: Dict[str, WalletCredential] = {}
         self.wallet_private_key: Optional[rsa.RSAPrivateKey] = None
         self.wallet_public_key: Optional[rsa.RSAPublicKey] = None
-        self.student_certificate: Optional[str] = None # NUOVO: per il certificato PEM
+        self.student_certificate: Optional[str] = None
         self.last_activity: Optional[datetime.datetime] = None
         self.fernet: Optional[Fernet] = None
         self.wallet_salt: Optional[bytes] = None
@@ -142,7 +139,9 @@ class AcademicStudentWallet:
         self.status = WalletStatus.LOCKED
         
     def create_wallet(self, password: str, student_common_name: str, student_id: str) -> bool:
-        """Crea un nuovo wallet, genera chiavi, ottiene un certificato e firma il wallet."""
+        """
+        Crea un nuovo wallet caricando la chiave e il certificato pre-generati dalla CA.
+        """
         if self.wallet_file.exists():
             print("❌ Wallet già esistente.")
             return False
@@ -150,47 +149,54 @@ class AcademicStudentWallet:
         if not self._validate_password(password):
             return False
         
-        print(f"🔨 Creando nuovo wallet per {student_common_name}")
+        print(f"🔨 Creando nuovo wallet per {student_common_name} (caricando identità pre-generata)")
         
         try:
-            # 1. Genera chiavi RSA per lo studente e il salt per la password
-            self.wallet_private_key, self.wallet_public_key = self.key_manager.generate_key_pair()
-            self.wallet_salt = os.urandom(16)
-            self.salt_file.write_bytes(self.wallet_salt)
+            # --- MODIFICA INIZIO ---
+            # 1. Carica la chiave privata e il certificato dello studente generati dalla CA
+            student_key_name = f"{student_common_name.replace(' ', '_').lower()}_{student_id}"
             
-            # 2. Ottieni un certificato dalla CA
-            print("🏛️  Richiesta certificato studente alla CA...")
-            ca = CertificateAuthority() # Istanza della CA
-            student_info = {
-                "type": "student", "name": f"{student_common_name.replace(' ','_')}_{student_id}",
-                "common_name": student_common_name, "country": "IT",
-                "organization": "Student Wallet", "student_id": student_id, "password": None
-            }
-            # La CA genera e salva i file, noi dobbiamo leggere il certificato generato
-            cert_path, key_path = ca.generate_certificate_for_student(student_info)
+            # Percorsi dei file pre-generati
+            key_path = Path(f"./keys/{student_key_name}_private.pem")
+            cert_path = Path(f"./certificates/students/{student_key_name}.pem")
+            student_key_password = "StudentPassword123!" # Password hardcoded dalla CA
+            
+            if not key_path.exists() or not cert_path.exists():
+                print(f"❌ ERRORE: Chiave ({key_path}) o certificato ({cert_path}) non trovati.")
+                print("   Assicurati di aver eseguito prima 'python src/pki/certificate_authority.py'")
+                return False
+
+            print(f"🔑 Caricamento chiave privata da: {key_path}")
+            private_key_pem = key_path.read_bytes()
+            self.wallet_private_key = self.key_manager.deserialize_private_key(
+                private_key_pem,
+                password=student_key_password.encode('utf-8')
+            )
+            self.wallet_public_key = self.wallet_private_key.public_key()
+            
+            print(f"📄 Caricamento certificato da: {cert_path}")
             self.student_certificate = cert_path.read_text()
             
-            # Sovrascriviamo le chiavi generate dalla CA con quelle del wallet per coerenza
-            # (In un sistema reale, la chiave privata non lascerebbe mai il wallet)
-            key_path.write_bytes(self.key_manager.serialize_private_key(self.wallet_private_key))
+            # Genera il salt per la password del wallet
+            self.wallet_salt = os.urandom(16)
+            self.salt_file.write_bytes(self.wallet_salt)
+            # --- MODIFICA FINE ---
 
-            print(f"✅ Certificato ottenuto e salvato in: {cert_path}")
-
-            # 3. Crea l'oggetto Fernet per la sessione
+            # 2. Crea l'oggetto Fernet per la sessione
             fernet_key = self._derive_key_from_password(password, self.wallet_salt)
             self.fernet = Fernet(fernet_key)
 
             self.status = WalletStatus.UNLOCKED
             self.last_activity = datetime.datetime.utcnow()
 
-            # 4. Salva le chiavi RSA e il certificato in modo cifrato
+            # 3. Salva le chiavi RSA e il certificato in modo cifrato nel wallet
             self._save_encrypted_keys()
             
-            # 5. Salva il file del wallet firmato
+            # 4. Salva il file del wallet vuoto (ma firmato)
             self.credentials = {}
-            self._save_wallet_data() # Salva e firma
+            self._save_wallet_data()
             
-            print("✅ Wallet creato, certificato e firmato con successo!")
+            print("✅ Wallet creato con identità pre-generata e firmato con successo!")
             return True
             
         except Exception as e:
@@ -253,7 +259,6 @@ class AcademicStudentWallet:
             'credentials': [cred.to_dict() for cred in self.credentials.values()]
         }
         
-        # NUOVO: Firma il contenuto del wallet
         signer = DigitalSignature("PSS")
         signed_content = signer.sign_document(self.wallet_private_key, wallet_content)
 
@@ -271,9 +276,7 @@ class AcademicStudentWallet:
         decrypted_data = self.fernet.decrypt(encrypted_data)
         signed_content = json.loads(decrypted_data.decode('utf-8'))
         
-        # NUOVO: Verifica la firma del wallet prima di caricarlo
-        # NB: Le chiavi devono essere caricate prima di questa chiamata
-        self._load_encrypted_keys() # Assicura che la chiave pubblica sia disponibile
+        self._load_encrypted_keys() 
         verifier = DigitalSignature("PSS")
         if not verifier.verify_document_signature(self.wallet_public_key, signed_content):
             print("❌ ATTENZIONE: Firma del wallet non valida! File potenzialmente corrotto.")
@@ -281,7 +284,7 @@ class AcademicStudentWallet:
             return False
 
         wallet_content = signed_content
-        wallet_content.pop('firma', None) # Rimuove la firma per il parsing
+        wallet_content.pop('firma', None)
 
         self.credentials = {
             cred_data['storage_id']: WalletCredential.from_dict(cred_data)
@@ -294,7 +297,7 @@ class AcademicStudentWallet:
         keys_json = json.dumps({
             'private_key': self.key_manager.serialize_private_key(self.wallet_private_key).decode('utf-8'),
             'public_key': self.key_manager.serialize_public_key(self.wallet_public_key).decode('utf-8'),
-            'student_certificate': self.student_certificate # NUOVO
+            'student_certificate': self.student_certificate
         }).encode('utf-8')
         
         encrypted_keys = self.fernet.encrypt(keys_json)
@@ -309,7 +312,7 @@ class AcademicStudentWallet:
         
         self.wallet_private_key = self.key_manager.deserialize_private_key(keys_data['private_key'].encode('utf-8'))
         self.wallet_public_key = self.key_manager.deserialize_public_key(keys_data['public_key'].encode('utf-8'))
-        self.student_certificate = keys_data.get('student_certificate') # NUOVO
+        self.student_certificate = keys_data.get('student_certificate')
         return True
     
     def add_credential(self, credential, tags=None):

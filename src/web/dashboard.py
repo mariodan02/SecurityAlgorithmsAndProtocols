@@ -15,33 +15,26 @@ import logging
 from dataclasses import dataclass
 
 # FastAPI and web dependencies
-from fastapi import FastAPI, Request, HTTPException, Depends, Form
+from fastapi import FastAPI, Request, HTTPException, Depends, Form, status  # FIXED: Added status import
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
 
-# Wallet-related imports
-from blockchain.blockchain_service import BlockchainService
-from credentials.models import Course, EQFLevel, ExamGrade, GradeSystem, PersonalInfo, StudyPeriod, StudyProgram, StudyType
-from wallet.student_wallet import AcademicStudentWallet, CredentialStorage, WalletConfiguration, WalletStatus
 from wallet.presentation import PresentationFormat, PresentationManager
-
-# Pydantic for data validation
-from pydantic import BaseModel, Field
+from wallet.student_wallet import AcademicStudentWallet, WalletConfiguration, WalletStatus
 
 # Conditional imports to prevent errors if modules are unavailable
 try:
-    from communication.secure_server import CredentialVerificationRequest
-    from credentials.models import AcademicCredential
-    from crypto.foundations import CryptoUtils, DigitalSignature
-    from credentials.validator import AcademicCredentialValidator, ValidationLevel, ValidationResult, ValidatorConfiguration
-    from pki.certificate_manager import CertificateManager
+    from credentials.models import AcademicCredential, PersonalInfo, StudyPeriod, StudyProgram, Course, ExamGrade, GradeSystem, EQFLevel, StudyType, University
+    from credentials.issuer import AcademicCredentialIssuer, IssuerConfiguration
+    from crypto.foundations import CryptoUtils
     MODULES_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️ Some modules are not available: {e}")
+    print(f"⚠️ Core modules not available: {e}")
     MODULES_AVAILABLE = False
 
 # =============================================================================
@@ -294,9 +287,8 @@ class AcademicCredentialsDashboard:
         # Services
         self.session_manager = SessionManager(self.config.session_timeout_minutes)
         self.mock_data = MockDataService()
-        self.student_wallets = {}
-        self.wallets_dir = Path("./student_wallets")
-
+        self.issuer = None  # Will be initialized later
+        
         # Configure logging
         self._setup_logging()
         
@@ -311,19 +303,15 @@ class AcademicCredentialsDashboard:
         
         self._setup_routes()
         self._initialize_system_components()
-    
+
     def _setup_logging(self) -> None:
         """Configures the logging system."""
         logging.basicConfig(
-            level=logging.WARNING,
-            format='%(levelname)s - %(message)s',
+            level=logging.INFO,  # CHANGED: More verbose logging for debugging
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             force=True
         )
         self.logger = logging.getLogger(__name__)
-        
-        logging.getLogger('uvicorn').setLevel(logging.WARNING)
-        logging.getLogger('fastapi').setLevel(logging.WARNING)
-        logging.getLogger('uvicorn.access').setLevel(logging.ERROR)
 
     def run(self, host: Optional[str] = None, port: Optional[int] = None):
         """Starts the web server."""
@@ -417,75 +405,81 @@ class AcademicCredentialsDashboard:
 
     def _initialize_system_components(self) -> None:
         """Initializes core system components."""
-        self.issuer = None
-        self.verification_engine = None
+        self.logger.info("🔧 Initializing system components...")
         
         if not MODULES_AVAILABLE:
             self.logger.warning("⚠️ Core system modules not available - running in demo mode")
             return
         
         try:
-            import sys
-            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            # FIXED: Determine absolute paths based on current working directory
+            current_dir = Path.cwd()
+            self.logger.info(f"Current working directory: {current_dir}")
             
-            from credentials.issuer import AcademicCredentialIssuer, IssuerConfiguration
-            from credentials.models import University
+            # Try different possible paths for certificates
+            possible_cert_paths = [
+                "certificates/issued/university_F_RENNES01_1001.pem",
+                "./certificates/issued/university_F_RENNES01_1001.pem", 
+                "src/certificates/issued/university_F_RENNES01_1001.pem",
+                "./src/certificates/issued/university_F_RENNES01_1001.pem"
+            ]
             
+            possible_key_paths = [
+                "keys/universite_rennes_private.pem",
+                "./keys/universite_rennes_private.pem",
+                "src/keys/universite_rennes_private.pem", 
+                "./src/keys/universite_rennes_private.pem"
+            ]
+            
+            cert_path = None
+            key_path = None
+            
+            for path in possible_cert_paths:
+                if Path(path).exists():
+                    cert_path = path
+                    self.logger.info(f"✅ Found certificate at: {cert_path}")
+                    break
+            
+            for path in possible_key_paths:
+                if Path(path).exists():
+                    key_path = path
+                    self.logger.info(f"✅ Found private key at: {key_path}")
+                    break
+            
+            if not cert_path or not key_path:
+                self.logger.error(f"❌ Required files not found:")
+                self.logger.error(f"   Certificate: {cert_path or 'NOT FOUND'}")
+                self.logger.error(f"   Private key: {key_path or 'NOT FOUND'}")
+                self.logger.error("   Please run certificate_authority.py first to generate certificates")
+                return
+            
+            # Create university info
+            university_info = University(
+                name="Université de Rennes",
+                country="FR",
+                city="Rennes",
+                erasmus_code="F RENNES01",
+                website="https://www.univ-rennes1.fr"
+            )
+            
+            # Create issuer configuration
             issuer_config = IssuerConfiguration(
-                university_info=University(
-                    name="Université de Rennes",
-                    country="FR",
-                    city="Rennes",
-                    erasmus_code="F RENNES01",
-                    website="https://www.univ-rennes1.fr"
-                ),
-                certificate_path="./certificates/issued/university_F_RENNES01_1001.pem",
-                private_key_path="./keys/universite_rennes_private.pem",
+                university_info=university_info,
+                certificate_path=cert_path,
+                private_key_path=key_path,
                 private_key_password="Unisa2025",
                 backup_enabled=True,
-                backup_directory="./src/credentials/backups"
+                backup_directory="./credentials/backups"
             )
             
-            cert_path = Path(issuer_config.certificate_path)
-            key_path = Path(issuer_config.private_key_path)
-            
-            if not cert_path.exists():
-                self.logger.error(f"❌ Certificate not found: {cert_path}")
-                return
-                    
-            if not key_path.exists():
-                self.logger.error(f"❌ Private key not found: {key_path}")
-                return
-            
-            original_logging_level = self.logger.level
-            self.logger.setLevel(logging.CRITICAL)
-            
+            self.logger.info("🏛️ Creating AcademicCredentialIssuer...")
             self.issuer = AcademicCredentialIssuer(config=issuer_config)
+            self.logger.info("✅ Issuer initialized successfully")
             
-            self.logger.setLevel(original_logging_level)
-            
-            credentials_dir = Path("./src/credentials")
-            credentials_dir.mkdir(parents=True, exist_ok=True)
-            
-            backups_dir = Path("./src/credentials/backups")
-            backups_dir.mkdir(parents=True, exist_ok=True)
-            
-            if self.issuer:
-                self.logger.info("✅ System components initialized successfully")
-                
-            self.blockchain_verifier = BlockchainService(
-                provider_url="http://127.0.0.1:7545",
-                pem_filepath="./keys/universita_salerno_private.pem",
-                pem_password="Unisa2025"
-            )
-
         except Exception as e:
-            self.logger.error(f"🔥 ERROR during initialization: {e}")
-        except ImportError as e:
-            self.logger.error(f"❌ ERROR importing modules: {e}")
-        except Exception as e:
-            self.logger.error(f"🔥 ERROR during initialization: {e}")
-
+            self.logger.error(f"❌ Error initializing system components: {e}", exc_info=True)
+            self.issuer = None
+            
     async def _call_secure_api(self, endpoint: str, payload: dict) -> dict:
         """Helper function for calling secure APIs."""
         import httpx
@@ -710,6 +704,7 @@ class AcademicCredentialsDashboard:
             })
         
         @self.app.post("/credentials/issue")
+        @self.app.post("/credentials/issue")
         async def handle_issue_credential(
             request: Request,
             student_name: str = Form(...),
@@ -723,42 +718,65 @@ class AcademicCredentialsDashboard:
             course_date: List[str] = Form([])
         ):
             """
-            Gestisce l'emissione di una nuova credenziale
+            FIXED: Handles the issuance of a new credential with better error handling and logging
             """
+            self.logger.info(f"📝 Credential issuance request received for student: {student_name}")
+            
             try:
-                # 1. AUTENTICAZIONE E VERIFICA PERMESSI
+                # 1. AUTHENTICATION AND PERMISSION CHECK
                 user = self.auth_deps['require_write'](request)
+                self.logger.info(f"✅ User authenticated: {user.user_id}")
                 
-                # 2. CONTROLLO DISPONIBILITÀ DEL SERVIZIO ISSUER
+                # 2. CHECK ISSUER SERVICE AVAILABILITY  
                 if not self.issuer:
-                    self.logger.error("Servizio Issuer non inizializzato")
+                    self.logger.error("❌ Issuer service not initialized")
                     raise HTTPException(
                         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                         detail="Servizio di emissione non disponibile"
                     )
                 
-                # 3. PREPARAZIONE DATI STUDENTE
+                self.logger.info("✅ Issuer service available")
+
+                # 3. PREPARE STUDENT DATA
+                self.logger.info("🔧 Preparing student data...")
                 crypto_utils = CryptoUtils()
+                
+                # Handle student name parsing more safely
+                name_parts = student_name.strip().split()
+                first_name = name_parts[0] if name_parts else "Unknown"
+                last_name = name_parts[-1] if len(name_parts) > 1 else "Student"
+                
                 student_info = PersonalInfo(
-                    surname_hash=crypto_utils.sha256_hash_string(student_name.split()[-1]),
-                    name_hash=crypto_utils.sha256_hash_string(student_name.split()[0]),
+                    surname_hash=crypto_utils.sha256_hash_string(last_name),
+                    name_hash=crypto_utils.sha256_hash_string(first_name),
                     birth_date_hash=crypto_utils.sha256_hash_string("1990-01-01"),
                     student_id_hash=crypto_utils.sha256_hash_string(student_id),
                     pseudonym=f"student_{student_name.lower().replace(' ', '_')}"
                 )
+                self.logger.info("✅ Student info created")
 
-                # 4. PREPARAZIONE PERIODO DI STUDIO
-                study_period = StudyPeriod(
-                    start_date=datetime.datetime.fromisoformat(study_period_start + "T00:00:00+00:00"),
-                    end_date=datetime.datetime.fromisoformat(study_period_end + "T23:59:59+00:00"),
-                    study_type=StudyType.ERASMUS,
-                    academic_year=f"{datetime.datetime.fromisoformat(study_period_start).year}/{datetime.datetime.fromisoformat(study_period_start).year + 1}"
-                )
+                # 4. PREPARE STUDY PERIOD
+                self.logger.info("🔧 Preparing study period...")
+                try:
+                    start_date = datetime.datetime.fromisoformat(study_period_start + "T00:00:00+00:00")
+                    end_date = datetime.datetime.fromisoformat(study_period_end + "T23:59:59+00:00")
+                    academic_year = f"{start_date.year}/{start_date.year + 1}"
+                    
+                    study_period = StudyPeriod(
+                        start_date=start_date,
+                        end_date=end_date,
+                        study_type=StudyType.ERASMUS,
+                        academic_year=academic_year
+                    )
+                    self.logger.info("✅ Study period created")
+                except Exception as e:
+                    self.logger.error(f"❌ Error creating study period: {e}")
+                    raise ValueError(f"Date non valide: {e}")
 
-                # 5. UNIVERSITÀ OSPITANTE (stessa dell'issuer per demo)
+                # 5. HOST UNIVERSITY (same as issuer for demo)
                 host_university = self.issuer.config.university_info
 
-                # 6. PROGRAMMA DI STUDIO
+                # 6. STUDY PROGRAM
                 study_program = StudyProgram(
                     name="Computer Science Exchange Program",
                     isced_code="0613",
@@ -766,35 +784,52 @@ class AcademicCredentialsDashboard:
                     program_type="Master's Degree Exchange",
                     field_of_study="Computer Science"
                 )
+                self.logger.info("✅ Study program created")
 
-                # 7. PREPARAZIONE CORSI
+                # 7. PREPARE COURSES
+                self.logger.info("🔧 Preparing courses...")
                 courses = []
+                
                 for i in range(len(course_name)):
                     if course_name[i] and course_cfu[i] and course_grade[i]:
-                        exam_grade = ExamGrade(
-                            score=course_grade[i],
-                            passed=True,
-                            grade_system=GradeSystem.ECTS_GRADE,
-                            ects_grade=course_grade[i]
-                        )
-                        exam_date = datetime.datetime.fromisoformat(course_date[i] + "T10:00:00+00:00") if course_date[i] else study_period.end_date
-                        
-                        course = Course(
-                            course_name=course_name[i],
-                            course_code=f"CRS-{i+1:03d}",
-                            isced_code="0613",
-                            grade=exam_grade,
-                            exam_date=exam_date,
-                            ects_credits=int(course_cfu[i]),
-                            professor=f"Prof. {user.university_name}"
-                        )
-                        courses.append(course)
+                        try:
+                            exam_grade = ExamGrade(
+                                score=course_grade[i],
+                                passed=True,
+                                grade_system=GradeSystem.ECTS_GRADE,
+                                ects_grade=course_grade[i]
+                            )
+                            
+                            # Parse exam date more safely
+                            if course_date[i]:
+                                exam_date = datetime.datetime.fromisoformat(course_date[i] + "T10:00:00+00:00")
+                            else:
+                                exam_date = study_period.end_date
+                            
+                            course = Course(
+                                course_name=course_name[i],
+                                course_code=f"CRS-{i+1:03d}",
+                                isced_code="0613",
+                                grade=exam_grade,
+                                exam_date=exam_date,
+                                ects_credits=int(course_cfu[i]),
+                                professor=f"Prof. {user.university_name}"
+                            )
+                            courses.append(course)
+                            self.logger.info(f"✅ Added course: {course_name[i]}")
+                            
+                        except Exception as e:
+                            self.logger.error(f"❌ Error creating course {i}: {e}")
+                            raise ValueError(f"Errore nel corso {course_name[i]}: {e}")
 
-                # 8. VERIFICA CORSI
+                # 8. VERIFY COURSES
                 if not courses:
                     raise ValueError("È necessario specificare almeno un corso")
+                
+                self.logger.info(f"✅ Created {len(courses)} courses")
 
-                # 9. CREAZIONE RICHIESTA DI EMISSIONE
+                # 9. CREATE ISSUANCE REQUEST
+                self.logger.info("🔧 Creating issuance request...")
                 request_id = self.issuer.create_issuance_request(
                     student_info=student_info,
                     study_period=study_period,
@@ -804,34 +839,41 @@ class AcademicCredentialsDashboard:
                     requested_by=user.user_id,
                     notes=f"Credenziale di tipo: {credential_type}"
                 )
+                self.logger.info(f"✅ Issuance request created: {request_id}")
 
-                # 10. PROCESSAMENTO RICHIESTA
+                # 10. PROCESS REQUEST
+                self.logger.info("⚙️ Processing issuance request...")
                 issuance_result = self.issuer.process_issuance_request(request_id)
                 
                 if not issuance_result.success:
                     error_msg = "; ".join(issuance_result.errors)
+                    self.logger.error(f"❌ Issuance failed: {error_msg}")
                     raise ValueError(f"Emissione fallita: {error_msg}")
 
-                # 11. SALVATAGGIO CREDENZIALE
+                self.logger.info("✅ Credential issued successfully")
+
+                # 11. SAVE CREDENTIAL
                 credential = issuance_result.credential
                 credential_id_str = str(credential.metadata.credential_id)
                 
-                # Sanitizza il nome dello studente per il percorso
+                # Create safe filename
                 import re
                 safe_student_name = re.sub(r'[^\w\s-]', '', student_name).strip().replace(' ', '_')
                 
-                # Crea directory di output
+                # Create output directory
                 output_dir = Path(f"src/credentials/{user.user_id}/{safe_student_name}/")
                 output_dir.mkdir(parents=True, exist_ok=True)
                 
-                # Percorso file
+                # File path
                 output_path = output_dir / f"{credential_id_str}.json"
                 
-                # Salva credenziale
+                # Save credential
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(credential.to_json())
                 
-                # 12. PREPARA RISULTATO
+                self.logger.info(f"💾 Credential saved to: {output_path}")
+
+                # 12. PREPARE RESULT
                 result_data = {
                     "success": True,
                     "message": "Credenziale emessa con successo!",
@@ -842,25 +884,27 @@ class AcademicCredentialsDashboard:
                     "total_ects": sum(c.ects_credits for c in courses)
                 }
                 
+                self.logger.info(f"🎉 Credential issuance completed successfully for {student_name}")
                 return JSONResponse(result_data)
                 
             except ValueError as e:
-                self.logger.warning(f"Errore validazione: {e}")
+                self.logger.warning(f"⚠️ Validation error: {e}")
                 return JSONResponse(
                     {"success": False, "message": f"Errore nei dati: {str(e)}"}, 
                     status_code=400
                 )
                 
             except HTTPException as he:
+                self.logger.error(f"❌ HTTP Exception: {he.detail}")
                 raise he
                 
             except Exception as e:
-                self.logger.error(f"Errore critico: {e}", exc_info=True)
+                self.logger.error(f"🔥 Critical error during credential issuance: {e}", exc_info=True)
                 return JSONResponse(
-                    {"success": False, "message": "Errore interno del server"},
+                    {"success": False, "message": f"Errore interno del server: {str(e)}"},
                     status_code=500
                 )
-                            
+                                        
         @self.app.get("/verification", response_class=HTMLResponse)
         async def verification_page(request: Request):
             """Credential verification page."""

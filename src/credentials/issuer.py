@@ -113,10 +113,12 @@ class AcademicCredentialIssuer:
         Args:
             config: Configurazione issuer
         """
+        # FIXED: Assegna config PRIMA di tutto
+        self.config = config
+        
         if self.config.backup_enabled:
             Path(self.config.backup_directory).mkdir(parents=True, exist_ok=True)
         
-        self.config = config
         self.crypto_utils = CryptoUtils()
         self.cert_manager = CertificateManager()
         # Componenti crittografici
@@ -137,19 +139,38 @@ class AcademicCredentialIssuer:
             'signing_operations': 0,
             'validation_errors': 0
         }
-        self.blockchain_service = BlockchainService(
-            provider_url="http://127.0.0.1:7545",
-            pem_filepath=self.config.private_key_path,  
-            pem_password=self.config.private_key_password
-        )
-        self.web3 = self.blockchain_service.w3
-        self.issuer_account = self.web3.eth.account.from_key(
-            load_private_key_from_pem(config.private_key_path, config.private_key_password)
-        )
+
+        # Inizializziamo la blockchain
+        self.blockchain_service = None
+        self.web3 = None
+        self.issuer_account = None
+        
+        try:
+            # CORRETTA: Solo pem_filepath e pem_password
+            self.blockchain_service = BlockchainService(
+                pem_filepath=self.config.private_key_path,
+                pem_password=self.config.private_key_password
+            )
+            
+            if self.blockchain_service:
+                self.web3 = self.blockchain_service.w3
+                self.issuer_account = self.blockchain_service.account  # Usa l'account già creato
+                print("✅ BlockchainService inizializzato correttamente")
+                
+        except Exception as e:
+            print(f"⚠️ Impossibile inizializzare BlockchainService: {e}")
+            print("   Il sistema funzionerà senza integrazione blockchain")
+            self.blockchain_service = None
+        
+        # Continua con il resto dell'inizializzazione...
+        self._initialize_issuer()
+        print(f"🏛️  Credential Issuer inizializzato per: {config.university_info.name}")
+
+        # Inizializza issuer
         self._initialize_issuer()
         
         print(f"🏛️  Credential Issuer inizializzato per: {config.university_info.name}")
-    
+                    
     def _send_signed_transaction(self, transaction):
         """Funzione helper per firmare e inviare."""
         signed_tx = self.issuer_account.sign_transaction(transaction)
@@ -160,7 +181,7 @@ class AcademicCredentialIssuer:
     def _initialize_issuer(self):
         """Inizializza componenti issuer"""
         try:
-            # Carica certificato università
+            # 1. CARICA CERTIFICATO UNIVERSITÀ (ESSENZIALE!)
             if Path(self.config.certificate_path).exists():
                 self.university_certificate = self.cert_manager.load_certificate_from_file(
                     self.config.certificate_path
@@ -169,7 +190,7 @@ class AcademicCredentialIssuer:
             else:
                 print(f"   ⚠️  Certificato non trovato: {self.config.certificate_path}")
             
-            # Carica chiave privata università
+            # 2. CARICA CHIAVE PRIVATA UNIVERSITÀ (ESSENZIALE!)
             if Path(self.config.private_key_path).exists():
                 with open(self.config.private_key_path, 'rb') as f:
                     private_pem = f.read()
@@ -184,17 +205,16 @@ class AcademicCredentialIssuer:
             else:
                 print(f"   ⚠️  Chiave privata non trovata: {self.config.private_key_path}")
             
-            # Crea directory di backup
+            # 3. CREA DIRECTORY DI BACKUP
             if self.config.backup_enabled:
                 Path(self.config.backup_directory).mkdir(parents=True, exist_ok=True)
             
-            # Carica database esistente
+            # 4. CARICA DATABASE ESISTENTE
             self._load_credentials_database()
-            self.blockchain_service = BlockchainService(
-                provider_url="http://127.0.0.1:7545",
-                pem_filepath=self.config.private_key_path, # La chiave dell'issuer è usata per firmare le transazioni
-                pem_password=self.config.private_key_password
-            )
+            
+            # 5. BLOCKCHAIN - GIÀ INIZIALIZZATO NEL COSTRUTTORE
+            print("✅ Issuer inizializzato correttamente")
+            
         except Exception as e:
             print(f"❌ Errore inizializzazione issuer: {e}")
             raise

@@ -409,8 +409,9 @@ class PresentationVerifier:
             # Prepara dati senza firma per verifica
             data_to_verify = presentation_data.copy()
             data_to_verify.pop("signature", None)
-            data_bytes = json.dumps(data_to_verify, sort_keys=True).encode()
-            
+            data_to_verify.pop("summary", None)
+
+            data_bytes = json.dumps(data_to_verify, sort_keys=True, separators=(',', ':')).encode('utf-8')            
             # Verifica firma
             signature_bytes = base64.b64decode(signature_value)
             

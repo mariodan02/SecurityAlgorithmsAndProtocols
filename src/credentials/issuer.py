@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import uuid
-from blockchain.blockchain_service import BlockchainService
+from blockchain.blockchain_service import BlockchainService, load_private_key_from_pem
 # Cryptography imports
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -113,6 +113,9 @@ class AcademicCredentialIssuer:
         Args:
             config: Configurazione issuer
         """
+        if self.config.backup_enabled:
+            Path(self.config.backup_directory).mkdir(parents=True, exist_ok=True)
+        
         self.config = config
         self.crypto_utils = CryptoUtils()
         self.cert_manager = CertificateManager()
@@ -134,7 +137,11 @@ class AcademicCredentialIssuer:
             'signing_operations': 0,
             'validation_errors': 0
         }
-        self.blockchain_service = BlockchainService()
+        self.blockchain_service = BlockchainService(
+            provider_url="http://127.0.0.1:7545",
+            pem_filepath=self.config.private_key_path,  
+            pem_password=self.config.private_key_password
+        )
         self.web3 = self.blockchain_service.w3
         self.issuer_account = self.web3.eth.account.from_key(
             load_private_key_from_pem(config.private_key_path, config.private_key_password)
@@ -594,7 +601,7 @@ class AcademicCredentialIssuer:
     
     def _create_credential_from_request(self, request: IssuanceRequest) -> AcademicCredential:
         """Crea credenziale da richiesta"""
-        
+
         return CredentialFactory.create_erasmus_credential(
             issuer_university=self.config.university_info,
             host_university=request.host_university,
@@ -603,7 +610,7 @@ class AcademicCredentialIssuer:
             study_period=request.study_period,
             study_program=request.study_program
         )
-    
+        
     def _backup_credential(self, credential: AcademicCredential, suffix: str = ""):
         """Crea backup di una credenziale"""
         try:

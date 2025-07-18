@@ -371,10 +371,6 @@ class AcademicCredentialsDashboard:
         logging.getLogger('fastapi').setLevel(logging.WARNING)
         logging.getLogger('uvicorn.access').setLevel(logging.ERROR)
 
-
-    # E modifica anche il metodo run della classe AcademicCredentialsDashboard:
-    # Trova il metodo run e sostituiscilo con questo:
-
     def run(self, host: Optional[str] = None, port: Optional[int] = None):
         """Avvia il server"""
         import uvicorn
@@ -558,23 +554,6 @@ class AcademicCredentialsDashboard:
 
     async def _call_secure_api(self, endpoint: str, payload: dict) -> dict:
         """Helper per chiamare le API sicure"""
-        import requests
-        url = f"{self.config.secure_server_url}{endpoint}"
-        headers = {"Authorization": f"Bearer {self.config.secure_server_api_key}"}
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, verify=False)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            self.logger.error(f"API call failed: {e}")
-            raise HTTPException(500, "Errore comunicazione backend")
-
-    def _setup_routes(self) -> None:
-        """Configura tutte le route dell'applicazione"""
-
-    async def _call_secure_api(self, endpoint: str, payload: dict) -> dict:
-        """Helper per chiamare le API sicure"""
         import httpx
         url = f"{self.config.secure_server_url}{endpoint}"
         headers = {"Authorization": f"Bearer {self.config.secure_server_api_key}"}
@@ -583,6 +562,9 @@ class AcademicCredentialsDashboard:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             return response.json()
+
+    def _setup_routes(self) -> None:
+        """Configura tutte le route dell'applicazione"""
         
         @self.app.get("/debug/force-init")
         async def force_initialization(request: Request):
@@ -661,7 +643,7 @@ class AcademicCredentialsDashboard:
         @self.app.post("/verification/full-verify")
         async def full_verify_presentation(
             request: FullVerificationRequest,
-            user: UserSession = Depends(require_verify_permission)
+            user: UserSession = Depends(self.auth_deps['require_verify'])
         ):
             """Verifica completa di una presentazione"""
             try:
@@ -1215,24 +1197,6 @@ class AcademicCredentialsDashboard:
                 "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "version": "2.0.0"
             })
-    
-    def run(self, host: Optional[str] = None, port: Optional[int] = None):
-        """Avvia il server"""
-        import uvicorn
-        
-        host = host or self.config.host
-        port = port or self.config.port
-        
-        self.logger.info(f"🚀 Avvio Academic Credentials Dashboard")
-        self.logger.info(f"📍 URL: http://{host}:{port}")
-        self.logger.info(f"🔧 Debug mode: {self.config.debug}")
-        
-        uvicorn.run(
-            self.app,
-            host=host,
-            port=port,
-            log_level="info" if not self.config.debug else "debug"
-        )
 
 # =============================================================================
 # PUNTO DI INGRESSO

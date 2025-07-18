@@ -3,10 +3,9 @@
 # File: credentials/validator.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
-
-import os
 import json
 import datetime
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
@@ -469,13 +468,9 @@ class AcademicCredentialValidator:
             # Verifica scadenza
             if credential.metadata.expires_at:
                 if now > credential.metadata.expires_at:
-                    if self.config.accept_expired_credentials:
-                        report.add_warning("CREDENTIAL_EXPIRED", 
-                                         f"Credenziale scaduta il {credential.metadata.expires_at}")
-                    else:
-                        report.add_error("CREDENTIAL_EXPIRED", 
-                                       f"Credenziale scaduta il {credential.metadata.expires_at}")
-                        return
+                    report.add_error("CREDENTIAL_EXPIRED", 
+                                   f"Credenziale scaduta il {credential.metadata.expires_at}")
+                    return
             
             # Verifica date emissione
             if credential.metadata.issued_at > now:
@@ -486,19 +481,12 @@ class AcademicCredentialValidator:
             if credential.study_period.start_date >= credential.study_period.end_date:
                 report.add_error("INVALID_STUDY_PERIOD", "Periodo di studio non valido")
             
-            # Verifica che gli esami siano nel periodo
-            for i, course in enumerate(credential.courses):
-                if not (credential.study_period.start_date <= course.exam_date <= credential.study_period.end_date):
-                    report.add_warning("COURSE_DATE_OUT_OF_PERIOD", 
-                                     f"Corso {course.course_name} fuori dal periodo di studio",
-                                     field=f"courses[{i}].exam_date")
-            
             report.temporal_valid = True
             report.add_info("TEMPORAL_VALID", "Validazione temporale superata")
             
         except Exception as e:
             report.add_error("TEMPORAL_VALIDATION_ERROR", f"Errore validazione temporale: {e}")
-    
+                
     def _validate_merkle_tree(self, credential: AcademicCredential, report: ValidationReport):
         """Valida integrità Merkle Tree"""
         try:

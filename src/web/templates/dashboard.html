@@ -1,64 +1,71 @@
 {% extends "base.html" %}
 {% block content %}
-<h2 class="mb-4">📊 Dashboard Principale</h2>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h4 mb-0">Dashboard</h1>
+</div>
 
 {% if message == 'Credential-issued-successfully' %}
 <div class="alert alert-success">Credenziale emessa con successo!</div>
 {% endif %}
 
-<div class="row">
+<div class="row g-4">
     <div class="col-md-3">
-        <div class="card text-white bg-primary mb-3">
+        <div class="card">
             <div class="card-body">
-                <h5 class="card-title">Credenziali Emesse</h5>
-                <h3>{{ stats.total_credentials_issued }}</h3>
+                <div class="text-muted small mb-1">Credenziali emesse</div>
+                <div class="h3 mb-0">{{ stats.total_credentials_issued }}</div>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-white bg-success mb-3">
+        <div class="card">
             <div class="card-body">
-                <h5 class="card-title">Credenziali Verificate</h5>
-                <h3>{{ stats.total_credentials_verified }}</h3>
+                <div class="text-muted small mb-1">Credenziali verificate</div>
+                <div class="h3 mb-0">{{ stats.total_credentials_verified }}</div>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-white bg-warning mb-3">
+        <div class="card">
             <div class="card-body">
-                <h5 class="card-title">Verifiche in Sospeso</h5>
-                <h3>{{ stats.pending_verifications }}</h3>
+                <div class="text-muted small mb-1">Verifiche in sospeso</div>
+                <div class="h3 mb-0">{{ stats.pending_verifications }}</div>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card text-white bg-info mb-3">
+        <div class="card">
             <div class="card-body">
-                <h5 class="card-title">Tasso di Successo</h5>
-                <h3>{{ "%.1f"|format(stats.success_rate) }}%</h3>
+                <div class="text-muted small mb-1">Tasso di successo</div>
+                <div class="h3 mb-0">{{ "%.1f"|format(stats.success_rate) }}%</div>
             </div>
         </div>
     </div>
 </div>
 
-<div class="row mt-4">
-    <div class="col-md-8">
+<div class="row mt-4 g-4">
+    <div class="col-lg-8">
         <div class="card">
-            <div class="card-header">📈 Attività Recente</div>
             <div class="card-body">
-                <canvas id="activityChart"></canvas>
+                <h6 class="text-muted mb-3">Attività recente</h6>
+                <canvas id="activityChart" height="120"></canvas>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-lg-4">
         <div class="card">
-            <div class="card-header">⚡ Azioni Rapide</div>
             <div class="card-body">
-                {% if 'write' in user.permissions %}
-                <a href="/credentials/issue" class="btn btn-primary w-100 mb-2">Emetti Nuova Credenziale</a>
-                {% endif %}
-                <a href="/verification" class="btn btn-success w-100 mb-2">Verifica Presentazione</a>
-                <a href="/monitoring" class="btn btn-info w-100">Stato del Sistema</a>
+                <h6 class="text-muted mb-3">Azioni rapide</h6>
+                <div class="d-grid gap-2">
+                    {% if 'write' in user.permissions %}
+                    <a href="/credentials/issue" class="btn btn-primary mb-2">
+                        Emetti nuova credenziale
+                    </a>
+                    {% endif %}
+                    <a href="/verification" class="btn btn-outline-primary mb-2">
+                        Verifica presentazione
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -72,18 +79,27 @@ document.addEventListener('DOMContentLoaded', function () {
         data: {
             labels: ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'],
             datasets: [{
-                label: 'Credenziali Emesse',
+                label: 'Credenziali emesse',
                 data: [12, 19, 3, 5, 2, 3, 7],
-                borderColor: 'rgb(75, 192, 192)',
-                tension: 0.1
-            }, {
-                label: 'Verifiche Completate',
-                data: [8, 15, 2, 4, 1, 2, 5],
-                borderColor: 'rgb(255, 99, 132)',
-                tension: 0.1
+                borderColor: '#2563eb',
+                backgroundColor: 'rgba(37, 99, 235, 0.05)',
+                tension: 0.3,
+                fill: true
             }]
         },
-        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: { grid: { display: false } },
+                y: { 
+                    beginAtZero: true,
+                    grid: { color: 'rgba(0,0,0,0.05)' }
+                }
+            }
+        }
     });
 });
 </script>

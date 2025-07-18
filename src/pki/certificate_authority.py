@@ -6,6 +6,7 @@
 
 import os
 import datetime
+import ipaddress
 from pathlib import Path
 import sys
 
@@ -22,8 +23,6 @@ try:
 except ImportError:
     # Fallback per l'esecuzione diretta dello script
     from certificate_manager import CertificateManager
-    # Questo import potrebbe fallire se eseguito direttamente,
-    # per questo si consiglia l'uso di `python -m pki.certificate_authority`
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from crypto.foundations import RSAKeyManager
 
@@ -32,10 +31,10 @@ class CertificateAuthority:
     """
     Gestisce la creazione e le operazioni di una Certificate Authority (CA) per il progetto.
     Questa classe è responsabile della creazione della Root CA e della firma dei
-    certificati per le entità del sistema, come le università.
+    certificati per le entità del sistema.
     """
 
-    def __init__(self, root_path: str = "./certificates/ca", ca_password: str = "CASecurePassword2025"):
+    def __init__(self, root_path: str = "./certificates/ca", ca_password: str = "Unisa2025"):
         self.root_path = Path(root_path)
         self.ca_password = ca_password
         self.key_path = self.root_path / "private" / "ca_private.pem"
@@ -109,7 +108,7 @@ class CertificateAuthority:
         password_bytes = self.ca_password.encode('utf-8') if self.ca_password else None
         with open(self.key_path, "wb") as f:
             f.write(self.key_manager.serialize_private_key(private_key, password_bytes))
-        os.chmod(self.key_path, 0o600) # Permessi restrittivi
+        os.chmod(self.key_path, 0o600)  # Permessi restrittivi
 
         # Salva il certificato
         with open(self.cert_path, "wb") as f:
@@ -185,80 +184,125 @@ class CertificateAuthority:
         with open(self.index_path, "a") as f:
             f.write(entry)
 
-# Funzione principale per l'esecuzione dello script
-def main():
-    """Funzione principale per creare la CA e i certificati per le università."""
-    ca = CertificateAuthority()
-    key_manager_2048 = RSAKeyManager(key_size=2048) # Chiavi meno robuste per le end-entity
+    def _generate_certificate_for_entity(self, entity_info: dict, key_size: int = 2048):
+        """Genera un certificato per un'entità specifica."""
+        entity_name = entity_info["name"]
+        print(f"\n⚙️  Generazione certificato per: {entity_info['common_name']}")
+        
+        # Determina il percorso dei file
+        key_path = Path(f"./keys/{entity_name}_private.pem")
+        cert_path = self._get_cert_path(entity_info)
+        
+        if cert_path.exists() and key_path.exists():
+            print(f"ℹ️  Certificato per '{entity_info['common_name']}' già esistente. Salto.")
+            return
 
-    # Definisci le università da certificare
-    universities = {
-        "universite_rennes": {
+        # 1. Genera coppia di chiavi per l'entità
+        key_manager = RSAKeyManager(key_size=key_size)
+        private_key, public_key = key_manager.generate_key_pair()
+
+        # 2. Salva la chiave privata
+        key_manager.save_key_pair(private_key, public_key, "./keys", entity_name, entity_info['password'])
+
+        # 3. Crea la CSR
+        subject = x509.Name([
+            x509.NameAttribute(NameOID.COUNTRY_NAME, entity_info['country']),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, entity_info['organization']),
+            x509.NameAttribute(NameOID.COMMON_NAME, entity_info['common_name']),
+        ])
+        
+        csr_builder = x509.CertificateSigningRequestBuilder().subject_name(subject)
+        
+        # Aggiungi SANs se presenti
+        if 'sans' in entity_info:
+            san_list = []
+            for san in entity_info['sans']:
+                if san['type'] == 'DNS':
+                    san_list.append(x509.DNSName(san['value']))
+                elif san['type'] == 'IP':
+                    san_list.append(x509.IPAddress(ipaddress.ip_address(san['value'])))
+            csr_builder = csr_builder.add_extension(
+                x509.SubjectAlternativeName(san_list),
+                critical=False
+            )
+        
+        csr = csr_builder.sign(private_key, hashes.SHA256())
+
+        # 4. Firma la CSR con la CA
+        entity_cert = self.sign_certificate(csr, entity_info.get('validity_days', 730))
+
+        # 5. Salva il certificato firmato
+        self.cert_manager.save_certificate_to_file(entity_cert, str(cert_path))
+        return cert_path, key_path
+
+    def _get_cert_path(self, entity_info: dict) -> Path:
+        """Determina il percorso del certificato in base al tipo di entità."""
+        if 'type' in entity_info and entity_info['type'] == 'server':
+            return Path(f"./certificates/server/{entity_info['name']}.pem")
+        elif 'erasmus_code' in entity_info:
+            return Path(f"./certificates/issued/university_{entity_info['erasmus_code']}_{entity_info['serial']}.pem")
+        else:
+            return Path(f"./certificates/issued/{entity_info['name']}_{entity_info['serial']}.pem")
+
+
+def main():
+    """Funzione principale per creare la CA e i certificati per le entità."""
+    ca = CertificateAuthority()
+
+    # Definisci le entità da certificare
+    entities = [
+        {
+            "name": "universite_rennes",
             "common_name": "Université de Rennes",
             "country": "FR",
             "organization": "Université de Rennes",
             "erasmus_code": "F_RENNES01",
-            "password": "SecurePassword123!",
-            "serial": "1001"
+            "password": "Unisa2025",
+            "serial": "1001",
+            "sans": [{"type": "DNS", "value": "api.universite_rennes.edu"}]
         },
-        "universita_salerno": {
+        {
+            "name": "universita_salerno",
             "common_name": "Università degli Studi di Salerno",
             "country": "IT",
             "organization": "Università degli Studi di Salerno",
             "erasmus_code": "I_SALERNO01",
             "password": "Unisa2025",
-            "serial": "1002"
+            "serial": "1002",
+            "sans": [{"type": "DNS", "value": "api.unisa.edu"}]
+        },
+        {
+            "name": "secure_server",
+            "type": "server",
+            "common_name": "Academic Credentials Secure Server",
+            "country": "IT",
+            "organization": "Academic Credentials Project",
+            "password": "Unisa2025",
+            "serial": "1003",
+            "sans": [
+                {"type": "DNS", "value": "localhost"},
+                {"type": "IP", "value": "127.0.0.1"}
+            ]
         }
-    }
+    ]
 
-    # Crea le directory se non esistono
+    # Crea le directory necessarie
     Path("./keys").mkdir(exist_ok=True)
     Path("./certificates/issued").mkdir(parents=True, exist_ok=True)
+    Path("./certificates/server").mkdir(parents=True, exist_ok=True)
 
-    # Itera e crea i certificati
-    for key_name, info in universities.items():
-        cert_path = Path(f"./certificates/issued/university_{info['erasmus_code']}_{info['serial']}.pem")
-        key_path = Path(f"./keys/{key_name}_private.pem")
-
-        if cert_path.exists() and key_path.exists():
-            print(f"ℹ️  Certificato per '{info['common_name']}' già esistente. Salto.")
-            continue
-
-        print(f"\n⚙️  Generazione certificato per: {info['common_name']}")
-        
-        # 1. Genera coppia di chiavi per l'università
-        uni_private_key, uni_public_key = key_manager_2048.generate_key_pair()
-
-        # 2. Salva la chiave privata
-        key_manager_2048.save_key_pair(uni_private_key, uni_public_key, "./keys", key_name, info['password'])
-
-        # 3. Crea la CSR
-        subject = x509.Name([
-            x509.NameAttribute(NameOID.COUNTRY_NAME, info['country']),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, info['organization']),
-            x509.NameAttribute(NameOID.COMMON_NAME, info['common_name']),
-        ])
-        csr_builder = x509.CertificateSigningRequestBuilder().subject_name(
-            subject
-        ).add_extension(
-            x509.SubjectAlternativeName([x509.DNSName(f"api.{key_name}.edu")]),
-            critical=False
-        )
-        csr = csr_builder.sign(uni_private_key, hashes.SHA256())
-
-        # 4. Firma la CSR con la CA
-        university_cert = ca.sign_certificate(csr)
-
-        # 5. Salva il certificato firmato
-        ca.cert_manager.save_certificate_to_file(university_cert, str(cert_path))
+    # Genera i certificati
+    generated_files = []
+    for entity in entities:
+        cert_path, key_path = ca._generate_certificate_for_entity(entity)
+        generated_files.append((str(cert_path), str(key_path)))
 
     print("\n🎉 Generazione certificati completata!")
     print("📁 File generati:")
-    print("   ./certificates/ca/ca_certificate.pem")
-    print("   ./certificates/issued/university_F_RENNES01_1001.pem")
-    print("   ./certificates/issued/university_I_SALERNO01_1002.pem")
-    print("   ./keys/universite_rennes_private.pem")
-    print("   ./keys/universita_salerno_private.pem")
+    print(f"   {ca.cert_path} (Certificato Root CA)")
+    for cert_path, key_path in generated_files:
+        print(f"   {cert_path} (Certificato)")
+        print(f"   {key_path} (Chiave privata)")
 
 
 if __name__ == "__main__":

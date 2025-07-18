@@ -4,6 +4,7 @@
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
 
+import ipaddress
 import os
 import json
 import datetime
@@ -668,6 +669,59 @@ class CertificateManager:
         except:
             return "N/A"
 
+    def generate_self_signed_cert(self, common_name: str, **kwargs) -> Tuple[x509.Certificate, rsa.RSAPrivateKey]:
+        """Genera un certificato self-signed"""
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=kwargs.get('key_size', 2048),
+            backend=default_backend()
+        )
+        
+        subject = issuer = x509.Name([
+            x509.NameAttribute(NameOID.COUNTRY_NAME, kwargs.get('country', "IT")),
+            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, kwargs.get('state', "Campania")),
+            x509.NameAttribute(NameOID.LOCALITY_NAME, kwargs.get('locality', "Salerno")),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, kwargs.get('organization', "Academic Credentials")),
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+        ])
+        
+        builder = x509.CertificateBuilder().subject_name(
+            subject
+        ).issuer_name(
+            issuer
+        ).public_key(
+            private_key.public_key()
+        ).serial_number(
+            x509.random_serial_number()
+        ).not_valid_before(
+            datetime.datetime.utcnow()
+        ).not_valid_after(
+            datetime.datetime.utcnow() + datetime.timedelta(days=kwargs.get('valid_days', 365))
+        ).add_extension(
+            x509.BasicConstraints(ca=kwargs.get('ca', False), path_length=None), 
+            critical=True,
+        )
+        
+        # Aggiungi SANs se presenti
+        if 'sans' in kwargs:
+            san_names = []
+            for san in kwargs['sans']:
+                if san['type'] == 'DNS':
+                    san_names.append(x509.DNSName(san['value']))
+                elif san['type'] == 'IP':
+                    san_names.append(x509.IPAddress(ipaddress.ip_address(san['value'])))
+            builder = builder.add_extension(
+                x509.SubjectAlternativeName(san_names),
+                critical=False
+            )
+        
+        certificate = builder.sign(
+            private_key, 
+            hashes.SHA256(),
+            default_backend()
+        )
+        
+        return certificate, private_key
 
 # =============================================================================
 # 3. UTILITIES PER GESTIONE CERTIFICATI

@@ -4,9 +4,9 @@
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
 
-import os
 import json
 import datetime
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
@@ -853,7 +853,6 @@ if __name__ == "__main__":
         print("✅ Gestione stati credenziali")
         print("✅ Export/Import credenziali")
         print("✅ Backup automatici")
-        print("✅ Statistiche e monitoring")
         print("✅ Revoca credenziali")
         
         print(f"\n🚀 Pronto per integrazione con Validator!")

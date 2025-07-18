@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
 
+from credentials.models import CredentialFactory
 from wallet.presentation import PresentationFormat, PresentationManager
 from wallet.student_wallet import AcademicStudentWallet, WalletConfiguration, WalletStatus
 
@@ -524,7 +525,20 @@ class AcademicCredentialsDashboard:
                 student_id=student_id
             )
 
-        # Sblocca il wallet per la sessione corrente
+            # Sblocca il wallet per aggiungere la credenziale
+            if wallet.unlock_wallet("Unisa2025"):
+                 # Aggiunge una credenziale di esempio
+                print("✨ Aggiunta di una credenziale di esempio al nuovo wallet...")
+                if MODULES_AVAILABLE:
+                    try:
+                        # Utilizza la factory per creare una credenziale standard
+                        sample_credential = CredentialFactory.create_sample_credential()
+                        wallet.add_credential(sample_credential, tags=["esempio", "auto-generata"])
+                        print("✅ Credenziale di esempio aggiunta con successo.")
+                    except Exception as e:
+                        print(f"❌ Errore durante l'aggiunta della credenziale di esempio: {e}")
+
+        # Sblocca il wallet per la sessione corrente se necessario
         if wallet.status == WalletStatus.LOCKED:
             wallet.unlock_wallet("Unisa2025")
             

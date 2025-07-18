@@ -24,6 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
 
 # Wallet-related imports
+from credentials.models import Course, EQFLevel, ExamGrade, GradeSystem, PersonalInfo, StudyPeriod, StudyProgram, StudyType
 from wallet.student_wallet import AcademicStudentWallet, CredentialStorage, WalletConfiguration
 from wallet.presentation import PresentationFormat, PresentationManager
 
@@ -664,39 +665,140 @@ class AcademicCredentialsDashboard:
         @self.app.post("/credentials/issue")
         async def handle_issue_credential(
             request: Request,
-            student_name: str = Form(...), student_id: str = Form(...),
-            credential_type: str = Form(...), study_period_start: str = Form(...),
-            study_period_end: str = Form(...), course_name: List[str] = Form([]),
-            course_cfu: List[str] = Form([]), course_grade: List[str] = Form([]),
+            student_name: str = Form(...),
+            student_id: str = Form(...),
+            credential_type: str = Form(...),
+            study_period_start: str = Form(...),
+            study_period_end: str = Form(...),
+            course_name: List[str] = Form([]),
+            course_cfu: List[str] = Form([]),
+            course_grade: List[str] = Form([]),
             course_date: List[str] = Form([])
         ):
-            """Handles the issuance of a new credential."""
+            """
+            Gestisce l'emissione REALE di una nuova credenziale, invocando la logica corretta.
+            """
             try:
+                # 1. AUTENTICAZIONE E VERIFICA PERMESSI
                 user = self.auth_deps['require_write'](request)
-                
-                if not MODULES_AVAILABLE or not self.issuer:
-                    return JSONResponse({
-                        "success": False,
-                        "message": "Issuance service unavailable - demo mode"
-                    }, status_code=503)
-                
-                # Full implementation would process and issue the credential here.
+
+                # 2. CONTROLLO DISPONIBILITÀ DEL SERVIZIO ISSUER
+                # Questo è il controllo cruciale. Se self.issuer non è stato inizializzato, il servizio non è disponibile.
+                if not self.issuer:
+                    self.logger.error("Tentativo di emissione ma il servizio Issuer non è inizializzato.")
+                    raise HTTPException(status_code=503, detail="Servizio di emissione non disponibile. Controllare la configurazione del server.")
+
+                # 3. PREPARAZIONE DEI DATI DALLA RICHIESTA WEB
+                # Istanziamo le utility crittografiche per hashare i dati personali.
+                crypto_utils = CryptoUtils()
+
+                # Creiamo un oggetto PersonalInfo con i dati hashati per la privacy.
+                student_info = PersonalInfo(
+                    surname_hash=crypto_utils.sha256_hash_string(student_name.split()[-1]),
+                    name_hash=crypto_utils.sha256_hash_string(student_name.split()[0]),
+                    birth_date_hash=crypto_utils.sha256_hash_string("1990-01-01"), # Data fittizia per la demo
+                    student_id_hash=crypto_utils.sha256_hash_string(student_id),
+                    pseudonym=f"student_{student_name.lower().replace(' ', '_')}"
+                )
+
+                # Creiamo l'oggetto StudyPeriod.
+                study_period = StudyPeriod(
+                    start_date=datetime.datetime.fromisoformat(study_period_start + "T00:00:00+00:00"),
+                    end_date=datetime.datetime.fromisoformat(study_period_end + "T23:59:59+00:00"),
+                    study_type=StudyType.ERASMUS,
+                    academic_year=f"{datetime.datetime.fromisoformat(study_period_start).year}/{datetime.datetime.fromisoformat(study_period_start).year + 1}"
+                )
+
+                # L'università ospitante è quella dell'issuer che sta emettendo la credenziale.
+                host_university = self.issuer.config.university_info
+
+                # Definiamo un programma di studio di esempio.
+                study_program = StudyProgram(
+                    name="Computer Science Exchange Program",
+                    isced_code="0613",
+                    eqf_level=EQFLevel.LEVEL_7,
+                    program_type="Master's Degree Exchange",
+                    field_of_study="Computer Science"
+                )
+
+                # Processiamo la lista dei corsi inseriti nel form.
+                courses = []
+                for i in range(len(course_name)):
+                    if course_name[i] and course_cfu[i] and course_grade[i]:
+                        exam_grade = ExamGrade(
+                            score=course_grade[i],
+                            passed=True, # Assumiamo che i voti inseriti siano di esami passati
+                            grade_system=GradeSystem.ITALIAN_30, # Adattare se necessario
+                            ects_grade=course_grade[i]
+                        )
+                        exam_date = datetime.datetime.fromisoformat(course_date[i] + "T10:00:00+00:00") if course_date[i] else study_period.end_date
+                        course = Course(
+                            course_name=course_name[i],
+                            course_code=f"CRS-{i+1:03d}",
+                            isced_code="0613",
+                            grade=exam_grade,
+                            exam_date=exam_date,
+                            ects_credits=int(course_cfu[i]),
+                            professor=f"Prof. {user.university_name}"
+                        )
+                        courses.append(course)
+
+                if not courses:
+                    raise ValueError("È necessario specificare almeno un corso.")
+
+                # 4. CREAZIONE E PROCESSO DELLA RICHIESTA DI EMISSIONE
+                # Invochiamo la logica REALE della classe AcademicCredentialIssuer.
+                request_id = self.issuer.create_issuance_request(
+                    student_info=student_info,
+                    study_period=study_period,
+                    host_university=host_university,
+                    study_program=study_program,
+                    courses=courses,
+                    requested_by=user.user_id,
+                    notes=f"Credenziale di tipo: {credential_type}"
+                )
+
+                issuance_result = self.issuer.process_issuance_request(request_id)
+
+                if not issuance_result.success:
+                    error_msg = "; ".join(issuance_result.errors)
+                    raise ValueError(f"Emissione fallita: {error_msg}")
+
+                # 5. SALVATAGGIO DEL FILE NEL PERCORSO RICHIESTO
+                credential = issuance_result.credential
+                credential_id_str = str(credential.metadata.credential_id)
+
+                # Costruiamo il percorso: src/credentials/issuer_rennes/Mario Rossi/
+                output_dir = Path(f"src/credentials/{user.user_id}/{student_name}/")
+                output_dir.mkdir(parents=True, exist_ok=True) # Crea le directory se non esistono
+
+                # Percorso finale del file: .../IDcredenziale.json
+                output_path = output_dir / f"{credential_id_str}.json"
+
+                # Esportiamo la credenziale firmata nel file JSON.
+                self.issuer.export_credential(credential_id_str, str(output_path))
+
+                self.logger.info(f"Credenziale {credential_id_str} emessa da {user.user_id} e salvata in {output_path}")
+
+                # 6. RESTITUZIONE DI UNA RISPOSTA DI SUCCESSO
                 return JSONResponse({
                     "success": True,
-                    "message": "Credential issued successfully! (Demo mode)",
-                    "credential_id": f"demo_{uuid.uuid4()}",
-                    "file_path": f"./demo/credential_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    "issued_at": datetime.datetime.now().isoformat(),
-                    "total_courses": len([x for x in course_name if x]),
-                    "total_ects": sum(int(x) for x in course_cfu if x.isdigit())
+                    "message": "Credenziale reale emessa e firmata con successo!",
+                    "credential_id": credential_id_str,
+                    "file_path": str(output_path),
+                    "issued_at": issuance_result.issued_at.isoformat() if issuance_result.issued_at else None,
+                    "total_courses": len(courses),
+                    "total_ects": sum(c.ects_credits for c in courses)
                 })
-                
+
+            except ValueError as e:
+                self.logger.warning(f"Errore di validazione durante l'emissione: {e}")
+                return JSONResponse({"success": False, "message": f"Errore nei dati inseriti: {str(e)}"}, status_code=400)
+
             except Exception as e:
-                self.logger.error(f"Error issuing credential: {e}")
-                return JSONResponse({
-                    "success": False, "message": f"Internal server error: {str(e)}"
-                }, status_code=500)
-        
+                self.logger.error(f"Errore critico durante l'emissione della credenziale: {e}", exc_info=True)
+                return JSONResponse({"success": False, "message": f"Errore interno del server: Impossibile completare l'operazione."}, status_code=500)
+                    
         @self.app.get("/verification", response_class=HTMLResponse)
         async def verification_page(request: Request):
             """Credential verification page."""

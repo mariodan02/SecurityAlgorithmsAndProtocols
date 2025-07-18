@@ -563,7 +563,7 @@ class AcademicCredentialsDashboard:
                 redirect_url = "/wallet" if user.role == 'studente' else "/dashboard"
                 return RedirectResponse(url=redirect_url, status_code=HTTP_302_FOUND)
             
-            return self.templates.TemplateResponse("base.html", {
+            return self.templates.TemplateResponse("home.html", {
                 "request": request,
                 "title": "Home"
             })

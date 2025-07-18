@@ -3,15 +3,10 @@
 # File: credentials/issuer.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
-import sys
-import os
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
 
 import json
 import datetime
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
@@ -27,9 +22,9 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from src.crypto.foundations import DigitalSignature, CryptoUtils, MerkleTree
-    from src.pki.certificate_manager import CertificateManager
-    from src.credentials.models import (
+    from crypto.foundations import DigitalSignature, CryptoUtils, MerkleTree
+    from pki.certificate_manager import CertificateManager
+    from credentials.models import (
         AcademicCredential, CredentialStatus, DigitalSignature as CredentialSignature,
         Metadata, University, PersonalInfo, StudyPeriod, StudyProgram, Course,
         CredentialFactory

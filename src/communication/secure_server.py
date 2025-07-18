@@ -614,6 +614,7 @@ class AcademicCredentialsSecureServer:
                 message=f"Errore interno: {e}"
             )
     
+
     def run(self):
         """Avvia il server"""
         try:
@@ -623,12 +624,12 @@ class AcademicCredentialsSecureServer:
             if self.config.ssl_enabled:
                 # Carica i certificati esistenti
                 if Path(self.config.ssl_cert_file).exists() and Path(self.config.ssl_key_file).exists():
-                    # Usa SSLContext per configurare la password
+                    # Usa SSLContext per configurare la password HARDCODED
                     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                     ssl_context.load_cert_chain(
                         self.config.ssl_cert_file,
                         keyfile=self.config.ssl_key_file,
-                        password="Unisa2025"  # Password usata nella generazione
+                        password="Unisa2025"  # PASSWORD HARDCODED - CAMBIA SE NECESSARIO
                     )
                     print(f"✅ SSL configurato con certificati esistenti")
                 else:
@@ -643,15 +644,15 @@ class AcademicCredentialsSecureServer:
                 "app": self.app,
                 "host": self.config.host,
                 "port": self.config.port,
-                "log_level": "info"
+                "log_level": "warning",  # Logging ridotto
+                "access_log": False      # Disabilita access log
             }
             
-            # Aggiungi la configurazione SSL se abilitata
+            # Configurazione SSL
             if self.config.ssl_enabled and ssl_context:
                 uvicorn_config["ssl_certfile"] = self.config.ssl_cert_file
                 uvicorn_config["ssl_keyfile"] = self.config.ssl_key_file
-                # Uvicorn gestirà internamente la password
-                # usando i file forniti
+                uvicorn_config["ssl_keyfile_password"] = "Unisa2025"  
             
             # Avvia server
             uvicorn.run(**uvicorn_config)
@@ -659,7 +660,7 @@ class AcademicCredentialsSecureServer:
         except Exception as e:
             print(f"❌ Errore avvio server: {e}")
             raise
-    
+
 # =============================================================================
 # 5. DEMO E TESTING
 # =============================================================================

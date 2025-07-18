@@ -34,7 +34,7 @@ class CertificateAuthority:
     certificati per le entità del sistema.
     """
 
-    def __init__(self, root_path: str = "./certificates/ca", ca_password: str = "CASecurePassword2025"):
+    def __init__(self, root_path: str = "./certificates/ca", ca_password: str = "Unisa2025"):
         self.root_path = Path(root_path)
         self.ca_password = ca_password
         self.key_path = self.root_path / "private" / "ca_private.pem"
@@ -257,7 +257,7 @@ def main():
             "country": "FR",
             "organization": "Université de Rennes",
             "erasmus_code": "F_RENNES01",
-            "password": "SecurePassword123!",
+            "password": "Unisa2025",
             "serial": "1001",
             "sans": [{"type": "DNS", "value": "api.universite_rennes.edu"}]
         },

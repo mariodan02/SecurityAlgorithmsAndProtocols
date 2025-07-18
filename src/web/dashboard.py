@@ -3,13 +3,6 @@
 # File: web/dashboard.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
-import sys
-import os
-
-# Aggiungi la directory genitore al percorso di sistema
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
 
 import base64
 import os
@@ -22,11 +15,11 @@ import logging
 from dataclasses import dataclass
 
 # Verifica
-from src.communication.secure_server import CredentialVerificationRequest
-from src.credentials.models import AcademicCredential
-from src.crypto.foundations import CryptoUtils, DigitalSignature
-from src.credentials.validator import AcademicCredentialValidator, ValidationLevel, ValidationResult, ValidatorConfiguration
-from src.pki.certificate_manager import CertificateManager
+from communication.secure_server import CredentialVerificationRequest
+from credentials.models import AcademicCredential
+from crypto.foundations import CryptoUtils, DigitalSignature
+from credentials.validator import AcademicCredentialValidator, ValidationLevel, ValidationResult, ValidatorConfiguration
+from pki.certificate_manager import CertificateManager
 
 # FastAPI e web dependencies
 from fastapi import FastAPI, Request, HTTPException, Depends, Form
@@ -365,12 +358,39 @@ class AcademicCredentialsDashboard:
     
     def _setup_logging(self) -> None:
         """Configura il sistema di logging"""
+        # Logging più silenzioso per evitare interferenze
         logging.basicConfig(
-            level=logging.INFO if not self.config.debug else logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            level=logging.WARNING,  # Solo warning ed errori
+            format='%(levelname)s - %(message)s',  # Formato semplificato
+            force=True  # Forza il reset della configurazione
         )
         self.logger = logging.getLogger(__name__)
-    
+        
+        # Silenzia alcuni logger specifici
+        logging.getLogger('uvicorn').setLevel(logging.WARNING)
+        logging.getLogger('fastapi').setLevel(logging.WARNING)
+        logging.getLogger('uvicorn.access').setLevel(logging.ERROR)
+
+
+    # E modifica anche il metodo run della classe AcademicCredentialsDashboard:
+    # Trova il metodo run e sostituiscilo con questo:
+
+    def run(self, host: Optional[str] = None, port: Optional[int] = None):
+        """Avvia il server"""
+        import uvicorn
+        
+        host = host or self.config.host
+        port = port or self.config.port
+        
+        # Avvio silenzioso
+        uvicorn.run(
+            self.app,
+            host=host,
+            port=port,
+            log_level="warning",  # Logging minimo
+            access_log=False      # Disabilita access log
+        )
+
     def _setup_directories(self) -> None:
         """Crea le directory necessarie"""
         self.templates_dir = Path(self.config.templates_dir)
@@ -467,10 +487,10 @@ class AcademicCredentialsDashboard:
             'require_verify': require_verify_permission_dep,
             'require_admin': require_admin_permission_dep
         }
-    
+
     def _initialize_system_components(self) -> None:
         """Inizializza i componenti del sistema"""
-        self.logger.info("🚀 INIZIO Inizializzazione componenti di sistema...")
+        # Inizializzazione SILENZIOSA per evitare conflitti con password input
         
         # Import dei moduli del sistema (con gestione errori)
         self.issuer = None
@@ -478,20 +498,12 @@ class AcademicCredentialsDashboard:
         
         try:
             # Import condizionali dei moduli del progetto
-            self.logger.info("📦 Step 1: Aggiungendo path...")
             import sys
             sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            self.logger.info("✅ Path aggiunto")
             
-            self.logger.info("📦 Step 2: Importando credentials.issuer...")
             from credentials.issuer import AcademicCredentialIssuer, IssuerConfiguration
-            self.logger.info("✅ credentials.issuer importato")
-            
-            self.logger.info("📦 Step 3: Importando credentials.models...")
             from credentials.models import University
-            self.logger.info("✅ credentials.models importato")
             
-            self.logger.info("📦 Step 4: Creando configurazione...")
             # Configurazione dell'issuer per Université de Rennes
             issuer_config = IssuerConfiguration(
                 university_info=University(
@@ -503,65 +515,46 @@ class AcademicCredentialsDashboard:
                 ),
                 certificate_path="./certificates/issued/university_F_RENNES01_1001.pem",
                 private_key_path="./keys/universite_rennes_private.pem",
-                private_key_password="SecurePassword123!",
+                private_key_password="Unisa2025",  # Password hardcoded per evitare prompt
                 backup_enabled=True,
                 backup_directory="./src/credentials/backups"
             )
-            self.logger.info("✅ Configurazione creata")
             
             # Verifica esistenza file di certificati e chiavi
-            self.logger.info("🔍 Step 5: Verificando files...")
             cert_path = Path(issuer_config.certificate_path)
             key_path = Path(issuer_config.private_key_path)
             
-            self.logger.info(f"🔍 Controllo certificato: {cert_path}")
-            self.logger.info(f"🔍 Exists: {cert_path.exists()}")
-            
-            self.logger.info(f"🔍 Controllo chiave: {key_path}")
-            self.logger.info(f"🔍 Exists: {key_path.exists()}")
-            
             if not cert_path.exists():
                 self.logger.error(f"❌ ERRORE: Certificato non trovato: {cert_path}")
-                self.logger.info("💡 Eseguire: cd src/pki && python certificate_authority.py")
                 return
-                
+                    
             if not key_path.exists():
                 self.logger.error(f"❌ ERRORE: Chiave privata non trovata: {key_path}")
-                self.logger.info("💡 Eseguire: cd src/pki && python certificate_authority.py")
                 return
             
-            self.logger.info("✅ File certificato e chiave trovati")
-            
-            # Inizializza issuer
-            self.logger.info("🏗️ Step 6: Inizializzando issuer...")
-            self.logger.info("🏗️ Chiamando AcademicCredentialIssuer(config=issuer_config)...")
+            # Inizializza issuer SILENZIOSAMENTE
+            original_logging_level = self.logger.level
+            self.logger.setLevel(logging.CRITICAL)  # Disabilita log temporaneamente
             
             self.issuer = AcademicCredentialIssuer(config=issuer_config)
             
-            self.logger.info("✅ Credential Issuer inizializzato correttamente")
-            self.logger.info(f"✅ Issuer type: {type(self.issuer)}")
+            self.logger.setLevel(original_logging_level)  # Ripristina logging
             
             # Crea directory base per le credenziali
-            self.logger.info("📁 Step 7: Creando directory...")
             credentials_dir = Path("./src/credentials")
             credentials_dir.mkdir(parents=True, exist_ok=True)
             
             backups_dir = Path("./src/credentials/backups")
             backups_dir.mkdir(parents=True, exist_ok=True)
             
-            self.logger.info("✅ Directory di sistema create")
-            self.logger.info("🎉 FINE: Inizializzazione completata con successo!")
-            
+            # Log finale solo se tutto ok
+            if self.issuer:
+                self.logger.info("✅ Sistema componenti inizializzato correttamente")
+                
         except ImportError as e:
             self.logger.error(f"❌ ERRORE import moduli: {e}")
-            self.logger.error(f"❌ Traceback completo:")
-            import traceback
-            traceback.print_exc()
         except Exception as e:
             self.logger.error(f"🔥 ERRORE durante l'inizializzazione: {e}")
-            self.logger.error(f"🔥 Traceback completo:")
-            import traceback
-            traceback.print_exc()
 
     async def _call_secure_api(self, endpoint: str, payload: dict) -> dict:
         """Helper per chiamare le API sicure"""

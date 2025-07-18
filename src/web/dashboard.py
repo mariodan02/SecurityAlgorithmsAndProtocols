@@ -390,9 +390,10 @@ class PresentationVerifier:
             return report
     
     async def _verify_student_signature(self, presentation_data: dict, student_public_key_pem: str) -> bool:
-        """Verifica alternativa che replica esattamente la logica di DigitalSignature."""
+        """Verifica la firma digitale dello studente ricostruendo esattamente i dati firmati."""
         try:
             if "signature" not in presentation_data:
+                self.logger.warning("Nessuna firma trovata nella presentazione")
                 return False
             
             signature_info = presentation_data["signature"]
@@ -400,39 +401,52 @@ class PresentationVerifier:
             # Carica chiave pubblica
             public_key = serialization.load_pem_public_key(student_public_key_pem.encode())
             
-            # *** METODO ALTERNATIVO: Usa DigitalSignature.verify_document_signature ***
-            # Ricostruisci il documento come era durante la firma
-            document_to_verify = {
+            # *** CORREZIONE PRINCIPALE ***
+            # Ricostruisci i dati ESATTAMENTE come erano durante la firma
+            # usando lo stesso formato di get_data_for_signing()
+            
+            data_for_verification = {
                 'presentation_id': presentation_data.get('presentation_id'),
-                'created_at': presentation_data.get('created_at'),
+                'created_at': presentation_data.get('created_at'),  # Già in formato string dal JSON
                 'created_by': presentation_data.get('created_by'),
                 'purpose': presentation_data.get('purpose'),
                 'recipient': presentation_data.get('recipient'),
-                'expires_at': presentation_data.get('expires_at'),
-                'status': presentation_data.get('status'),
-                'selective_disclosures': presentation_data.get('selective_disclosures', []),
+                'expires_at': presentation_data.get('expires_at'),  # Già in formato string dal JSON
+                'status': presentation_data.get('status'),  # Già come string dal JSON
+                'selective_disclosures': presentation_data.get('selective_disclosures', []),  # Già come liste/dict dal JSON
                 'additional_documents': presentation_data.get('additional_documents', []),
-                'format': presentation_data.get('format'),
+                'format': presentation_data.get('format'),  # Già come string dal JSON
                 'verification_url': presentation_data.get('verification_url'),
-                # Aggiungi la firma nel formato che si aspetta verify_document_signature
-                'firma': signature_info
             }
             
-            # Usa la stessa classe DigitalSignature per verificare
+            self.logger.info(f"Dati per verifica: {list(data_for_verification.keys())}")
+            
+            # *** METODO CORRETTO ***
+            # Usa verify_document_signature ma SENZA aggiungere la firma ai dati
+            # La firma viene passata separatamente dal metodo
             from crypto.foundations import DigitalSignature
             verifier = DigitalSignature("PSS")
             
-            is_valid = verifier.verify_document_signature(public_key, document_to_verify)
+            # Crea un documento temporaneo che include la firma nel formato che si aspetta verify_document_signature
+            temp_document = data_for_verification.copy()
+            temp_document['firma'] = signature_info
+            
+            is_valid = verifier.verify_document_signature(public_key, temp_document)
             
             if is_valid:
-                self.logger.info("✅ Firma studente valida (metodo v2)")
+                self.logger.info("✅ Firma studente valida")
             else:
-                self.logger.warning("❌ Firma studente non valida (metodo v2)")
+                self.logger.warning("❌ Firma studente non valida")
+                # Debug: stampa i dati per troubleshooting
+                self.logger.debug(f"Dati per verifica firma: {data_for_verification}")
+                self.logger.debug(f"Signature info: {signature_info}")
                 
             return is_valid
             
         except Exception as e:
-            self.logger.error(f"Errore verifica firma studente v2: {e}")
+            self.logger.error(f"Errore verifica firma studente: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
             return False
 
     def _extract_credentials_from_presentation(self, presentation_data: dict) -> list:

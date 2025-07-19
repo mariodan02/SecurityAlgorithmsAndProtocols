@@ -413,7 +413,7 @@ class SelectiveDisclosureManager:
             
             # 4. Costruisci l'albero Merkle
             merkle_tree = MerkleTree(attribute_hashes)
-            merkle_root = merkle_tree.get_root()
+            merkle_root = merkle_tree.get_merkle_root()
             
             # 5. Genera le Merkle Proof per gli attributi divulgati
             merkle_proofs = []
@@ -426,7 +426,7 @@ class SelectiveDisclosureManager:
                     continue
                     
                 # Genera la proof Merkle
-                proof_path = merkle_tree.get_proof(idx)
+                proof_path = merkle_tree.generate_proof(idx)
                 
                 # Memorizza la proof
                 merkle_proofs.append({
@@ -437,9 +437,20 @@ class SelectiveDisclosureManager:
                 })
             
             # 6. Crea l'oggetto di divulgazione selettiva
+            proof_objects = [MerkleProof.from_dict({
+                'attribute_index': next((i for i, (path, _) in enumerate(sorted(all_attributes.items(), key=lambda x: x[0])) if path == p.get("attribute_path")), -1),
+                'attribute_value': p.get("attribute_value"),
+                'proof_path': p.get("proof_path"),
+                'merkle_root': p.get("merkle_root")
+            }) for p in merkle_proofs]
+
+
             return SelectiveDisclosure(
                 credential_id=str(credential.metadata.credential_id),
-                issuer=credential.issuer.dict(),
+                disclosure_id=str(uuid.uuid4()),
+                disclosed_attributes=disclosed_attributes,
+                merkle_proofs=proof_objects,
+                disclosure_level=disclosure_level,
                 created_at=datetime.datetime.now(datetime.timezone.utc),
                 created_by=credential.subject.pseudonym,
                 purpose=purpose,
@@ -447,12 +458,7 @@ class SelectiveDisclosureManager:
                 expires_at=(
                     datetime.datetime.now(datetime.timezone.utc) + 
                     datetime.timedelta(hours=expires_hours)
-                ) if expires_hours > 0 else None,
-                disclosure_level=disclosure_level,
-                disclosed_attributes=disclosed_attributes,
-                merkle_proofs=merkle_proofs,
-                original_merkle_root=merkle_root,
-                signature=credential.signature.dict() if credential.signature else None
+                ) if expires_hours > 0 else None
             )
             
         except Exception as e:

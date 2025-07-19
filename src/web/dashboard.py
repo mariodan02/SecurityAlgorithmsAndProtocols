@@ -1078,8 +1078,8 @@ class AcademicCredentialsDashboard:
                 if MODULES_AVAILABLE:
                     try:
                         sample_credential = CredentialFactory.create_sample_credential()
-                        signed_credential.status = CredentialStatus.ACTIVE
                         signed_credential = wallet.sign_credential_with_university_key(sample_credential)
+                        signed_credential.status = CredentialStatus.ACTIVE
                         wallet.add_credential(signed_credential, tags=["esempio", "auto-generata"])
                         print("✅ Credenziale di esempio aggiunta con successo.")
                     except Exception as e:

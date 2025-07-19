@@ -11,7 +11,7 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from .certificate_manager import CertificateManager
+from certificate_manager import CertificateManager
 from crypto.foundations import RSAKeyManager
 
 # Configurazione host e porta per OCSP

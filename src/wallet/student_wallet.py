@@ -1,5 +1,5 @@
 # =============================================================================
-# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - STUDENT WALLET 
+# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - STUDENT WALLET
 # File: wallet/student_wallet.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
@@ -474,7 +474,6 @@ class AcademicStudentWallet:
             import traceback
             traceback.print_exc()
             return None
-    # =============================================================================
 
     def get_credential(self, storage_id):
         if self.status != WalletStatus.UNLOCKED: 

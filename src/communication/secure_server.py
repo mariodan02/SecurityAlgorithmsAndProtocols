@@ -194,6 +194,12 @@ class APIKeyManager:
         
         permissions = key_info.get("permissions", [])
         return permission in permissions
+    
+class CredentialRequest(BaseModel):
+    student_name: str
+    student_id: str
+    purpose: str
+    requested_at: str
 
 
 # =============================================================================
@@ -338,6 +344,48 @@ class AcademicCredentialsSecureServer:
         ):
             return await self._handle_credential_verification(request, auth)
         
+        @self.app.post("/api/v1/credentials/request")
+        async def handle_credential_request(
+            request: CredentialRequest,
+            auth: HTTPAuthorizationCredentials = Depends(self.security) if self.security else None
+        ):
+            """Endpoint per richiedere credenziali (protetto da TLS)"""
+            try:
+                auth_info = await self._authenticate_request(auth)
+                
+                if auth_info["role"] != "issuer":
+                    raise HTTPException(status_code=403, detail="Solo issuer possono gestire richieste")
+                
+                # Simula elaborazione richiesta
+                request_id = f"req_{uuid.uuid4().hex[:10]}"
+                print(f"📩 Ricevuta richiesta credenziale da {request.student_name} ({request.student_id})")
+                print(f"   Scopo: {request.purpose}")
+                print(f"   ID Richiesta: {request_id}")
+                
+                # Simula tempi di elaborazione
+                await asyncio.sleep(1)
+                
+                return APIResponse(
+                    success=True,
+                    message="Richiesta credenziale ricevuta",
+                    data={
+                        "request_id": request_id,
+                        "status": "in_processing",
+                        "estimated_completion": (
+                            datetime.datetime.now(datetime.timezone.utc) + 
+                            datetime.timedelta(days=3)
+                        ).isoformat()
+                    }
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                return APIResponse(
+                    success=False,
+                    message=f"Errore interno: {e}"
+                )
+
         # Submit presentation
         @self.app.post("/api/v1/presentations/submit")
         async def submit_presentation(

@@ -332,71 +332,116 @@ class SelectiveDisclosureManager:
         
         return attributes
     
+    def _flatten_credential(self, credential: AcademicCredential) -> Dict[str, Any]:
+        """Appiattisce la struttura della credenziale in un dizionario di percorsi."""
+        from collections import deque
+        import re
+        
+        def is_primitive(val):
+            return val is None or isinstance(val, (int, float, bool, str))
+        
+        def normalize_key(key):
+            return re.sub(r'[^a-zA-Z0-9_]', '_', key)
+        
+        items = deque([('', credential.dict())])
+        flat = {}
+        
+        while items:
+            parent_path, obj = items.popleft()
+            
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    new_path = f"{parent_path}.{normalize_key(k)}" if parent_path else normalize_key(k)
+                    items.append((new_path, v))
+            elif isinstance(obj, list):
+                for i, v in enumerate(obj):
+                    new_path = f"{parent_path}[{i}]"
+                    items.append((new_path, v))
+            elif is_primitive(obj) or isinstance(obj, (datetime.datetime, datetime.date)):
+                flat[parent_path] = obj
+        
+        return flat
+    
     def create_selective_disclosure(self, 
-                                  credential: AcademicCredential,
-                                  selected_attributes: List[str],
-                                  disclosure_level: DisclosureLevel = DisclosureLevel.CUSTOM,
-                                  purpose: Optional[str] = None,
-                                  recipient: Optional[str] = None,
-                                  expires_hours: Optional[int] = None) -> SelectiveDisclosure:
+                              credential: AcademicCredential,
+                              attributes_to_disclose: List[str],
+                              disclosure_level: DisclosureLevel,
+                              purpose: str,
+                              recipient: Optional[str] = None,
+                              expires_hours: int = 24) -> SelectiveDisclosure:
         """
-        Crea una divulgazione selettiva
+        Crea una divulgazione selettiva per una credenziale, generando Merkle proofs valide.
         
         Args:
-            credential: Credenziale originale
-            selected_attributes: Lista path attributi da divulgare
+            credential: Credenziale accademica
+            attributes_to_disclose: Lista di percorsi attributi da divulgare
             disclosure_level: Livello di divulgazione
             purpose: Scopo della divulgazione
-            recipient: Destinatario
-            expires_hours: Ore di validità
+            recipient: Destinatario opzionale
+            expires_hours: Ore prima della scadenza
             
         Returns:
-            Oggetto divulgazione selettiva
+            Oggetto SelectiveDisclosure con attributi divulgati e proofs
         """
         try:
-            print(f"🔒 Creando divulgazione selettiva: {len(selected_attributes)} attributi")
-            
-            # 1. Genera ID divulgazione
-            disclosure_id = str(uuid.uuid4())
-            
-            # 2. Estrae attributi selezionati
-            disclosed_attributes = self._extract_selected_attributes(
-                credential, selected_attributes
-            )
-            
-            # 3. Genera Merkle proofs
-            merkle_proofs = self._generate_merkle_proofs(
-                credential, selected_attributes
-            )
-            
-            # 4. Calcola scadenza
-            expires_at = None
-            if expires_hours:
-                expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=expires_hours)
-            
-            # 5. Crea oggetto divulgazione
-            disclosure = SelectiveDisclosure(
+            # 1. Appiattisci e ordina tutti gli attributi della credenziale per consistenza
+            all_attributes = self._flatten_credential(credential)
+            sorted_attributes = sorted(all_attributes.items(), key=lambda x: x[0])
+
+            # Estrai solo i valori nell'ordine corretto per costruire l'albero
+            attribute_values_for_tree = [attr_value for attr_path, attr_value in sorted_attributes]
+
+            # 2. Costruisci l'albero Merkle direttamente dai valori.
+            #    La classe MerkleTree gestirà l'hashing internamente in modo corretto.
+            merkle_tree = MerkleTree(attribute_values_for_tree)
+            merkle_root = merkle_tree.get_merkle_root()
+
+            # 3. Filtra gli attributi che l'utente vuole effettivamente divulgare
+            disclosed_attributes = {
+                path: value
+                for path, value in sorted_attributes
+                if path in attributes_to_disclose
+            }
+
+            # 4. Genera le Merkle Proof per ciascun attributo divulgato
+            merkle_proofs = []
+            for attr_path, attr_value in disclosed_attributes.items():
+                # Trova l'indice dell'attributo nella lista *originale e ordinata*
+                # Questa è la riga corretta che usa 'sorted_attributes'
+                idx = next((i for i, (path, _) in enumerate(sorted_attributes) if path == attr_path), -1)
+
+                if idx != -1:
+                    proof_path = merkle_tree.generate_proof(idx)
+                    merkle_proofs.append(
+                        MerkleProof(
+                            attribute_index=idx,
+                            attribute_value=attr_value,
+                            proof_path=proof_path,
+                            merkle_root=merkle_root
+                        )
+                    )
+
+            # 5. Crea l'oggetto finale di divulgazione selettiva
+            return SelectiveDisclosure(
                 credential_id=str(credential.metadata.credential_id),
-                disclosure_id=disclosure_id,
+                disclosure_id=str(uuid.uuid4()),
                 disclosed_attributes=disclosed_attributes,
                 merkle_proofs=merkle_proofs,
                 disclosure_level=disclosure_level,
-                created_at=datetime.datetime.utcnow(),
+                created_at=datetime.datetime.now(datetime.timezone.utc),
                 created_by=credential.subject.pseudonym,
                 purpose=purpose,
                 recipient=recipient,
-                expires_at=expires_at
+                expires_at=(
+                    datetime.datetime.now(datetime.timezone.utc) +
+                    datetime.timedelta(hours=expires_hours)
+                ) if expires_hours > 0 else None
             )
-            
-            print(f"✅ Divulgazione selettiva creata: {disclosure_id[:8]}...")
-            print(f"   Attributi divulgati: {len(disclosed_attributes)}")
-            print(f"   Merkle proofs: {len(merkle_proofs)}")
-            
-            return disclosure
-            
+
         except Exception as e:
             print(f"❌ Errore creazione divulgazione selettiva: {e}")
             raise
+
     
     def create_predefined_disclosure(self, 
                                    credential: AcademicCredential,

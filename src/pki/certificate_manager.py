@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 
-from ..crypto.foundations import CryptoUtils
+from crypto.foundations import CryptoUtils
 
 
 @dataclass

@@ -179,28 +179,42 @@ class CertificateAuthority:
         else:
             raise ValueError(f"Tipo entità non valido: {entity_type}")
 
+    def _get_key_base_name(self, entity_info: Dict[str, Any]) -> str:
+        """Determina il nome base dei file chiave."""
+        if entity_info['type'] == 'student':
+            return f"{entity_info['name']}_{entity_info['student_id']}"
+        return entity_info['name']
+
     def generate_certificate_for_entity(self, entity_info: Dict[str, Any], key_size: int = 2048) -> Tuple[Path, Path]:
         """Genera certificato e chiave privata per un'entità."""
-        entity_name = entity_info["name"]
+        key_base_name = self._get_key_base_name(entity_info)
         cert_path = self._get_cert_path(entity_info)
-        key_path = Path(f"./keys/{entity_name}_private.pem")
+        key_path = Path(f"./keys/{key_base_name}_private.pem")
         
-        if cert_path.exists() and key_path.exists():
-            print(f"⏩ Certificato esistente per '{entity_name}' - operazione saltata")
+        # Verifica esistenza credenziali
+        cert_exists = cert_path.exists()
+        key_exists = key_path.exists()
+        
+        if cert_exists and key_exists:
+            print(f"⏩ Credenziali già esistenti per '{key_base_name}' - operazione saltata")
             return cert_path, key_path
+        elif cert_exists:
+            print(f"⚠️ Attenzione: certificato esistente ma chiave privata mancante per '{key_base_name}'")
+        elif key_exists:
+            print(f"⚠️ Attenzione: chiave privata esistente ma certificato mancante per '{key_base_name}'")
 
         cert_path.parent.mkdir(parents=True, exist_ok=True)
         key_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Generazione chiavi
-        print(f"🔑 Generazione chiavi per: {entity_name}")
+        print(f"🔑 Generazione chiavi per: {key_base_name}")
         key_mgr = RSAKeyManager(key_size=key_size)
         private_key, public_key = key_mgr.generate_key_pair()
         key_mgr.save_key_pair(
             private_key, 
             public_key, 
             "./keys", 
-            entity_name, 
+            key_base_name, 
             entity_info.get('password')
         )
 
@@ -268,7 +282,8 @@ if __name__ == "__main__":
 
     print("\n🏫 Avvio emissione certificati:")
     for i, entity in enumerate(entities, 1):
-        print(f"\n[{i}/{len(entities)}] Processo: {entity['name']} ({entity['type']})")
+        entity_name = f"{entity['name']}_{entity['student_id']}" if entity['type'] == 'student' else entity['name']
+        print(f"\n[{i}/{len(entities)}] Processo: {entity_name} ({entity['type']})")
         cert_path, key_path = ca.generate_certificate_for_entity(entity)
         print(f"   • Certificato: {cert_path}")
         print(f"   • Chiave privata: {key_path}")

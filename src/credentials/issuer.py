@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import uuid
-from blockchain.blockchain_service import BlockchainService, load_private_key_from_pem
+from blockchain.blockchain_service import BlockchainService
 # Cryptography imports
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -146,17 +146,23 @@ class AcademicCredentialIssuer:
         self.issuer_account = None
         
         try:
-            # CORRETTA: Solo pem_filepath e pem_password
+            # Carica la chiave privata di Ganache dal file di testo
+            #with open('ganache_key.txt', 'r') as f:
+            ganache_private_key = '0xc6e10d62b4d468cd29192e693c78cb888b1e327f4847dac9bc305dd65bfffb55'
+
             self.blockchain_service = BlockchainService(
-                pem_filepath=self.config.private_key_path,
-                pem_password=self.config.private_key_password
+                raw_private_key=ganache_private_key
             )
-            
+
             if self.blockchain_service:
                 self.web3 = self.blockchain_service.w3
-                self.issuer_account = self.blockchain_service.account  # Usa l'account già creato
-                print("✅ BlockchainService inizializzato correttamente")
-                
+                self.issuer_account = self.blockchain_service.account
+                print("✅ BlockchainService inizializzato correttamente con la chiave di Ganache.")
+
+        except FileNotFoundError:
+            print("⚠️ File 'ganache_key.txt' non trovato. La parte blockchain sarà disattivata.")
+            print("   Crea il file e inserisci una delle chiavi private di Ganache.")
+            self.blockchain_service = None
         except Exception as e:
             print(f"⚠️ Impossibile inizializzare BlockchainService: {e}")
             print("   Il sistema funzionerà senza integrazione blockchain")
@@ -314,17 +320,12 @@ class AcademicCredentialIssuer:
             #self.credentials_db[credential_id] = credential
             if self.blockchain_service:
                 print("   4️⃣ Registrazione su Blockchain...")
-                try:
-                    # 1. Costruisci la transazione
-                    unsigned_tx = self.blockchain_service.build_registration_transaction(
-                        credential_id,
-                        self.issuer_account.address # Passa l'indirizzo del firmatario
-                    )
-                    # 2. Firma e invia la transazione
-                    receipt = self._send_signed_transaction(unsigned_tx)
-                    print(f"✅ Registrazione completata. Hash: {self.web3.to_hex(receipt.transaction_hash)}")
-                except Exception as e:
-                    result.warnings.append(f"Registrazione blockchain fallita: {e}")
+                # L'errore qui ora fermerà il processo e verrà mostrato all'utente
+                unsigned_tx = self.blockchain_service.build_registration_transaction(credential_id, self.issuer_account.address)
+                receipt = self._send_signed_transaction(unsigned_tx)
+                print(f"✅ Registrazione Blockchain OK. Hash: {self.web3.to_hex(receipt.transaction_hash)}")
+            else:
+                 print("   ⚠️  Registrazione Blockchain saltata (servizio non attivo).")
             # 5. Backup
             if self.config.backup_enabled:
                 print("   5️⃣ Backup...")

@@ -297,7 +297,7 @@ class PresentationVerifier:
                     "code": "STUDENT_SIGNATURE_INVALID",
                     "message": "Firma dello studente non valida"
                 })
-            
+
             # 2. ESTRAI CREDENZIALI DALLA PRESENTAZIONE
             self.logger.info("  2️⃣ Estrazione credenziali...")
             credentials = self._extract_credentials_from_presentation(presentation_data)
@@ -400,46 +400,34 @@ class PresentationVerifier:
             
             # Carica chiave pubblica
             public_key = serialization.load_pem_public_key(student_public_key_pem.encode())
-            
-            # *** CORREZIONE PRINCIPALE ***
-            # Ricostruisci i dati ESATTAMENTE come erano durante la firma
-            # usando lo stesso formato di get_data_for_signing()
-            
+                        
             data_for_verification = {
                 'presentation_id': presentation_data.get('presentation_id'),
-                'created_at': presentation_data.get('created_at'),  # Già in formato string dal JSON
+                'created_at': presentation_data.get('created_at'),
                 'created_by': presentation_data.get('created_by'),
                 'purpose': presentation_data.get('purpose'),
                 'recipient': presentation_data.get('recipient'),
-                'expires_at': presentation_data.get('expires_at'),  # Già in formato string dal JSON
-                'status': presentation_data.get('status'),  # Già come string dal JSON
-                'selective_disclosures': presentation_data.get('selective_disclosures', []),  # Già come liste/dict dal JSON
+                'expires_at': presentation_data.get('expires_at'),
+                'status': presentation_data.get('status'),
+                'selective_disclosures': presentation_data.get('selective_disclosures', []),
                 'additional_documents': presentation_data.get('additional_documents', []),
-                'format': presentation_data.get('format'),  # Già come string dal JSON
+                'format': presentation_data.get('format'),
                 'verification_url': presentation_data.get('verification_url'),
             }
-            
-            self.logger.info(f"Dati per verifica: {list(data_for_verification.keys())}")
-            
-            # *** METODO CORRETTO ***
-            # Usa verify_document_signature ma SENZA aggiungere la firma ai dati
-            # La firma viene passata separatamente dal metodo
+
             from crypto.foundations import DigitalSignature
             verifier = DigitalSignature("PSS")
             
-            # Crea un documento temporaneo che include la firma nel formato che si aspetta verify_document_signature
+            # Crea un documento temporaneo per il metodo di verifica
             temp_document = data_for_verification.copy()
             temp_document['firma'] = signature_info
             
             is_valid = verifier.verify_document_signature(public_key, temp_document)
-            
+
             if is_valid:
                 self.logger.info("✅ Firma studente valida")
             else:
                 self.logger.warning("❌ Firma studente non valida")
-                # Debug: stampa i dati per troubleshooting
-                self.logger.debug(f"Dati per verifica firma: {data_for_verification}")
-                self.logger.debug(f"Signature info: {signature_info}")
                 
             return is_valid
             
@@ -448,7 +436,7 @@ class PresentationVerifier:
             import traceback
             self.logger.debug(traceback.format_exc())
             return False
-
+    
     def _extract_credentials_from_presentation(self, presentation_data: dict) -> list:
         """Estrae le credenziali dalla presentazione."""
         return presentation_data.get("selective_disclosures", [])
@@ -533,14 +521,13 @@ class PresentationVerifier:
             now = datetime.datetime.now(datetime.timezone.utc)
             
             # Verifica scadenza presentazione
-            if "expires_at" in presentation_data:
-                expires_at = datetime.datetime.fromisoformat(presentation_data["expires_at"].replace('Z', '+00:00'))
+            if "expires_at" in presentation_data and presentation_data["expires_at"]:
+                expires_at_str = presentation_data["expires_at"]
+                expires_at = datetime.datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))                
                 if now > expires_at:
                     self.logger.warning("Presentazione scaduta")
                     return False
-            
-            # Altre verifiche temporali...
-            
+                        
             return True
             
         except Exception as e:

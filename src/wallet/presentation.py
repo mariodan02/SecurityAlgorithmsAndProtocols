@@ -151,7 +151,7 @@ class VerifiablePresentation:
             'total_attributes_disclosed': total_attributes,
             'universities_involved': list(universities),
             'is_expired': (
-                self.expires_at and datetime.datetime.utcnow() > self.expires_at
+                self.expires_at and datetime.datetime.now(datetime.timezone.utc) > self.expires_at
             ),
             'is_signed': self.signature is not None,
             'additional_docs_count': len(self.additional_documents)
@@ -205,14 +205,14 @@ class PresentationManager:
                     )
                 selective_disclosures.append(disclosure)
             
-            expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=expires_hours)
+            expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expires_hours)
             student_pseudonym = "unknown_student"
             if selective_disclosures:
                 student_pseudonym = selective_disclosures[0].created_by
             
             presentation = VerifiablePresentation(
                 presentation_id=presentation_id,
-                created_at=datetime.datetime.utcnow(),
+                created_at=datetime.datetime.now(datetime.timezone.utc),
                 created_by=student_pseudonym,
                 purpose=purpose,
                 recipient=recipient,
@@ -267,7 +267,6 @@ class PresentationManager:
         except Exception as e:
             raise
 
-    # --- INIZIO DELLA MODIFICA CHIAVE ---
     def sign_presentation(self, presentation_id: str, 
                          private_key: Optional[rsa.RSAPrivateKey] = None) -> bool:
         """Firma digitalmente una presentazione usando solo i dati essenziali."""
@@ -284,7 +283,6 @@ class PresentationManager:
                     return False
                 private_key = self.wallet.wallet_private_key
             
-            # **MODIFICA**: Usiamo il nuovo metodo per ottenere solo i dati da firmare
             presentation_data_to_sign = presentation.get_data_for_signing()
             
             # Firma il documento essenziale
@@ -300,12 +298,10 @@ class PresentationManager:
         except Exception as e:
             print(f"❌ Errore firma presentazione: {e}")
             return False
-    # --- FINE DELLA MODIFICA CHIAVE ---
 
     def export_presentation(self, presentation_id: str, 
                           output_path: str,
                           format: PresentationFormat = PresentationFormat.SIGNED_JSON) -> bool:
-        # (Questo metodo rimane invariato)
         try:
             if presentation_id not in self.presentations:
                 return False
@@ -330,7 +326,12 @@ class PresentationManager:
             
             return True
         except Exception as e:
+            # Aggiungiamo una stampa dettagliata dell'errore nel terminale
+            print(f"❌ ERRORE CRITICO in export_presentation: {e}")
+            import traceback
+            traceback.print_exc()
             return False
+
 
 # ... (Il resto del file `presentation.py` rimane invariato) ...
     def verify_presentation(self, presentation_data: Dict[str, Any], 

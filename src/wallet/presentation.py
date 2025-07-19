@@ -268,7 +268,7 @@ class PresentationManager:
             raise
 
     def sign_presentation(self, presentation_id: str, 
-                         private_key: Optional[rsa.RSAPrivateKey] = None) -> bool:
+                        private_key: Optional[rsa.RSAPrivateKey] = None) -> bool:
         """Firma digitalmente una presentazione usando solo i dati essenziali."""
         try:
             if presentation_id not in self.presentations:
@@ -283,14 +283,17 @@ class PresentationManager:
                     return False
                 private_key = self.wallet.wallet_private_key
             
+            # 1. Imposta lo stato su READY PRIMA di firmare
+            presentation.status = PresentationStatus.READY
+            
+            # 2. Ora raccogli i dati (che includeranno status="ready")
             presentation_data_to_sign = presentation.get_data_for_signing()
             
-            # Firma il documento essenziale
+            # 3. Firma il documento
             signed_data = self.digital_signature.sign_document(private_key, presentation_data_to_sign)
             
-            # Aggiorna la presentazione con la firma
+            # 4. Aggiorna la presentazione con la firma
             presentation.signature = signed_data.get('firma')
-            presentation.status = PresentationStatus.READY
             
             print(f"✅ Presentazione firmata con successo")
             return True
@@ -298,7 +301,7 @@ class PresentationManager:
         except Exception as e:
             print(f"❌ Errore firma presentazione: {e}")
             return False
-
+    
     def export_presentation(self, presentation_id: str, 
                           output_path: str,
                           format: PresentationFormat = PresentationFormat.SIGNED_JSON) -> bool:

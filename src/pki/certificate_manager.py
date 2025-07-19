@@ -4,8 +4,11 @@ import os
 import datetime
 import ipaddress
 from pathlib import Path
+import sys
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cryptography import x509
 from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID

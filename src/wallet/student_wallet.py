@@ -1,5 +1,5 @@
 # =============================================================================
-# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - STUDENT WALLET (CORRETTO)
+# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - STUDENT WALLET 
 # File: wallet/student_wallet.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
@@ -28,7 +28,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from crypto.foundations import RSAKeyManager, DigitalSignature
-    from credentials.models import AcademicCredential, DigitalSignature as ModelDigitalSignature  # CORREZIONE 1
+    from credentials.models import AcademicCredential, DigitalSignature as ModelDigitalSignature
     from credentials.validator import AcademicCredentialValidator, ValidationLevel
     from pki.certificate_authority import CertificateAuthority
 except ImportError as e:
@@ -418,6 +418,64 @@ class AcademicStudentWallet:
             self._create_backup()
         return storage_id
     
+    def add_credential_from_json(self, credential_json: str, tags: Optional[List[str]] = None) -> Optional[str]:
+        """
+        Aggiunge una credenziale al wallet partendo da una stringa JSON.
+
+        Questa funzione è ideale per quando lo studente riceve un file .json 
+        dall'università issuer e vuole importarlo nel proprio wallet.
+
+        Args:
+            credential_json: Una stringa contenente la credenziale in formato JSON.
+            tags: Una lista opzionale di tag da associare alla credenziale.
+
+        Returns:
+            L'ID di archiviazione (storage_id) della nuova credenziale se l'operazione
+            ha successo, altrimenti None.
+        """
+        if self.status != WalletStatus.UNLOCKED:
+            print("❌ Errore: Il wallet è bloccato. Sbloccalo prima di aggiungere credenziali.")
+            raise RuntimeError("Wallet bloccato")
+
+        print("📥 Tentativo di importare una credenziale da JSON...")
+        try:
+            # 1. Deserializza la stringa JSON in un oggetto AcademicCredential
+            #    Questo passaggio valida anche la struttura del JSON secondo il modello Pydantic.
+            credential = AcademicCredential.from_json(credential_json)
+            print(f"   ✅ JSON deserializzato con successo. ID credenziale: {credential.metadata.credential_id}")
+
+            # 2. Controlla se una credenziale con lo stesso ID esiste già per evitare duplicati
+            for existing_cred in self.credentials.values():
+                if existing_cred.credential.metadata.credential_id == credential.metadata.credential_id:
+                    print(f"   ⚠️ Attenzione: Una credenziale con ID {credential.metadata.credential_id} esiste già. Importazione annullata.")
+                    return None
+
+            # 3. Chiama la funzione 'add_credential' esistente che si occupa di:
+            #    - Verificare la firma (e firmarla se necessario, per la demo)
+            #    - Eseguire la validazione di base
+            #    - Salvare il wallet in modo cifrato
+            #    - Creare un backup
+            print("   ⚙️  Avvio della procedura di aggiunta e validazione standard...")
+            storage_id = self.add_credential(credential, tags=tags)
+            
+            if storage_id:
+                print(f"🎉 Credenziale importata e aggiunta al wallet con successo! ID Storage: {storage_id}")
+            else:
+                print("   ❌ Si è verificato un errore durante l'aggiunta della credenziale al database del wallet.")
+
+            return storage_id
+
+        except json.JSONDecodeError:
+            print("   ❌ Errore critico: La stringa fornita non è un JSON valido.")
+            return None
+        except Exception as e:
+            # Cattura altri errori di validazione di Pydantic o errori interni
+            print(f"   ❌ Errore critico durante l'importazione da JSON: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    # =============================================================================
+
     def get_credential(self, storage_id):
         if self.status != WalletStatus.UNLOCKED: 
             raise RuntimeError("Wallet bloccato")

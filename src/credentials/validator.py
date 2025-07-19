@@ -1045,7 +1045,6 @@ if __name__ == "__main__":
     print("Validazione Credenziali Accademiche")
     print("🔍" * 50)
     
-    # Esegui demo
     validator_instance = demo_credential_validator()
     
     if validator_instance:

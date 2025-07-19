@@ -168,8 +168,20 @@ class CertificateAuthority:
             datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days_valid)
         )
 
+        # Aggiunge le estensioni già presenti nella richiesta (es. SubjectAlternativeName)
         for extension in csr.extensions:
             builder = builder.add_extension(extension.value, critical=extension.critical)
+
+        # Aggiunge l'URL del responder OCSP a TUTTI i certificati firmati.
+        builder = builder.add_extension(
+            x509.AuthorityInformationAccess([
+                x509.AccessDescription(
+                    x509.oid.AuthorityInformationAccessOID.OCSP,
+                    x509.UniformResourceIdentifier(f"http://{HOST}:{PORT}/ocsp")
+                )
+            ]),
+            critical=False
+        )
 
         new_certificate = builder.sign(self.private_key, hashes.SHA256())
         print(f"✅ Certificato firmato per: {new_certificate.subject.rfc4514_string()}")

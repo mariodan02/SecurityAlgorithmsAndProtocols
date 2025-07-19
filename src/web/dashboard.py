@@ -30,6 +30,8 @@ from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
 from credentials.models import CredentialFactory, CredentialStatus
 from wallet.presentation import PresentationFormat, PresentationManager
 from wallet.student_wallet import AcademicStudentWallet, WalletConfiguration, WalletStatus
+from pki.ocsp_client import OCSPClient, OCSPStatus
+from pki.certificate_manager import CertificateManager
 
 # Conditional imports to prevent errors if modules are unavailable
 try:
@@ -266,10 +268,25 @@ class PresentationVerifier:
     def __init__(self, dashboard_instance):
         self.dashboard = dashboard_instance
         self.logger = dashboard_instance.logger
+        self.ocsp_client = OCSPClient()
+        self.cert_manager = CertificateManager()
+
         
-    async def verify_presentation_complete(self, presentation_data: dict, student_public_key_pem: str, purpose: str) -> dict:
-        """Verifica completa di una presentazione selettiva - CORRETTO"""
-        self.logger.info("🔍 Avvio verifica completa presentazione")
+    def _get_issuer_name_from_disclosure(self, disclosure: dict) -> Optional[str]:
+        """Estrae il nome dell'issuer dagli attributi divulgati."""
+        try:
+            disclosed_attrs = disclosure.get("disclosed_attributes", {})
+            for attr_path, attr_value in disclosed_attrs.items():
+                if "issuer" in attr_path and "name" in attr_path:
+                    return attr_value
+            return None
+        except Exception as e:
+            self.logger.error(f"Errore durante l'estrazione del nome issuer: {e}")
+            return None
+
+    async def verify_presentation_complete(self, presentation_data: dict, student_public_key_pem: str, purpose: str, check_ocsp: bool) -> dict:
+        """Verifica completa di una presentazione selettiva - AGGIORNATO CON OCSP"""
+        self.logger.info(f"🔍 Avvio verifica completa (OCSP: {check_ocsp})")
         
         report = {
             "credential_id": presentation_data.get("presentation_id", "unknown"),
@@ -279,7 +296,7 @@ class PresentationVerifier:
             "technical_details": {
                 "student_signature_valid": False, "signature_valid": False, 
                 "merkle_tree_valid": False, "blockchain_status": "not_checked",
-                "temporal_valid": False, "revocation_status": "unknown"
+                "temporal_valid": False, "ocsp_status": "not_checked"
             }
         }
 
@@ -338,20 +355,25 @@ class PresentationVerifier:
                         "message": f"Nessuna Merkle proof fornita per credenziale {i+1}"
                     })
                 
-                # 3.2 VERIFICA FIRMA UNIVERSITÀ
-                university_sig_valid = await self._verify_university_signature_from_disclosure(cred_disclosure)
-                report["technical_details"]["signature_valid"] = university_sig_valid
-                if not university_sig_valid:
-                    self.logger.warning("      ⚠️ Firma università mancante")
-                    report["warnings"].append({
-                        "code": "UNIVERSITY_SIGNATURE_MISSING", 
-                        "message": f"Firma università mancante per credenziale {i+1}"
-                    })
-                else:
-                    report["info"].append({
-                        "code": "UNIVERSITY_SIGNATURE_VALID",
-                        "message": f"Firma università verificata per credenziale {i+1}"
-                    })
+                # 3.2 VERIFICA FIRMA E OCSP
+                issuer_name = self._get_issuer_name_from_disclosure(cred_disclosure)
+                if issuer_name:
+                    university_cert = await self._find_university_certificate(issuer_name)
+                    if university_cert:
+                        report["technical_details"]["signature_valid"] = True
+                        report["info"].append({"code": "UNIVERSITY_CERT_FOUND", "message": f"Certificato per {issuer_name} trovato."})
+
+                        # 3.3 CONTROLLO OCSP 
+                        if check_ocsp:
+                            ocsp_status, ocsp_message = await self._verify_ocsp_status(university_cert)
+                            report["technical_details"]["ocsp_status"] = ocsp_status
+                            if ocsp_status == "revoked":
+                                report["errors"].append({"code": "CERTIFICATE_REVOKED", "message": ocsp_message})
+                                all_credentials_valid = False
+                            elif ocsp_status != "good":
+                                report["warnings"].append({"code": "OCSP_WARNING", "message": ocsp_message})
+                    else:
+                        report["warnings"].append({"code": "UNIVERSITY_CERT_MISSING", "message": f"Certificato per {issuer_name} non trovato."})
                 
                 # 3.3 VERIFICA STATO BLOCKCHAIN
                 credential_id = cred_disclosure.get("credential_id")
@@ -389,22 +411,16 @@ class PresentationVerifier:
                 report["warnings"].append({"code": "TEMPORAL_INCONSISTENCY", "message": "Inconsistenze temporali rilevate"})
             
             # 5. RISULTATO FINALE - LOGICA MIGLIORATA
-            if report["technical_details"]["blockchain_status"] == "revoked":
+            if any(e["code"] == "CERTIFICATE_REVOKED" for e in report["errors"]):
                 report["overall_result"] = "revoked"
-                report["is_valid"] = False
-                self.logger.info("🚫 Presentazione REVOCATA")
-            elif student_sig_valid and all_credentials_valid and len(report["errors"]) == 0:
+            elif len(report["errors"]) > 0:
+                report["overall_result"] = "invalid"
+            elif len(report["warnings"]) > 0:
+                report["overall_result"] = "warning"
+                report["is_valid"] = True # Valida ma con avvertenze
+            else:
                 report["overall_result"] = "valid"
                 report["is_valid"] = True
-                self.logger.info("✅ Presentazione VALIDA")
-            elif len(report["errors"]) == 0 and len(report["warnings"]) > 0:
-                report["overall_result"] = "warning"
-                report["is_valid"] = True
-                self.logger.info("⚠️ Presentazione VALIDA con avvertenze")
-            else:
-                report["overall_result"] = "invalid"
-                report["is_valid"] = False
-                self.logger.info("❌ Presentazione NON VALIDA")
 
             return report
             
@@ -413,6 +429,33 @@ class PresentationVerifier:
             report["errors"].append({"code": "VERIFICATION_ERROR", "message": f"Errore interno: {str(e)}"})
             report["overall_result"] = "invalid"
             return report
+        
+    async def _verify_ocsp_status(self, issuer_cert: x509.Certificate) -> Tuple[str, str]:
+        """Verifica lo stato di revoca del certificato dell'issuer tramite OCSP."""
+        self.logger.info("      📡 Verifica stato revoca OCSP...")
+        try:
+            # Carica il certificato della Root CA per la verifica
+            ca_cert_path = "./certificates/ca/ca_certificate.pem"
+            if not Path(ca_cert_path).exists():
+                return "error", "Certificato Root CA non trovato."
+
+            ca_cert = self.cert_manager.load_certificate_from_file(ca_cert_path)
+
+            response = self.ocsp_client.check_certificate_status(issuer_cert, ca_cert)
+
+            if response.status == OCSPStatus.GOOD:
+                self.logger.info("      ✅ OCSP Status: GOOD")
+                return "good", "Il certificato dell'issuer è valido."
+            elif response.status == OCSPStatus.REVOKED:
+                self.logger.warning("      ❌ OCSP Status: REVOKED")
+                return "revoked", f"Il certificato dell'issuer è stato REVOCATO."
+            else:
+                self.logger.warning(f"      ⚠️ OCSP Status: {response.status.value}")
+                return response.status.value, response.error_message or "Stato OCSP sconosciuto."
+
+        except Exception as e:
+            self.logger.error(f"      💥 Errore durante la verifica OCSP: {e}")
+            return "error", str(e)
     
     async def _verify_student_signature(self, presentation_data: dict, student_public_key_pem: str) -> bool:
         """Verifica la firma digitale dello studente - CORRETTO"""
@@ -1303,6 +1346,7 @@ class AcademicCredentialsDashboard:
                 presentation_data = body.get("presentation_data")
                 student_public_key = body.get("student_public_key")
                 purpose = body.get("purpose", "verification")
+                check_ocsp = body.get("check_ocsp", False)
                 
                 if not presentation_data or not student_public_key:
                     return JSONResponse(
@@ -1311,7 +1355,7 @@ class AcademicCredentialsDashboard:
                     )
                 
                 verification_report = await self.verification_service.verify_presentation_complete(
-                    presentation_data, student_public_key, purpose
+                    presentation_data, student_public_key, purpose, check_ocsp
                 )
                 
                 self.logger.info(f"✅ Verifica completata: {verification_report['overall_result']}")

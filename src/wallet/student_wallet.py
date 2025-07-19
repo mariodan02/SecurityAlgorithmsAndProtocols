@@ -291,6 +291,59 @@ class AcademicStudentWallet:
             for cred_data in wallet_content.get('credentials', [])
         }
         return True
+    
+    def sign_credential_with_university_key(self, credential: AcademicCredential) -> AcademicCredential:
+        """Firma una credenziale con la chiave privata dell'università (demo)"""
+        try:
+            # Percorso hardcoded alla chiave dell'università di Rennes
+            UNI_KEY_PATH = "./keys/universite_rennes_private.pem"
+            UNI_KEY_PASSWORD = "Unisa2025"
+            
+            if not Path(UNI_KEY_PATH).exists():
+                print(f"❌ Chiave università non trovata: {UNI_KEY_PATH}")
+                # Restituisci comunque la credenziale originale
+                return credential
+            
+            print(f"🔑 Caricamento chiave universitaria da: {UNI_KEY_PATH}")
+            with open(UNI_KEY_PATH, "rb") as key_file:
+                private_key = serialization.load_pem_private_key(
+                    key_file.read(),
+                    password=UNI_KEY_PASSWORD.encode(),
+                    backend=default_backend()
+                )
+            
+            # Prepara i dati per la firma
+            data_to_sign = {
+                "credential_id": str(credential.metadata.credential_id),
+                "student_id": credential.subject.student_id_hash,
+                "issuer": credential.issuer.name,
+                "issue_date": credential.metadata.issued_at.isoformat(),
+                "courses": [c.course_name for c in credential.courses]
+            }
+            
+            # Crea e applica la firma digitale
+            signer = DigitalSignature("PSS")
+            signature_data = signer.sign_document(private_key, data_to_sign)
+            
+            # Import locale per evitare dipendenze circolari
+            from credentials.models import Signature
+            
+            # Aggiorna la credenziale con la firma
+            credential.signature = Signature(
+                value=signature_data['firma']['valore'],
+                algorithm=signature_data['firma']['algoritmo'],
+                timestamp=datetime.datetime.utcnow()
+            )
+            
+            print(f"✅ Credenziale firmata con chiave universitaria")
+            return credential
+            
+        except Exception as e:
+            print(f"❌ Errore durante la firma: {e}")
+            import traceback
+            traceback.print_exc()
+            # Restituisci comunque la credenziale originale
+            return credential
 
     def _save_encrypted_keys(self):
         """Cifra e salva la coppia di chiavi RSA e il certificato dello studente."""

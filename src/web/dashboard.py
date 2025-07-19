@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
 
+
 from credentials.models import CredentialFactory, CredentialStatus
 from wallet.presentation import PresentationFormat, PresentationManager
 from wallet.student_wallet import AcademicStudentWallet, WalletConfiguration, WalletStatus
@@ -42,6 +43,8 @@ except ImportError as e:
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.exceptions import InvalidSignature
+from cryptography import x509
+from cryptography.x509 import load_pem_x509_certificate
 
 # =============================================================================
 # DATA MODELS AND CONFIGURATION
@@ -465,25 +468,90 @@ class PresentationVerifier:
     def _extract_credentials_from_presentation(self, presentation_data: dict) -> list:
         return presentation_data.get("selective_disclosures", [])
     
+    async def _find_university_certificate(self, university_name: str) -> Optional[x509.Certificate]:
+        try:
+            self.logger.info(f"   🔍 Ricerca certificato per: {university_name}")
+            
+            async with httpx.AsyncClient(verify=False) as client:
+                response = await client.get(
+                    f"{self.dashboard.config.secure_server_url}/api/v1/universities/certificate",
+                    params={"name": university_name},
+                    headers={"Authorization": f"Bearer {self.dashboard.config.secure_server_api_key}"},
+                    timeout=5.0
+                )
+                
+                if response.status_code == 200:
+                    cert_data = response.json()
+                    if cert_data.get("success"):
+                        cert_pem = cert_data["data"]["certificate_pem"]
+                        # Usa la funzione corretta
+                        return load_pem_x509_certificate(cert_pem.encode())
+                
+            self.logger.warning(f"   ⚠️ Certificato non trovato per {university_name}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"   ❌ Errore ricerca certificato: {e}")
+            return None
+
     async def _verify_university_signature(self, disclosure: dict) -> bool:
         """Verifica la firma dell'università sulla credenziale."""
         try:
             self.logger.info("  3.2 Verifica firma università...")
             
-            # Implementazione semplificata per la demo
-            # In produzione si userebbe la chiave pubblica dell'università
+            # 1. Verifica presenza firma
             if "signature" not in disclosure:
                 self.logger.warning("      ⚠️ Firma università mancante")
                 return False
+                
+            signature_data = disclosure["signature"]
             
-            # Simula verifica positiva per la demo
-            self.logger.info("      ✅ Firma università verificata (demo)")
-            return True
+            # 2. Ottieni il nome dell'università
+            university_name = disclosure.get("issuer", {}).get("name", "")
+            if not university_name:
+                self.logger.warning("      ⚠️ Nome università mancante")
+                return False
+            
+            # 3. Recupera il certificato
+            university_cert = await self._find_university_certificate(university_name)
+            if not university_cert:
+                return False
+                
+            # 4. Estrai chiave pubblica
+            public_key = university_cert.public_key()
+            
+            # 5. Ricostruisci i dati minimi firmati
+            verification_data = {
+                "credential_id": disclosure["metadata"]["credential_id"],
+                "issued_at": disclosure["metadata"]["issued_at"],
+                "issuer_name": university_name,
+                "merkle_root": disclosure["metadata"]["merkle_root"]
+            }
+            
+            # 6. Verifica la firma
+            from crypto.foundations import DigitalSignature
+            verifier = DigitalSignature("PSS")
+            
+            # Prepara documento completo per verifica
+            document_to_verify = verification_data.copy()
+            document_to_verify["firma"] = signature_data
+            
+            is_valid = verifier.verify_document_signature(
+                public_key, 
+                document_to_verify
+            )
+            
+            if is_valid: 
+                self.logger.info("      ✅ Firma università verificata")
+            else:
+                self.logger.warning("      ❌ Firma università non valida")
+                
+            return is_valid
             
         except Exception as e:
             self.logger.error(f"      ❌ Errore verifica firma università: {e}")
             return False
-
+    
     async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
         try:
             self.logger.info("  🌳 Verifica Merkle proofs crittografica...")
@@ -1010,8 +1078,9 @@ class AcademicCredentialsDashboard:
                 if MODULES_AVAILABLE:
                     try:
                         sample_credential = CredentialFactory.create_sample_credential()
-                        sample_credential.status = CredentialStatus.ACTIVE
-                        wallet.add_credential(sample_credential, tags=["esempio", "auto-generata"])
+                        signed_credential.status = CredentialStatus.ACTIVE
+                        signed_credential = wallet.sign_credential_with_university_key(sample_credential)
+                        wallet.add_credential(signed_credential, tags=["esempio", "auto-generata"])
                         print("✅ Credenziale di esempio aggiunta con successo.")
                     except Exception as e:
                         print(f"❌ Errore durante l'aggiunta della credenziale di esempio: {e}")

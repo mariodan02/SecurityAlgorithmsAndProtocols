@@ -354,6 +354,46 @@ class AcademicCredentialsSecureServer:
         ):
             return await self._handle_credential_status(credential_id, auth)
         
+        @self.app.get("/api/v1/universities/certificate")
+        async def get_university_certificate(name: str):
+            """Restituisce il certificato PEM di un'università"""
+            try:
+                # Mappa demo delle università (in produzione sarebbe un database)
+                university_certs = {
+                    "Université de Rennes": "./certificates/issued/university_F_RENNES01_1001.pem",
+                    "Università di Salerno": "./certificates/issued/university_I_SALERNO_2001.pem"
+                }
+                
+                if name not in university_certs:
+                    return JSONResponse(
+                        {"success": False, "message": "Università non trovata"},
+                        status_code=404
+                    )
+                
+                cert_path = university_certs[name]
+                if not Path(cert_path).exists():
+                    return JSONResponse(
+                        {"success": False, "message": "Certificato non disponibile"},
+                        status_code=404
+                    )
+                
+                with open(cert_path, "r") as f:
+                    cert_pem = f.read()
+                
+                return JSONResponse({
+                    "success": True,
+                    "data": {
+                        "university_name": name,
+                        "certificate_pem": cert_pem
+                    }
+                })
+                
+            except Exception as e:
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno: {str(e)}"},
+                    status_code=500
+                )
+
         # Statistics endpoint
         @self.app.get("/api/v1/stats")
         async def get_statistics(
@@ -497,7 +537,7 @@ class AcademicCredentialsSecureServer:
                 success=False,
                 message=f"Errore interno: {e}"
             )
-    
+            
     async def _handle_credential_verification(self,
                                             request: CredentialVerificationRequest,
                                             auth: Optional[HTTPAuthorizationCredentials]) -> APIResponse:

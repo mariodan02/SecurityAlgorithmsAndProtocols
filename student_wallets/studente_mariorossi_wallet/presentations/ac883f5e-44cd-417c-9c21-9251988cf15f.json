@@ -1,0 +1,106 @@
+{
+  "presentation_id": "ac883f5e-44cd-417c-9c21-9251988cf15f",
+  "created_at": "2025-07-19T16:23:34.360413+00:00",
+  "created_by": "student_mario_d'aniello",
+  "purpose": "Ciaoen",
+  "recipient": null,
+  "expires_at": "2025-07-22T16:23:34.360407+00:00",
+  "status": "ready",
+  "selective_disclosures": [
+    {
+      "credential_id": "20ed4280-554e-4765-adc7-f3bc15c8a3e2",
+      "disclosure_id": "2f6150bf-df30-49b9-8a7c-e3ba23e1a055",
+      "disclosed_attributes": {
+        "issuer.name": "Université de Rennes",
+        "subject.pseudonym": "student_mario_d'aniello"
+      },
+      "merkle_proofs": [
+        {
+          "attribute_index": 21,
+          "attribute_value": "Université de Rennes",
+          "proof_path": [
+            {
+              "hash": "06c188aea1d5cf0e70d94058c9facdb73b79457cd6019387bbcbb0a425ea79dd",
+              "is_right": false
+            },
+            {
+              "hash": "622275aca4e57ede9f4c8366499ba312b89e229a6a9fa417af2a57ac3ab9444c",
+              "is_right": true
+            },
+            {
+              "hash": "1895cc2d76755cefd1a41b1b4401816f2034d111ab9ba5647d0c2835eeb4cf1c",
+              "is_right": false
+            },
+            {
+              "hash": "fa47b89bf8243434ba2b8fd7cd31afbdbf460f9519e50a5c0c396d26673db8ea",
+              "is_right": true
+            },
+            {
+              "hash": "f50d0dd6b9a1a5abfa712c7cd75125139871f9bcde245da14f997c235041363f",
+              "is_right": false
+            },
+            {
+              "hash": "ca3c5c76a3b71a28eaa8c99baa1e35e98f1398022d4e3a2999f755b193d94caa",
+              "is_right": true
+            }
+          ],
+          "merkle_root": "84b8266bbf5217f77f9098ed57b7713ed56a123006b5171975d70d1b909619a7"
+        },
+        {
+          "attribute_index": 43,
+          "attribute_value": "student_mario_d'aniello",
+          "proof_path": [
+            {
+              "hash": "eef69faa92d01ec2893dee3911d15da2b41f388b177b53626673cbe20edafca7",
+              "is_right": false
+            },
+            {
+              "hash": "4871145bac5ed500a07106e4194861d99e1f2f470422fae31aae47393274114c",
+              "is_right": false
+            },
+            {
+              "hash": "c302121d199aa9d29da8693811b114f7686b4ed0e790b04d1a2534945f8394d1",
+              "is_right": true
+            },
+            {
+              "hash": "662dec596cbf6663f7939589d284b197ef6c19f9a4ca580a98253d5043c638e4",
+              "is_right": false
+            },
+            {
+              "hash": "6d5e88c98de26353e9817bc24d3bf3d3f2c31db0c655bf99b7ff6e339c84433a",
+              "is_right": true
+            },
+            {
+              "hash": "5f71cd8b7d58fdd866cd313140effe035bedd83fdbc6a59270192acfd5ed4046",
+              "is_right": false
+            }
+          ],
+          "merkle_root": "84b8266bbf5217f77f9098ed57b7713ed56a123006b5171975d70d1b909619a7"
+        }
+      ],
+      "disclosure_level": "custom",
+      "created_at": "2025-07-19T16:23:34.360376+00:00",
+      "created_by": "student_mario_d'aniello",
+      "purpose": "Ciaoen",
+      "recipient": null,
+      "expires_at": "2025-07-22T16:23:34.360379+00:00"
+    }
+  ],
+  "additional_documents": [],
+  "format": "signed_json",
+  "verification_url": null,
+  "signature": {
+    "algoritmo": "RSA-SHA256-PSS",
+    "valore": "q+yG6UbzuZDJUFZEjtPHhgLAFT7iVt9mUtThtfmCAda9Z25MFGFkakU4PToaUnzUORhlUeaOn9F3JDaYv70gwe9pOcHtdkq7fgkdQDInQzJSRqOZ/pns8TZHu3oh+HHvx3RJ0Qvn2n8AKQnWNo/yaKEUxKxrod9E3aAZ2JqHJUSXJLqiGAXTy/yTzfcoXXgPD4nEJJQbOTNkpUQ6Ra/nF29vR7LOkuRBZkpAiHTbX+RFAhUVM3xGRSxSkaZdVeMi+x6Qgsm8kB+kt3rhwDePUFLD8CQ81+v7F8LcwAIPsOZWBm4XgT1ttwEDYhOyyKu030MJe5EkzJXu5SMDOzP6IA==",
+    "timestamp": "2025-07-19T16:23:34.362105Z"
+  },
+  "summary": {
+    "total_disclosures": 1,
+    "unique_credentials": 1,
+    "total_attributes_disclosed": 2,
+    "universities_involved": [],
+    "is_expired": false,
+    "is_signed": true,
+    "additional_docs_count": 0
+  }
+}

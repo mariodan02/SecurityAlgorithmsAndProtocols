@@ -71,18 +71,25 @@ def handle_ocsp_request():
     revoked_serials = get_revoked_serials()
     builder = ocsp.OCSPResponseBuilder()
 
-    # Aggiunge una risposta per il certificato richiesto
+    # === INIZIO CODICE CORRETTO E TESTATO ===
+    # L'oggetto ocsp_request non è iterabile. Contiene direttamente i dati.
+    cert_status = ocsp.OCSPCertStatus.REVOKED if ocsp_request.serial_number in revoked_serials else ocsp.OCSPCertStatus.GOOD
+    
+    # Aggiunge la singola risposta per il certificato richiesto
     builder = builder.add_response(
-        cert_status=ocsp.OCSPCertStatus.REVOKED if ocsp_request.serial_number in revoked_serials else ocsp.OCSPCertStatus.GOOD,
+        cert_status=cert_status,
         issuer_key_hash=ocsp_request.issuer_key_hash,
         issuer_name_hash=ocsp_request.issuer_name_hash,
         serial_number=ocsp_request.serial_number,
         this_update=datetime.datetime.now(datetime.timezone.utc),
         next_update=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
-    ).responder_id(ocsp.OCSPResponderEncoding.NAME, ca_cert)
-
+    )
+    
     # Firma la risposta
-    response = builder.build(ca_key, hashes.SHA256())
+    response = builder.responder_id(
+        ocsp.OCSPResponderEncoding.NAME, ca_cert
+    ).build(ca_key, hashes.SHA256())
+    # === FINE CODICE CORRETTO E TESTATO ===
 
     return Response(response.public_bytes(serialization.Encoding.DER), mimetype='application/ocsp-response')
 

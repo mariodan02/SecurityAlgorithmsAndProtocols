@@ -965,17 +965,13 @@ class AcademicCredentialsDashboard:
             self.logger.info(f"Directory di lavoro corrente: {current_dir}")
 
             possible_cert_paths = [
-                "certificates/issued/university_F_RENNES01_1001.pem",
-                "./certificates/issued/university_F_RENNES01_1001.pem",
-                "src/certificates/issued/university_F_RENNES01_1001.pem",
-                "./src/certificates/issued/university_F_RENNES01_1001.pem"
+                "certificates/issued/university_FR_RENNES01_1001.pem",
+                "./certificates/issued/university_FR_RENNES01_1001.pem",
             ]
 
             possible_key_paths = [
                 "keys/universite_rennes_private.pem",
                 "./keys/universite_rennes_private.pem",
-                "src/keys/universite_rennes_private.pem",
-                "./src/keys/universite_rennes_private.pem"
             ]
 
             cert_path = None

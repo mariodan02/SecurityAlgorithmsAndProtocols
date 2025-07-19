@@ -4,11 +4,14 @@
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
 
+import os
 import sys
 import threading
 import time
 from pathlib import Path
 import uvicorn
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def main():
     """Avvia tutti i server del sistema."""

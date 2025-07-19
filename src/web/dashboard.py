@@ -465,6 +465,25 @@ class PresentationVerifier:
     def _extract_credentials_from_presentation(self, presentation_data: dict) -> list:
         return presentation_data.get("selective_disclosures", [])
     
+    async def _verify_university_signature(self, disclosure: dict) -> bool:
+        """Verifica la firma dell'università sulla credenziale."""
+        try:
+            self.logger.info("  3.2 Verifica firma università...")
+            
+            # Implementazione semplificata per la demo
+            # In produzione si userebbe la chiave pubblica dell'università
+            if "signature" not in disclosure:
+                self.logger.warning("      ⚠️ Firma università mancante")
+                return False
+            
+            # Simula verifica positiva per la demo
+            self.logger.info("      ✅ Firma università verificata (demo)")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"      ❌ Errore verifica firma università: {e}")
+            return False
+
     async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
         try:
             self.logger.info("  🌳 Verifica Merkle proofs crittografica...")

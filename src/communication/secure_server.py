@@ -395,8 +395,8 @@ class AcademicCredentialsSecureServer:
             try:
                 # Mappa demo delle università 
                 university_certs = {
-                    "Université de Rennes": "./certificates/issued/university_F_RENNES01_1001.pem",
-                    "Università di Salerno": "./certificates/issued/university_I_SALERNO_2001.pem"
+                    "Université de Rennes": "./certificates/issued/university_FR_RENNES01_1001.pem",
+                   "Università di Salerno": "./certificates/issued/university_IT_SALERNO_2001.pem"
                 }
                 
                 if name not in university_certs:

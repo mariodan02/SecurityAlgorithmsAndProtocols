@@ -888,11 +888,11 @@ class AcademicCredentialValidator:
             # Carica automaticamente certificati demo se esistenti
             demo_cert_paths = [
                 "./certificates/ca/ca_certificate.pem",
-                "./certificates/issued/university_F_RENNES01_1001.pem", 
-                "./certificates/issued/university_I_SALERNO_2001.pem",
+                "./certificates/issued/university_FR_RENNES01_1001.pem", 
+                "./certificates/issued/university_IT_SALERNO_2001.pem",
                 "certificates/ca/ca_certificate.pem",
-                "certificates/issued/university_F_RENNES01_1001.pem",
-                "certificates/issued/university_I_SALERNO_2001.pem"
+                "certificates/issued/university_FR_RENNES01_1001.pem",
+                "certificates/issued/university_IT_SALERNO_2001.pem"
             ]
             
             for cert_path in demo_cert_paths:

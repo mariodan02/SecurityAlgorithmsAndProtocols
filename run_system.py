@@ -5,34 +5,31 @@
 # =============================================================================
 
 import sys
-import os
 import threading
 import time
 from pathlib import Path
-from src.pki.ocsp_responder import app as ocsp_app, HOST as OCSP_HOST, PORT as OCSP_PORT, load_ca_data
+import uvicorn
 
 def main():
-    """Avvia entrambi i server"""
+    """Avvia tutti i server del sistema."""
     print("PROJECT WORK")
     print("GRUPPO 19")
-    
-    # Verifica requisiti
+
     if not check_system_requirements():
         print("❌ Requisiti non soddisfatti. Verifica la struttura del progetto.")
         sys.exit(1)
-    
+
     print("\n🔧 Avvio sistema completo...")
-    
-    # Test import
+
     try:
-        from web.dashboard import AcademicCredentialsDashboard
-        from communication.secure_server import AcademicCredentialsSecureServer, ServerConfiguration
+        from src.pki.ocsp_responder import app as ocsp_app, HOST as OCSP_HOST, PORT as OCSP_PORT
+        from src.web.dashboard import AcademicCredentialsDashboard
+        from src.communication.secure_server import AcademicCredentialsSecureServer, ServerConfiguration
         print("✅ Import moduli riuscito")
     except ImportError as e:
         print(f"❌ Errore import: {e}")
         sys.exit(1)
-    
-    # Thread per il secure server
+
     def run_secure_server():
         try:
             print("\n🔒 Inizializzazione Secure Server...")
@@ -44,16 +41,12 @@ def main():
             server = AcademicCredentialsSecureServer(config)
             print("🔒 Secure Server pronto su: https://localhost:8443")
             server.run()
-        except KeyboardInterrupt:
-            pass
         except Exception as e:
             print(f"❌ Errore secure server: {e}")
-    
-    # Thread per il dashboard
+
     def run_dashboard():
         try:
-            # Aspetta che il secure server si avvii
-            time.sleep(3)
+            time.sleep(2) # Attende l'avvio degli altri server
             print("\n🌐 Inizializzazione Dashboard...")
             dashboard = AcademicCredentialsDashboard()
             print("🌐 Dashboard pronto su: http://localhost:8000")
@@ -63,60 +56,54 @@ def main():
             print("   - studente_mariorossi (password: Unisa2025)")
             print("\n🔧 Premi Ctrl+C per fermare il sistema")
             dashboard.run()
-        except KeyboardInterrupt:
-            pass
         except Exception as e:
             print(f"❌ Errore dashboard: {e}")
-    #Thread per il responder OCSP
+
     def run_ocsp_responder():
         try:
-            print("\n📡 Inizializzazione OCSP Responder...")
-            load_ca_data() # Carica i dati della CA prima di avviare
-            print(f"📡 OCSP Responder pronto su: http://{OCSP_HOST}:{OCSP_PORT}/ocsp")
-            ocsp_app.run(host=OCSP_HOST, port=OCSP_PORT)
+            print("\n📡 Inizializzazione OCSP Responder (FastAPI)...")
+            uvicorn.run(
+                ocsp_app,
+                host=OCSP_HOST,
+                port=OCSP_PORT,
+                log_level="warning"
+            )
         except Exception as e:
             print(f"❌ Errore OCSP responder: {e}")
-    # Avvia threads
-    ocsp_thread = threading.Thread(target=run_ocsp_responder, daemon=True)
-    secure_thread = threading.Thread(target=run_secure_server, daemon=True)
-    dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
-    
-    # Avvia prima il secure server
-    ocsp_thread.start()
-    secure_thread.start()
-    
-    # Poi il dashboard
-    dashboard_thread.start()
-    
+
+    threads = [
+        threading.Thread(target=run_secure_server, daemon=True),
+        threading.Thread(target=run_ocsp_responder, daemon=True),
+        threading.Thread(target=run_dashboard, daemon=True)
+    ]
+
+    for t in threads:
+        t.start()
+
     try:
-        # Aspetta l'interruzione
-        while True:
+        while all(t.is_alive() for t in threads):
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n\n Fermando il sistema...")
         print("✅ Sistema terminato")
 
 def check_system_requirements():
-    """Verifica i requisiti del sistema"""
+    """Verifica i requisiti del sistema."""
     required_dirs = [
         "src/web",
-        "src/credentials", 
+        "src/credentials",
         "src/communication",
         "src/pki",
         "src/crypto"
     ]
-    
-    missing_dirs = []
-    for dir_path in required_dirs:
-        if not Path(dir_path).exists():
-            missing_dirs.append(dir_path)
-    
+
+    missing_dirs = [d for d in required_dirs if not Path(d).exists()]
+
     if missing_dirs:
         print("❌ Directory mancanti:")
         for dir_path in missing_dirs:
             print(f"   - {dir_path}")
         return False
-    
     return True
 
 if __name__ == "__main__":

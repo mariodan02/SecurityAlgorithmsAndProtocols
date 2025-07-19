@@ -22,6 +22,7 @@ pyjwt>=2.8.0                 # JWT tokens (opzionale)
 web3>=6.0.0,<7.0.0          # Web3.py per blockchain
 eth-hash>=0.5.0             # Ethereum hashing
 eth-typing>=3.0.0           # Ethereum typing
+httpx
 
 # Solidity Compiler (Opzionale)
 py-solc-x>=1.12.0           # Solidity compiler wrapper

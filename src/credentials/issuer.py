@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import uuid
-
+from blockchain.blockchain_service import BlockchainService
 # Cryptography imports
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -113,10 +113,14 @@ class AcademicCredentialIssuer:
         Args:
             config: Configurazione issuer
         """
+        # FIXED: Assegna config PRIMA di tutto
         self.config = config
+        
+        if self.config.backup_enabled:
+            Path(self.config.backup_directory).mkdir(parents=True, exist_ok=True)
+        
         self.crypto_utils = CryptoUtils()
         self.cert_manager = CertificateManager()
-        
         # Componenti crittografici
         self.digital_signature = DigitalSignature("PSS")
         
@@ -135,16 +139,55 @@ class AcademicCredentialIssuer:
             'signing_operations': 0,
             'validation_errors': 0
         }
+
+        # Inizializziamo la blockchain
+        self.blockchain_service = None
+        self.web3 = None
+        self.issuer_account = None
         
-        # Inizializza
+        try:
+            # Carica la chiave privata di Ganache dal file di testo
+            #with open('ganache_key.txt', 'r') as f:
+            ganache_private_key = '0xc6e10d62b4d468cd29192e693c78cb888b1e327f4847dac9bc305dd65bfffb55'
+
+            self.blockchain_service = BlockchainService(
+                raw_private_key=ganache_private_key
+            )
+
+            if self.blockchain_service:
+                self.web3 = self.blockchain_service.w3
+                self.issuer_account = self.blockchain_service.account
+                print("✅ BlockchainService inizializzato correttamente con la chiave di Ganache.")
+
+        except FileNotFoundError:
+            print("⚠️ File 'ganache_key.txt' non trovato. La parte blockchain sarà disattivata.")
+            print("   Crea il file e inserisci una delle chiavi private di Ganache.")
+            self.blockchain_service = None
+        except Exception as e:
+            print(f"⚠️ Impossibile inizializzare BlockchainService: {e}")
+            print("   Il sistema funzionerà senza integrazione blockchain")
+            self.blockchain_service = None
+        
+        # Continua con il resto dell'inizializzazione...
+        self._initialize_issuer()
+        print(f"🏛️  Credential Issuer inizializzato per: {config.university_info.name}")
+
+        # Inizializza issuer
         self._initialize_issuer()
         
         print(f"🏛️  Credential Issuer inizializzato per: {config.university_info.name}")
-    
+                    
+    def _send_signed_transaction(self, transaction):
+        """Funzione helper per firmare e inviare."""
+        signed_tx = self.issuer_account.sign_transaction(transaction)
+        tx_hash = self.web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        return receipt
+
     def _initialize_issuer(self):
         """Inizializza componenti issuer"""
         try:
-            # Carica certificato università
+            # 1. CARICA CERTIFICATO UNIVERSITÀ (ESSENZIALE!)
             if Path(self.config.certificate_path).exists():
                 self.university_certificate = self.cert_manager.load_certificate_from_file(
                     self.config.certificate_path
@@ -153,7 +196,7 @@ class AcademicCredentialIssuer:
             else:
                 print(f"   ⚠️  Certificato non trovato: {self.config.certificate_path}")
             
-            # Carica chiave privata università
+            # 2. CARICA CHIAVE PRIVATA UNIVERSITÀ (ESSENZIALE!)
             if Path(self.config.private_key_path).exists():
                 with open(self.config.private_key_path, 'rb') as f:
                     private_pem = f.read()
@@ -168,12 +211,15 @@ class AcademicCredentialIssuer:
             else:
                 print(f"   ⚠️  Chiave privata non trovata: {self.config.private_key_path}")
             
-            # Crea directory di backup
+            # 3. CREA DIRECTORY DI BACKUP
             if self.config.backup_enabled:
                 Path(self.config.backup_directory).mkdir(parents=True, exist_ok=True)
             
-            # Carica database esistente
+            # 4. CARICA DATABASE ESISTENTE
             self._load_credentials_database()
+            
+            # 5. BLOCKCHAIN - GIÀ INIZIALIZZATO NEL COSTRUTTORE
+            print("✅ Issuer inizializzato correttamente")
             
         except Exception as e:
             print(f"❌ Errore inizializzazione issuer: {e}")
@@ -271,8 +317,15 @@ class AcademicCredentialIssuer:
             # 4. Registra credenziale
             print("   4️⃣ Registrazione...")
             credential_id = str(credential.metadata.credential_id)
-            self.credentials_db[credential_id] = credential
-            
+            #self.credentials_db[credential_id] = credential
+            if self.blockchain_service:
+                print("   4️⃣ Registrazione su Blockchain...")
+                # L'errore qui ora fermerà il processo e verrà mostrato all'utente
+                unsigned_tx = self.blockchain_service.build_registration_transaction(credential_id, self.issuer_account.address)
+                receipt = self._send_signed_transaction(unsigned_tx)
+                print(f"✅ Registrazione Blockchain OK. Hash: {self.web3.to_hex(receipt.transaction_hash)}")
+            else:
+                 print("   ⚠️  Registrazione Blockchain saltata (servizio non attivo).")
             # 5. Backup
             if self.config.backup_enabled:
                 print("   5️⃣ Backup...")
@@ -399,8 +452,17 @@ class AcademicCredentialIssuer:
             credential = self.credentials_db[credential_id]
             credential.status = CredentialStatus.REVOKED
             
-            # TODO: Registrare revoca nel registro blockchain
-            # Qui si dovrebbe chiamare il sistema di revoca decentralizzato
+            if self.blockchain_service:
+                try:
+                    # 1. Costruisci
+                    unsigned_tx = self.blockchain_service.build_revocation_transaction(
+                        credential_id, reason, self.issuer_account.address
+                    )
+                    # 2. Firma e invia
+                    self._send_signed_transaction(unsigned_tx)
+                    print(f"🔗 Credenziale {credential_id} revocata su blockchain.")
+                except Exception as e:
+                     print(f"⚠️  Revoca blockchain fallita: {e}")
             
             print(f"🚫 Credenziale revocata: {credential_id}")
             print(f"   Motivo: {reason}")
@@ -560,7 +622,7 @@ class AcademicCredentialIssuer:
     
     def _create_credential_from_request(self, request: IssuanceRequest) -> AcademicCredential:
         """Crea credenziale da richiesta"""
-        
+
         return CredentialFactory.create_erasmus_credential(
             issuer_university=self.config.university_info,
             host_university=request.host_university,
@@ -569,7 +631,7 @@ class AcademicCredentialIssuer:
             study_period=request.study_period,
             study_program=request.study_program
         )
-    
+        
     def _backup_credential(self, credential: AcademicCredential, suffix: str = ""):
         """Crea backup di una credenziale"""
         try:

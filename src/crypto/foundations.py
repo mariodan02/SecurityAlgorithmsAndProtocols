@@ -368,7 +368,7 @@ class MerkleTree:
         """Hash SHA-256 di un dato"""
         if isinstance(data, dict):
             # Per dizionari, usa JSON canonico
-            json_str = json.dumps(data, sort_keys=True, separators=(',', ':'))
+            json_str = json.dumps(data, sort_keys=True, separators=(',', ':'), default=str)
             return hashlib.sha256(json_str.encode('utf-8')).hexdigest()
         else:
             # Per altri tipi, converte a stringa

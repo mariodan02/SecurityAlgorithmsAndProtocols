@@ -1,214 +1,163 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="h4 mb-0">Verifica credenziali</h1>
+    <h1 class="h4 mb-0">🔍 Verifica credenziali</h1>
 </div>
 
 <div class="row g-4">
     <div class="col-lg-8">
         <div class="card">
-            <div class="card-body">
-                <h6 class="text-muted mb-3">Verifica presentazione</h6>
-                <form id="verify-presentation-form">
-                    <div class="mb-3">
-                        <label class="form-label">File presentazione (.json)</label>
-                        <input class="form-control" type="file" accept=".json" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Scopo della verifica</label>
-                        <select class="form-select" name="purpose">
-                            <option value="credit_recognition" selected>Riconoscimento crediti</option>
-                            <option value="enrollment">Iscrizione corso</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary" id="verify-button">
-                        Avvia verifica
-                    </button>
-                </form>
+            <div class="card-header">
+                <h6 class="mb-0">🔐 Verifica completa presentazione selettiva</h6>
             </div>
-        </div>
-
-        <!-- NUOVO FORM PER VERIFICA COMPLETA -->
-        <div class="card mt-4">
             <div class="card-body">
-                <h6 class="text-muted mb-3">Verifica completa</h6>
+                <div class="alert alert-info small">
+                    <strong>Processo di verifica:</strong>
+                    <ol class="mb-0 mt-2">
+                        <li>Verifica firma digitale studente</li>
+                        <li>Controllo Merkle Proof per divulgazione selettiva</li>
+                        <li>Verifica firma università emittente</li>
+                        <li>Controllo stato revoca su blockchain</li>
+                        <li>Validazione temporale</li>
+                    </ol>
+                </div>
+                
                 <form id="full-verify-form">
                     <div class="mb-3">
-                        <label class="form-label">File presentazione (.json)</label>
-                        <input class="form-control" type="file" id="fullPresentationFile" accept=".json" required>
+                        <label class="form-label">File presentazione (.json) *</label>
+                        <input class="form-control" type="file" id="presentationFile" accept=".json" required>
+                        <div class="form-text">File JSON della presentazione verificabile creata dallo studente</div>
                     </div>
+                    
                     <div class="mb-3">
-                        <label class="form-label">Chiave pubblica studente (PEM)</label>
-                        <textarea class="form-control" id="studentPublicKey" rows="4" required 
-                                  placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"></textarea>
+                        <label class="form-label">Chiave pubblica studente (PEM) *</label>
+                        <textarea class="form-control font-monospace" id="studentPublicKey" rows="6" required 
+                                  placeholder="-----BEGIN PUBLIC KEY-----&#10;MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...&#10;-----END PUBLIC KEY-----"></textarea>
+                        <div class="form-text">Chiave pubblica PEM del wallet dello studente</div>
                     </div>
-                    <button type="submit" class="btn btn-primary" id="full-verify-button">
-                        <span id="full-verify-text">Verifica completa</span>
-                        <span id="full-verify-spinner" class="spinner-border spinner-border-sm d-none"></span>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Scopo della verifica</label>
+                        <select class="form-select" id="verificationPurpose">
+                            <option value="credit_recognition">Riconoscimento crediti CFU</option>
+                            <option value="enrollment">Verifica per iscrizione</option>
+                            <option value="degree_validation">Validazione titolo</option>
+                            <option value="erasmus_application">Domanda Erasmus</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary" id="verifyButton">
+                        <span id="verifyText">🔍 Avvia verifica completa</span>
+                        <span id="verifySpinner" class="spinner-border spinner-border-sm d-none"></span>
                     </button>
                 </form>
             </div>
         </div>
 
-        <div class="card mt-4" id="verification-result-container" style="display: none;">
+        <div class="card mt-4" id="verificationResults" style="display: none;">
+            <div class="card-header">
+                <h6 class="mb-0">📊 Risultati verifica</h6>
+            </div>
             <div class="card-body">
-                <h6 class="text-muted mb-3">Risultato verifica</h6>
-                <div id="result-content"></div>
+                <div id="resultContent"></div>
             </div>
         </div>
     </div>
 
     <div class="col-lg-4">
         <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">📖 Guida verifica</h6>
+            </div>
             <div class="card-body">
-                <h6 class="text-muted mb-3">Verifiche in sospeso</h6>
-                <ul class="list-group list-group-flush" id="pending-verifications-list">
-                    <li class="list-group-item text-center py-4">
-                        <div class="spinner-border spinner-border-sm text-primary"></div>
-                    </li>
-                </ul>
+                <h6 class="text-primary">Processo di verifica</h6>
+                <div class="small text-muted">
+                    <p><strong>1. Firma studente:</strong> Garantisce autenticità e non-ripudio</p>
+                    <p><strong>2. Merkle Proof:</strong> Verifica integrità divulgazione selettiva</p>
+                    <p><strong>3. Firma università:</strong> Conferma validità istituzionale</p>
+                    <p><strong>4. Blockchain:</strong> Controllo stato revoca</p>
+                    <p><strong>5. Temporale:</strong> Verifica scadenze e coerenza</p>
+                </div>
+                
+                <hr>
+                
+                <h6 class="text-primary">Risultati possibili</h6>
+                <div class="small">
+                    <p><span class="badge bg-success">VALIDA</span> Tutti i controlli superati</p>
+                    <p><span class="badge bg-warning">WARNING</span> Valida con avvertenze</p>
+                    <p><span class="badge bg-danger">INVALIDA</span> Controlli falliti</p>
+                    <p><span class="badge bg-danger">REVOCATA</span> La credenziale non è più valida</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="mb-0">📈 Statistiche verifiche</h6>
+            </div>
+            <div class="card-body">
+                <div class="text-center">
+                    <div class="h4 text-success mb-0">94.7%</div>
+                    <div class="small text-muted">Tasso successo</div>
+                </div>
+                <hr>
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="fw-bold text-primary">32</div>
+                        <div class="small text-muted">Verificate</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="fw-bold text-warning">5</div>
+                        <div class="small text-muted">In sospeso</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="fw-bold text-danger">2</div>
+                        <div class="small text-muted">Respinte</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    // Gestione verifica completa
-    document.getElementById('full-verify-form').addEventListener('submit', async function(event) {
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('full-verify-form');
+    const fileInput = document.getElementById('presentationFile');
+    const publicKeyInput = document.getElementById('studentPublicKey');
+    const verifyButton = document.getElementById('verifyButton');
+    const verifyText = document.getElementById('verifyText');
+    const verifySpinner = document.getElementById('verifySpinner');
+    const resultsCard = document.getElementById('verificationResults');
+    const resultContent = document.getElementById('resultContent');
+
+    // Gestione submit form
+    form.addEventListener('submit', async function(event) {
         event.preventDefault();
-
-        const button = document.getElementById('full-verify-button');
-        const buttonText = document.getElementById('full-verify-text');
-        const spinner = document.getElementById('full-verify-spinner');
-        const fileInput = document.getElementById('fullPresentationFile');
-        const publicKey = document.getElementById('studentPublicKey').value;
-
-        if (fileInput.files.length === 0 || !publicKey) {
-            alert("Compila tutti i campi");
-            return;
-        }
-
-        buttonText.style.display = 'none';
-        spinner.classList.remove('d-none');
-        button.disabled = true;
-
-        const file = fileInput.files[0];
-        const reader = new FileReader();
-
-        reader.onload = async (e) => {
-            try {
-                const presentationData = JSON.parse(e.target.result);
-                
-                const response = await fetch('/verification/full-verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        presentation_data: presentationData,
-                        student_public_key: publicKey,
-                        purpose: "credit_recognition"
-                    })
-                });
-
-                const result = await response.json();
-                
-                if (response.ok && result.success) {
-                    displayVerificationReport(result.verification_report);
-                } else {
-                    throw new Error(result.message || 'Errore durante la verifica completa');
-                }
-
-            } catch (error) {
-                alert(`Errore: ${error.message}`);
-            } finally {
-                buttonText.style.display = 'inline';
-                spinner.classList.add('d-none');
-                button.disabled = false;
-            }
-        };
-
-        reader.readAsText(file);
-    });
-
-    // Mostra report dettagliato
-    function displayVerificationReport(report) {
-        const resultContent = document.getElementById('result-content');
-        const resultContainer = document.getElementById('verification-result-container');
         
-        let htmlContent = `
-            <div class="alert ${report.is_valid ? 'alert-success' : 'alert-danger'}">
-                <h5>Risultato verifica: ${report.overall_result}</h5>
-                <p>Credenziale: ${report.credential_id}</p>
-            </div>
-            <div class="mt-3">
-                <h6>Dettagli tecnici:</h6>
-                <ul>
-                    <li>Firma studente: ${report.technical_details.student_signature_valid ? '✅ Valida' : '❌ Non valida'}</li>
-                    <li>Firma università: ${report.technical_details.signature_valid ? '✅ Valida' : '❌ Non valida'}</li>
-                    <li>Merkle Tree: ${report.technical_details.merkle_tree_valid ? '✅ Valido' : '❌ Non valido'}</li>
-                    <li>Revoca blockchain: ${report.technical_details.blockchain_status || 'Non verificato'}</li>
-                    <li>Validità temporale: ${report.technical_details.temporal_valid ? '✅ Valida' : '❌ Non valida'}</li>
-                </ul>
-        `;
+        if (!validateForm()) return;
         
-        if (report.errors.length > 0) {
-            htmlContent += `<h6 class="mt-3">Errori:</h6><ul>`;
-            report.errors.forEach(error => {
-                htmlContent += `<li>${error.message} [${error.code}]</li>`;
-            });
-            htmlContent += `</ul>`;
-        }
+        setLoadingState(true);
         
-        if (report.warnings.length > 0) {
-            htmlContent += `<h6 class="mt-3">Warning:</h6><ul>`;
-            report.warnings.forEach(warning => {
-                htmlContent += `<li>${warning.message} [${warning.code}]</li>`;
-            });
-            htmlContent += `</ul>`;
-        }
-        
-        resultContent.innerHTML = htmlContent;
-        resultContainer.style.display = 'block';
-    }
-    
-    // Aggiungere solo il nuovo codice per la verifica completa:
-    document.getElementById('full-verify-form').addEventListener('submit', async function(event) {
-        event.preventDefault();
-
-        const button = document.getElementById('full-verify-button');
-        const buttonText = document.getElementById('full-verify-text');
-        const spinner = document.getElementById('full-verify-spinner');
-        const fileInput = document.getElementById('fullPresentationFile');
-        const publicKeyTextarea = document.getElementById('studentPublicKey');
-
-        if (fileInput.files.length === 0 || !publicKeyTextarea.value.trim()) {
-            alert("Per favore, carica un file e inserisci la chiave pubblica");
-            return;
-        }
-
-        button.disabled = true;
-        buttonText.style.display = 'none';
-        spinner.classList.remove('d-none');
-
         try {
-            const file = fileInput.files[0];
-            const publicKey = publicKeyTextarea.value.trim();
-            const presentationData = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (e) => resolve(JSON.parse(e.target.result));
-                reader.onerror = (e) => reject(new Error("Errore lettura file"));
-                reader.readAsText(file);
-            });
-
+            const presentationData = await readFileAsJSON(fileInput.files[0]);
+            const publicKey = publicKeyInput.value.trim();
+            const purpose = document.getElementById('verificationPurpose').value;
+            
+            const requestData = {
+                presentation_data: presentationData,
+                student_public_key: publicKey,
+                purpose: purpose
+            };
+            
+            console.log('🔍 Invio richiesta verifica:', requestData);
+            
             const response = await fetch('/verification/full-verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    presentation_data: presentationData,
-                    student_public_key: publicKey,
-                    purpose: "credit_recognition"
-                })
+                body: JSON.stringify(requestData)
             });
-
+            
             const result = await response.json();
             
             if (response.ok && result.success) {
@@ -216,55 +165,209 @@
             } else {
                 throw new Error(result.message || 'Errore durante la verifica');
             }
+            
         } catch (error) {
-            alert(`Errore: ${error.message}`);
+            console.error('❌ Errore verifica:', error);
+            displayError(error.message);
         } finally {
-            button.disabled = false;
-            buttonText.style.display = 'inline';
-            spinner.classList.add('d-none');
+            setLoadingState(false);
         }
     });
-
-    function displayVerificationReport(report) {
-        const resultContent = document.getElementById('result-content');
-        const resultContainer = document.getElementById('verification-result-container');
+    
+    function validateForm() {
+        if (fileInput.files.length === 0) {
+            alert('Seleziona un file di presentazione');
+            fileInput.focus();
+            return false;
+        }
         
-        let html = `<div class="alert ${report.is_valid ? 'alert-success' : 'alert-danger'}">`;
-        html += `<h5>Risultato verifica: ${report.overall_result.toUpperCase()}</h5>`;
-        html += `<p>Credenziale: ${report.credential_id}</p>`;
-        html += `<p>Livello validazione: ${report.validation_level}</p>`;
+        if (!publicKeyInput.value.trim()) {
+            alert('Inserisci la chiave pubblica dello studente');
+            publicKeyInput.focus();
+            return false;
+        }
+        
+        return true;
+    }
+    
+    function setLoadingState(loading) {
+        verifyButton.disabled = loading;
+        if (loading) {
+            verifyText.style.display = 'none';
+            verifySpinner.classList.remove('d-none');
+        } else {
+            verifyText.style.display = 'inline';
+            verifySpinner.classList.add('d-none');
+        }
+    }
+    
+    async function readFileAsJSON(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    resolve(json);
+                } catch (error) {
+                    reject(new Error('File JSON non valido'));
+                }
+            };
+            reader.onerror = () => reject(new Error('Errore lettura file'));
+            reader.readAsText(file);
+        });
+    }
+    
+    function displayVerificationReport(report) {
+        console.log('📊 Report verifica ricevuto:', report);
+        
+        const isValid = report.is_valid;
+        const result = report.overall_result.toUpperCase();
+        
+        let resultText = result;
+        if (result === 'REVOKED') {
+            resultText = 'CREDENZIALE REVOCATA';
+        }
+        
+        let html = '';
+        
+        // Header risultato
+        html += `<div class="alert ${getAlertClass(result)} border-0">`;
+        html += `<div class="d-flex align-items-center">`;
+        html += `<div class="me-3">${getResultIcon(result)}</div>`;
+        html += `<div>`;
+        html += `<h5 class="mb-1">Risultato: ${resultText}</h5>`;
+        html += `<div class="small">Credenziale: ${report.credential_id}</div>`;
+        html += `<div class="small">Livello: ${report.validation_level} | ${new Date(report.timestamp).toLocaleString('it-IT')}</div>`;
+        html += `</div></div></div>`;
+        
+        // Dettagli tecnici
+        html += `<div class="row g-3 mb-4">`;
+        html += createVerificationCard('👤 Firma Studente', report.technical_details.student_signature_valid);
+        html += createVerificationCard('🏛️ Firma Università', report.technical_details.signature_valid);
+        html += createVerificationCard('🌳 Merkle Tree', report.technical_details.merkle_tree_valid);
+        html += createVerificationCard('⏰ Validità Temporale', report.technical_details.temporal_valid);
+        html += createBlockchainCard('🔗 Blockchain', report.technical_details.blockchain_status);
         html += `</div>`;
         
-        html += `<div class="mt-4"><h6>Dettagli tecnici:</h6>`;
-        html += `<ul class="list-group">`;
-        html += `<li class="list-group-item">Firma studente: ${report.technical_details.student_signature_valid ? '✅ VALIDA' : '❌ NON VALIDA'}</li>`;
-        html += `<li class="list-group-item">Firma università: ${report.technical_details.signature_valid ? '✅ VALIDA' : '❌ NON VALIDA'}</li>`;
-        html += `<li class="list-group-item">Merkle Tree: ${report.technical_details.merkle_tree_valid ? '✅ VALIDO' : '❌ NON VALIDO'}</li>`;
-        html += `<li class="list-group-item">Revoca blockchain: ${report.technical_details.blockchain_status || 'Non verificato'}</li>`;
-        html += `<li class="list-group-item">Validità temporale: ${report.technical_details.temporal_valid ? '✅ VALIDA' : '❌ NON VALIDA'}</li>`;
-        html += `</ul></div>`;
-        
-        if (report.errors.length > 0) {
-            html += `<div class="mt-4"><h6>Errori riscontrati:</h6><ul>`;
+        // Errori
+        if (report.errors && report.errors.length > 0) {
+            html += `<div class="alert alert-danger border-0">`;
+            html += `<h6 class="alert-heading">❌ Errori rilevati (${report.errors.length})</h6>`;
+            html += `<ul class="mb-0">`;
             report.errors.forEach(error => {
-                html += `<li class="text-danger">${error.message} [codice: ${error.code}]</li>`;
+                html += `<li><strong>${error.code}:</strong> ${error.message}</li>`;
             });
             html += `</ul></div>`;
         }
         
-        if (report.warnings.length > 0) {
-            html += `<div class="mt-3"><h6>Avvertenze:</h6><ul>`;
+        // Warning
+        if (report.warnings && report.warnings.length > 0) {
+            html += `<div class="alert alert-warning border-0">`;
+            html += `<h6 class="alert-heading">⚠️ Avvertenze (${report.warnings.length})</h6>`;
+            html += `<ul class="mb-0">`;
             report.warnings.forEach(warning => {
-                html += `<li class="text-warning">${warning.message} [codice: ${warning.code}]</li>`;
+                html += `<li><strong>${warning.code}:</strong> ${warning.message}</li>`;
+            });
+            html += `</ul></div>`;
+        }
+        
+        // Informazioni aggiuntive
+        if (report.info && report.info.length > 0) {
+            html += `<div class="alert alert-info border-0">`;
+            html += `<h6 class="alert-heading">ℹ️ Informazioni</h6>`;
+            html += `<ul class="mb-0">`;
+            report.info.forEach(info => {
+                html += `<li>${info.message}</li>`;
             });
             html += `</ul></div>`;
         }
         
         resultContent.innerHTML = html;
-        resultContainer.style.display = 'block';
-        
-        // Scroll automatico ai risultati
-        resultContainer.scrollIntoView({ behavior: 'smooth' });
+        resultsCard.style.display = 'block';
+        resultsCard.scrollIntoView({ behavior: 'smooth' });
     }
+    
+    function displayError(message) {
+        const html = `
+            <div class="alert alert-danger border-0">
+                <h5 class="alert-heading">❌ Errore verifica</h5>
+                <p class="mb-0">${message}</p>
+            </div>
+        `;
+        resultContent.innerHTML = html;
+        resultsCard.style.display = 'block';
+        resultsCard.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    function getAlertClass(result) {
+        switch(result) {
+            case 'VALID': return 'alert-success';
+            case 'WARNING': return 'alert-warning';
+            case 'INVALID': return 'alert-danger';
+            case 'REVOKED': return 'alert-danger';
+            default: return 'alert-secondary';
+        }
+    }
+    
+    function getResultIcon(result) {
+        switch(result) {
+            case 'VALID': return '✅';
+            case 'WARNING': return '⚠️';
+            case 'INVALID': return '❌';
+            case 'REVOKED': return '🚫';
+            default: return '❓';
+        }
+    }
+    
+    function createVerificationCard(title, isValid) {
+        const icon = isValid ? '✅' : '❌';
+        const badgeClass = isValid ? 'bg-success' : 'bg-danger';
+        const status = isValid ? 'VALIDA' : 'NON VALIDA';
+        
+        return `
+            <div class="col-md-6">
+                <div class="card border-0 bg-light">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="small fw-medium">${title}</div>
+                            <span class="badge ${badgeClass}">${icon} ${status}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    function createBlockchainCard(title, status) {
+        let icon, badgeClass, displayStatus;
+        
+        switch(status) {
+            case 'valid':
+                icon = '✅'; badgeClass = 'bg-success'; displayStatus = 'VALIDA';
+                break;
+            case 'revoked':
+                icon = '🚫'; badgeClass = 'bg-danger'; displayStatus = 'REVOCATA';
+                break;
+            case 'error':
+                icon = '⚠️'; badgeClass = 'bg-warning'; displayStatus = 'ERRORE';
+                break;
+            default:
+                icon = '❓'; badgeClass = 'bg-secondary'; displayStatus = 'NON VERIFICATA';
+        }
+        
+        return `
+            <div class="col-md-6">
+                <div class="card border-0 bg-light">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="small fw-medium">${title}</div>
+                            <span class="badge ${badgeClass}">${icon} ${displayStatus}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+});
 </script>
 {% endblock %}

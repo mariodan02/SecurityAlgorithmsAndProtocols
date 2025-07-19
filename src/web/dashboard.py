@@ -1,5 +1,5 @@
 # =============================================================================
-# ACADEMIC CREDENTIALS DASHBOARD - Main Application
+# ACADEMIC CREDENTIALS DASHBOARD - Main Application (MODIFICATO)
 # File: web/dashboard.py
 # Decentralized Academic Credentials System
 # =============================================================================
@@ -10,38 +10,41 @@ import json
 import uuid
 import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import logging
 from dataclasses import dataclass
+import httpx
 
 # FastAPI and web dependencies
-from fastapi import FastAPI, Request, HTTPException, Depends, Form
+from fastapi import FastAPI, Request, HTTPException, Depends, Form, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
 
-# Wallet-related imports
-from credentials.models import Course, EQFLevel, ExamGrade, GradeSystem, PersonalInfo, StudyPeriod, StudyProgram, StudyType
-from wallet.student_wallet import AcademicStudentWallet, CredentialStorage, WalletConfiguration
-from wallet.presentation import PresentationFormat, PresentationManager
 
-# Pydantic for data validation
-from pydantic import BaseModel, Field
+from credentials.models import CredentialFactory, CredentialStatus
+from wallet.presentation import PresentationFormat, PresentationManager
+from wallet.student_wallet import AcademicStudentWallet, WalletConfiguration, WalletStatus
 
 # Conditional imports to prevent errors if modules are unavailable
 try:
-    from communication.secure_server import CredentialVerificationRequest
-    from credentials.models import AcademicCredential
-    from crypto.foundations import CryptoUtils, DigitalSignature
-    from credentials.validator import AcademicCredentialValidator, ValidationLevel, ValidationResult, ValidatorConfiguration
-    from pki.certificate_manager import CertificateManager
+    from credentials.models import AcademicCredential, PersonalInfo, StudyPeriod, StudyProgram, Course, ExamGrade, GradeSystem, EQFLevel, StudyType, University
+    from credentials.issuer import AcademicCredentialIssuer, IssuerConfiguration
+    from crypto.foundations import CryptoUtils
     MODULES_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️ Some modules are not available: {e}")
+    print(f"⚠️ Core modules not available: {e}")
     MODULES_AVAILABLE = False
+
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.exceptions import InvalidSignature
+from cryptography import x509
+from cryptography.x509 import load_pem_x509_certificate
 
 # =============================================================================
 # DATA MODELS AND CONFIGURATION
@@ -59,7 +62,7 @@ class AppConfig:
     session_timeout_minutes: int = 60
     max_file_size_mb: int = 10
     secure_server_url: str = "https://localhost:8443"
-    secure_server_api_key: str = "unisa_key_123"
+    secure_server_api_key: str = "verifier_unisa"
 
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
@@ -252,6 +255,513 @@ class MockDataService:
             "success_rate": "90%"
         }
 
+# Classe di supporto per la verifica
+class PresentationVerifier:
+    """Gestisce la verifica completa delle presentazioni selective."""
+    
+    def __init__(self, dashboard_instance):
+        self.dashboard = dashboard_instance
+        self.logger = dashboard_instance.logger
+        
+    async def verify_presentation_complete(self, presentation_data: dict, student_public_key_pem: str, purpose: str) -> dict:
+        """Verifica completa di una presentazione selettiva."""
+        self.logger.info("🔍 Avvio verifica completa presentazione")
+        
+        report = {
+            "credential_id": presentation_data.get("presentation_id", "unknown"),
+            "validation_level": "complete", "overall_result": "unknown",
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "is_valid": False, "errors": [], "warnings": [],
+            "info": [],  
+            "technical_details": {
+                "student_signature_valid": False, "signature_valid": False, 
+                "merkle_tree_valid": False, "blockchain_status": "not_checked",
+                "temporal_valid": False, "revocation_status": "unknown"
+            }
+        }
+
+        try:
+            # 1. VERIFICA FIRMA DELLO STUDENTE
+            self.logger.info("  1️⃣ Verifica firma studente...")
+            student_sig_valid = await self._verify_student_signature(presentation_data, student_public_key_pem)
+            report["technical_details"]["student_signature_valid"] = student_sig_valid
+            if not student_sig_valid:
+                report["errors"].append({"code": "STUDENT_SIGNATURE_INVALID", "message": "Firma dello studente non valida"})
+            
+            # 2. ESTRAI CREDENZIALI
+            self.logger.info("  2️⃣ Estrazione credenziali...")
+            credentials = self._extract_credentials_from_presentation(presentation_data)
+            if not credentials:
+                report["errors"].append({"code": "NO_CREDENTIALS_FOUND", "message": "Nessuna credenziale trovata"})
+                report["overall_result"] = "invalid"
+                return report
+            
+            # 3. VERIFICA OGNI CREDENZIALE
+            all_credentials_valid = True
+            for i, cred_disclosure in enumerate(credentials):
+                self.logger.info(f"  3️⃣ Verifica credenziale {i+1}/{len(credentials)}...")
+                
+                # 3.1 VERIFICA MERKLE PROOFS
+                if "merkle_proofs" in cred_disclosure:
+                    # Debug opzionale per analizzare la struttura
+                    if self.logger.level <= logging.INFO:
+                        await self._debug_merkle_structure(cred_disclosure)
+                    
+                    merkle_valid, merkle_error = await self._verify_merkle_proofs(cred_disclosure, report)
+                    if not merkle_valid:
+                        if "proof non valida" in merkle_error.lower() or "numero attributi" in merkle_error.lower():
+                            # È un errore crittografico serio
+                            report["errors"].append({
+                                "code": "MERKLE_PROOF_INVALID", 
+                                "message": f"Merkle proof crittograficamente non valida per credenziale {i+1}: {merkle_error}"
+                            })
+                            all_credentials_valid = False
+                        else:
+                            # È un warning (es. alcune proof valide ma non tutte)
+                            report["warnings"].append({
+                                "code": "MERKLE_PROOF_PARTIAL", 
+                                "message": f"Merkle proof parzialmente valida per credenziale {i+1}: {merkle_error}"
+                            })
+                    else:
+                        # Aggiungi info di successo
+                        report["info"].append({
+                            "code": "MERKLE_PROOF_VALID",
+                            "message": f"Merkle proof crittograficamente verificata per credenziale {i+1}"
+                        })
+                        if not merkle_error:  # Tutte le proof sono valide
+                            report["technical_details"]["merkle_tree_valid"] = True
+                else:
+                    report["warnings"].append({
+                        "code": "NO_MERKLE_PROOFS",
+                        "message": f"Nessuna Merkle proof fornita per credenziale {i+1}"
+                    })
+                
+                # 3.2 VERIFICA FIRMA UNIVERSITÀ
+                if "disclosed_attributes" in cred_disclosure:
+                    university_sig_valid = await self._verify_university_signature(cred_disclosure)
+                    if not university_sig_valid:
+                        report["errors"].append({
+                            "code": "UNIVERSITY_SIGNATURE_INVALID", 
+                            "message": f"Firma università non valida per credenziale {i+1}"
+                        })
+                        all_credentials_valid = False
+                    else:
+                        report["info"].append({
+                            "code": "UNIVERSITY_SIGNATURE_VALID",
+                            "message": f"Firma università verificata per credenziale {i+1}"
+                        })
+                else:
+                    report["warnings"].append({
+                        "code": "NO_DISCLOSED_ATTRIBUTES",
+                        "message": f"Nessun attributo divulgato per credenziale {i+1}"
+                    })
+                
+                # 3.3 VERIFICA STATO BLOCKCHAIN
+                credential_id = cred_disclosure.get("credential_id")
+                if credential_id:
+                    blockchain_status = await self._verify_blockchain_status(credential_id)
+                    report["technical_details"]["blockchain_status"] = blockchain_status
+                    
+                    if blockchain_status == "revoked":
+                        report["errors"].append({
+                            "code": "CREDENTIAL_REVOKED", 
+                            "message": f"Credenziale {credential_id} risulta revocata"
+                        })
+                        all_credentials_valid = False
+                    elif blockchain_status == "valid":
+                        report["info"].append({
+                            "code": "BLOCKCHAIN_VALID",
+                            "message": f"Credenziale {credential_id} verificata su blockchain"
+                        })
+                    elif blockchain_status in ["timeout", "unreachable", "error"]:
+                        report["warnings"].append({
+                            "code": "BLOCKCHAIN_UNREACHABLE",
+                            "message": f"Impossibile verificare blockchain per credenziale {credential_id}: {blockchain_status}"
+                        })
+                    else:
+                        report["warnings"].append({
+                            "code": "BLOCKCHAIN_UNKNOWN",
+                            "message": f"Stato blockchain sconosciuto per credenziale {credential_id}: {blockchain_status}"
+                        })
+                else:
+                    report["warnings"].append({
+                        "code": "NO_CREDENTIAL_ID",
+                        "message": f"ID credenziale mancante per credenziale {i+1}"
+                    })
+
+            # 4. VERIFICA TEMPORALE
+            self.logger.info("  4️⃣ Verifica temporale...")
+            temporal_valid = self._verify_temporal_consistency(presentation_data)
+            report["technical_details"]["temporal_valid"] = temporal_valid
+            if not temporal_valid:
+                report["warnings"].append({"code": "TEMPORAL_INCONSISTENCY", "message": "Inconsistenze temporali rilevate"})
+            
+            # 5. RISULTATO FINALE
+            # Dai priorità allo stato di revoca
+            if report["technical_details"]["blockchain_status"] == "revoked":
+                report["overall_result"] = "revoked"
+                report["is_valid"] = False
+                self.logger.info("🚫 Presentazione REVOCATA")
+            elif student_sig_valid and all_credentials_valid and len(report["errors"]) == 0:
+                report["overall_result"] = "valid"
+                report["is_valid"] = True
+                self.logger.info("✅ Presentazione VALIDA")
+            elif len(report["errors"]) == 0 and len(report["warnings"]) > 0:
+                report["overall_result"] = "warning"
+                report["is_valid"] = True
+                self.logger.info("⚠️ Presentazione VALIDA con avvertenze")
+            else:
+                report["overall_result"] = "invalid"
+                report["is_valid"] = False
+                self.logger.info("❌ Presentazione NON VALIDA")
+
+            return report
+            
+        except Exception as e:
+            self.logger.error(f"❌ Errore durante verifica: {e}")
+            report["errors"].append({"code": "VERIFICATION_ERROR", "message": f"Errore interno: {str(e)}"})
+            report["overall_result"] = "invalid"
+            return report
+    
+    async def _verify_student_signature(self, presentation_data: dict, student_public_key_pem: str) -> bool:
+        """Verifica la firma digitale dello studente ricostruendo esattamente i dati firmati."""
+        try:
+            if "signature" not in presentation_data:
+                self.logger.warning("Nessuna firma trovata nella presentazione")
+                return False
+            
+            signature_info = presentation_data["signature"]
+            public_key = serialization.load_pem_public_key(student_public_key_pem.encode())
+            
+            # Questo dizionario deve contenere ESATTAMENTE gli stessi campi
+            # del metodo `get_data_for_signing` in `presentation.py` per garantire che l'hash corrisponda.
+            data_for_verification = {
+                'presentation_id': presentation_data.get('presentation_id'),
+                'created_at': presentation_data.get('created_at'),
+                'created_by': presentation_data.get('created_by'),
+                'purpose': presentation_data.get('purpose'),
+                'recipient': presentation_data.get('recipient'),
+                'expires_at': presentation_data.get('expires_at'),
+                'status': presentation_data.get('status'),
+                'selective_disclosures': presentation_data.get('selective_disclosures', []),
+                'additional_documents': presentation_data.get('additional_documents', []),
+                'format': presentation_data.get('format'),
+                'verification_url': presentation_data.get('verification_url'),
+            }
+            
+            from crypto.foundations import DigitalSignature
+            verifier = DigitalSignature("PSS")
+            
+            document_to_verify = data_for_verification.copy()
+            document_to_verify['firma'] = signature_info
+            
+            is_valid = verifier.verify_document_signature(public_key, document_to_verify)
+            
+            if is_valid: self.logger.info("✅ Firma studente valida")
+            else: self.logger.warning("❌ Firma studente non valida")
+            return is_valid
+            
+        except Exception as e:
+            self.logger.error(f"Errore verifica firma studente: {e}")
+            return False
+
+    def _extract_credentials_from_presentation(self, presentation_data: dict) -> list:
+        return presentation_data.get("selective_disclosures", [])
+    
+    async def _find_university_certificate(self, university_name: str) -> Optional[x509.Certificate]:
+        try:
+            self.logger.info(f"   🔍 Ricerca certificato per: {university_name}")
+            
+            async with httpx.AsyncClient(verify=False) as client:
+                response = await client.get(
+                    f"{self.dashboard.config.secure_server_url}/api/v1/universities/certificate",
+                    params={"name": university_name},
+                    headers={"Authorization": f"Bearer {self.dashboard.config.secure_server_api_key}"},
+                    timeout=5.0
+                )
+                
+                if response.status_code == 200:
+                    cert_data = response.json()
+                    if cert_data.get("success"):
+                        cert_pem = cert_data["data"]["certificate_pem"]
+                        # Usa la funzione corretta
+                        return load_pem_x509_certificate(cert_pem.encode())
+                
+            self.logger.warning(f"   ⚠️ Certificato non trovato per {university_name}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"   ❌ Errore ricerca certificato: {e}")
+            return None
+
+    async def _verify_university_signature(self, disclosure: dict) -> bool:
+        """Verifica la firma dell'università sulla credenziale."""
+        try:
+            self.logger.info("  3.2 Verifica firma università...")
+            
+            # 1. Verifica presenza firma
+            if "signature" not in disclosure:
+                self.logger.warning("      ⚠️ Firma università mancante")
+                return False
+                
+            signature_data = disclosure["signature"]
+            
+            # 2. Ottieni il nome dell'università
+            university_name = disclosure.get("issuer", {}).get("name", "")
+            if not university_name:
+                self.logger.warning("      ⚠️ Nome università mancante")
+                return False
+            
+            # 3. Recupera il certificato
+            university_cert = await self._find_university_certificate(university_name)
+            if not university_cert:
+                return False
+                
+            # 4. Estrai chiave pubblica
+            public_key = university_cert.public_key()
+            
+            # 5. Ricostruisci i dati minimi firmati
+            verification_data = {
+                "credential_id": disclosure["metadata"]["credential_id"],
+                "issued_at": disclosure["metadata"]["issued_at"],
+                "issuer_name": university_name,
+                "merkle_root": disclosure["metadata"]["merkle_root"]
+            }
+            
+            # 6. Verifica la firma
+            from crypto.foundations import DigitalSignature
+            verifier = DigitalSignature("PSS")
+            
+            # Prepara documento completo per verifica
+            document_to_verify = verification_data.copy()
+            document_to_verify["firma"] = signature_data
+            
+            is_valid = verifier.verify_document_signature(
+                public_key, 
+                document_to_verify
+            )
+            
+            if is_valid: 
+                self.logger.info("      ✅ Firma università verificata")
+            else:
+                self.logger.warning("      ❌ Firma università non valida")
+                
+            return is_valid
+            
+        except Exception as e:
+            self.logger.error(f"      ❌ Errore verifica firma università: {e}")
+            return False
+    
+    async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
+        try:
+            self.logger.info("  🌳 Verifica Merkle proofs crittografica...")
+            disclosed_attributes = disclosure.get("disclosed_attributes", {})
+            merkle_proofs = disclosure.get("merkle_proofs", [])
+            
+            if not disclosed_attributes:
+                self.logger.warning("  ⚠️ Nessun attributo divulgato")
+                return False, "Nessun attributo divulgato"
+            
+            if not merkle_proofs:
+                self.logger.warning("  ⚠️ Nessuna Merkle proof fornita")
+                return False, "Nessuna Merkle proof fornita"
+            
+            if len(disclosed_attributes) != len(merkle_proofs):
+                error_msg = f"Numero attributi ({len(disclosed_attributes)}) ≠ numero proof ({len(merkle_proofs)})"
+                self.logger.warning(f"  ❌ {error_msg}")
+                return False, error_msg
+            
+            # Verifica ogni Merkle proof individualmente
+            all_proofs_valid = True
+            valid_count = 0
+            
+            for i, proof in enumerate(merkle_proofs):
+                attribute_value = proof.get("attribute_value")
+                proof_path = proof.get("proof_path", [])
+                merkle_root = proof.get("merkle_root")
+                
+                if not merkle_root or not proof_path or attribute_value is None:
+                    self.logger.warning(f"    ❌ Proof {i+1} struttura incompleta")
+                    all_proofs_valid = False
+                    continue
+                
+                # Verifica crittografica della singola proof
+                is_valid = await self._verify_single_merkle_proof(
+                    attribute_value, proof_path, merkle_root
+                )
+                
+                if is_valid:
+                    valid_count += 1
+                    self.logger.info(f"    ✅ Proof {i+1} crittograficamente valida")
+                else:
+                    self.logger.warning(f"    ❌ Proof {i+1} crittograficamente non valida")
+                    all_proofs_valid = False
+            
+            # Risultato finale
+            success_rate = valid_count / len(merkle_proofs)
+            
+            if all_proofs_valid:
+                self.logger.info(f"  ✅ Tutte le Merkle proof sono valide ({valid_count}/{len(merkle_proofs)})")
+                report["technical_details"]["merkle_tree_valid"] = True
+                return True, ""
+            elif success_rate >= 0.8:  # 80% delle proof devono essere valide
+                warning_msg = f"Alcune proof non valide ma la maggioranza è corretta ({valid_count}/{len(merkle_proofs)})"
+                self.logger.warning(f"  ⚠️ {warning_msg}")
+                report["technical_details"]["merkle_tree_valid"] = True
+                return True, warning_msg
+            else:
+                error_msg = f"Troppe proof non valide ({valid_count}/{len(merkle_proofs)})"
+                self.logger.warning(f"  ❌ {error_msg}")
+                return False, error_msg
+                
+        except Exception as e:
+            self.logger.error(f"  💥 Errore critico durante verifica Merkle proof: {e}")
+            return False, f"Errore interno: {e}"
+    
+    async def _verify_single_merkle_proof(self, attribute_value: Any, proof_path: List[Dict], merkle_root: str) -> bool:
+        """
+        Verifica crittografica di una singola Merkle proof ricostruendo il percorso verso la radice.
+        
+        Args:
+            attribute_value: Il valore dell'attributo divulgato
+            proof_path: Lista di hash siblings per ricostruire il percorso
+            merkle_root: La radice Merkle originale da verificare
+            
+        Returns:
+            True se la proof è crittograficamente valida
+        """
+        try:
+            # Importa CryptoUtils per il calcolo degli hash
+            from crypto.foundations import CryptoUtils
+            crypto_utils = CryptoUtils()
+            
+            # 1. Calcola l'hash dell'attributo divulgato
+            if isinstance(attribute_value, (dict, list)):
+                import json
+                attribute_str = json.dumps(attribute_value, sort_keys=True)
+            else:
+                attribute_str = str(attribute_value)
+            
+            current_hash = crypto_utils.sha256_hash_string(attribute_str)
+            self.logger.info(f"      Hash attributo: {current_hash[:16]}...")
+            
+            # 2. Ricostruisce il percorso verso la radice usando i siblings
+            for step_index, step in enumerate(proof_path):
+                sibling_hash = step.get('hash')
+                is_right_sibling = step.get('is_right', False)
+                
+                if not sibling_hash:
+                    self.logger.warning(f"      ⚠️ Step {step_index}: hash sibling mancante")
+                    continue
+                
+                # Combina l'hash corrente con il sibling secondo la posizione
+                if is_right_sibling:
+                    # Il sibling è a destra, quindi il nostro hash è a sinistra
+                    combined = current_hash + sibling_hash
+                    self.logger.info(f"      Step {step_index}: {current_hash[:8]}... + {sibling_hash[:8]}... (R)")
+                else:
+                    # Il sibling è a sinistra, quindi il nostro hash è a destra
+                    combined = sibling_hash + current_hash
+                    self.logger.info(f"      Step {step_index}: {sibling_hash[:8]}... + {current_hash[:8]}... (L)")
+                
+                # Calcola il nuovo hash
+                current_hash = crypto_utils.sha256_hash_string(combined)
+                self.logger.info(f"      → Nuovo hash: {current_hash[:16]}...")
+            
+            # 3. Confronta la radice calcolata con quella attesa
+            calculated_root = current_hash
+            expected_root = merkle_root
+            
+            self.logger.info(f"      Radice calcolata: {calculated_root[:16]}...")
+            self.logger.info(f"      Radice attesa:    {expected_root[:16]}...")
+            
+            is_valid = calculated_root == expected_root
+            
+            if is_valid:
+                self.logger.info(f"      ✅ Merkle proof VALIDA")
+            else:
+                self.logger.warning(f"      ❌ Merkle proof NON VALIDA")
+                self.logger.warning(f"         Radici non corrispondenti!")
+            
+            return is_valid
+            
+        except ImportError:
+            self.logger.error("      ❌ CryptoUtils non disponibile")
+            return False
+        except Exception as e:
+            self.logger.error(f"      💥 Errore verifica singola proof: {e}")
+            return False
+    
+    async def _debug_merkle_structure(self, disclosure: dict):
+        """
+        Metodo di debug per analizzare la struttura delle Merkle proof.
+        """
+        try:
+            self.logger.info("  🔍 DEBUG: Analisi struttura Merkle proof")
+            
+            disclosed_attributes = disclosure.get("disclosed_attributes", {})
+            merkle_proofs = disclosure.get("merkle_proofs", [])
+            
+            self.logger.info(f"    Attributi divulgati: {len(disclosed_attributes)}")
+            for i, (key, value) in enumerate(disclosed_attributes.items()):
+                value_preview = str(value)[:50] + "..." if len(str(value)) > 50 else str(value)
+                self.logger.info(f"      {i}: {key} = {value_preview}")
+            
+            self.logger.info(f"    Merkle proofs: {len(merkle_proofs)}")
+            for i, proof in enumerate(merkle_proofs):
+                self.logger.info(f"      Proof {i}:")
+                self.logger.info(f"        Index: {proof.get('attribute_index')}")
+                self.logger.info(f"        Root: {proof.get('merkle_root', 'N/A')[:16]}...")
+                self.logger.info(f"        Steps: {len(proof.get('proof_path', []))}")
+                
+                for j, step in enumerate(proof.get('proof_path', [])):
+                    side = "R" if step.get('is_right') else "L"
+                    hash_preview = step.get('hash', 'N/A')[:16] + "..." if step.get('hash') else 'N/A'
+                    self.logger.info(f"          Step {j}: {hash_preview} ({side})")
+                    
+        except Exception as e:
+            self.logger.error(f"      💥 Errore debug Merkle: {e}")
+
+    async def _verify_blockchain_status(self, credential_id: str) -> str:
+        """Verifica lo stato della credenziale su blockchain."""
+        try:
+            # Chiama il secure server per verifica blockchain
+            async with httpx.AsyncClient(verify=False) as client:
+                response = await client.post(
+                    f"{self.dashboard.config.secure_server_url}/api/v1/credentials/verify",
+                    headers={"Authorization": f"Bearer {self.dashboard.config.secure_server_api_key}"},
+                    json={"credential_data": {"metadata": {"credential_id": credential_id}}},
+                    timeout=10.0
+                )
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get("success"):
+                        blockchain_result = result.get("data", {}).get("blockchain_result", {})
+                        if blockchain_result.get("revoked"): return "revoked"
+                        elif blockchain_result.get("is_valid"): return "valid"
+                        else: return "invalid"
+                    else: return "error"
+                else: return "unreachable"
+        except Exception as e:
+            self.logger.error(f"Errore verifica blockchain: {e}")
+            return "error"
+    
+    def _verify_temporal_consistency(self, presentation_data: dict) -> bool:
+        """Verifica la coerenza temporale della presentazione."""
+        try:
+            # --- CORREZIONE #3: Gestione Timezone ---
+            now = datetime.datetime.now(datetime.timezone.utc)
+            
+            expires_at_str = presentation_data.get("expires_at")
+            if expires_at_str:
+                expires_at = datetime.datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                if now > expires_at:
+                    self.logger.warning("Presentazione scaduta")
+                    return False
+            return True
+        except Exception as e:
+            self.logger.error(f"Errore verifica temporale: {e}")
+            return False
 # =============================================================================
 # MIDDLEWARE AND DEPENDENCIES
 # =============================================================================
@@ -293,8 +803,8 @@ class AcademicCredentialsDashboard:
         # Services
         self.session_manager = SessionManager(self.config.session_timeout_minutes)
         self.mock_data = MockDataService()
-        self.student_wallets = {}
-
+        self.issuer = None  # Will be initialized later
+        
         # Configure logging
         self._setup_logging()
         
@@ -309,19 +819,16 @@ class AcademicCredentialsDashboard:
         
         self._setup_routes()
         self._initialize_system_components()
-    
+        self._initialize_verification_service()
+
     def _setup_logging(self) -> None:
         """Configures the logging system."""
         logging.basicConfig(
-            level=logging.WARNING,
-            format='%(levelname)s - %(message)s',
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             force=True
         )
         self.logger = logging.getLogger(__name__)
-        
-        logging.getLogger('uvicorn').setLevel(logging.WARNING)
-        logging.getLogger('fastapi').setLevel(logging.WARNING)
-        logging.getLogger('uvicorn.access').setLevel(logging.ERROR)
 
     def run(self, host: Optional[str] = None, port: Optional[int] = None):
         """Starts the web server."""
@@ -338,12 +845,42 @@ class AcademicCredentialsDashboard:
             access_log=False
         )
 
+    def _safe_json_serializer(self, obj):
+            """
+            Custom JSON serializer for handling datetime and other non-serializable objects.
+            """
+            if isinstance(obj, datetime.datetime):
+                return obj.isoformat()
+            elif isinstance(obj, datetime.date):
+                return obj.isoformat()
+            elif isinstance(obj, uuid.UUID):
+                return str(obj)
+            elif hasattr(obj, 'to_dict'):
+                return obj.to_dict()
+            elif hasattr(obj, '__dict__'):
+                return obj.__dict__
+            else:
+                return str(obj)
+
+    def _create_json_response(self, data: Dict[str, Any], status_code: int = 200) -> JSONResponse:
+        """
+        Creates a JSONResponse with safe serialization.
+        """
+        try:
+            json.dumps(data, default=str)
+            return JSONResponse(data, status_code=status_code)
+        except TypeError:
+            safe_data = json.loads(json.dumps(data, default=self._safe_json_serializer))
+            return JSONResponse(safe_data, status_code=status_code)
+
     def _setup_directories(self) -> None:
         """Creates the necessary directories for the application."""
         self.templates_dir = Path(self.config.templates_dir)
         self.static_dir = Path(self.config.static_dir)
+        self.wallets_dir = Path("./student_wallets")
         self.templates_dir.mkdir(parents=True, exist_ok=True)
         self.static_dir.mkdir(parents=True, exist_ok=True)
+        self.wallets_dir.mkdir(parents=True, exist_ok=True)
     
     def _setup_templates(self) -> None:
         """Configures the template rendering system."""
@@ -413,70 +950,90 @@ class AcademicCredentialsDashboard:
 
     def _initialize_system_components(self) -> None:
         """Initializes core system components."""
-        self.issuer = None
-        self.verification_engine = None
+        self.logger.info("🔧 Initializing system components...")
         
         if not MODULES_AVAILABLE:
             self.logger.warning("⚠️ Core system modules not available - running in demo mode")
             return
         
         try:
-            import sys
-            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            current_dir = Path.cwd()
+            self.logger.info(f"Current working directory: {current_dir}")
             
-            from credentials.issuer import AcademicCredentialIssuer, IssuerConfiguration
-            from credentials.models import University
+            possible_cert_paths = [
+                "certificates/issued/university_F_RENNES01_1001.pem",
+                "./certificates/issued/university_F_RENNES01_1001.pem", 
+                "src/certificates/issued/university_F_RENNES01_1001.pem",
+                "./src/certificates/issued/university_F_RENNES01_1001.pem"
+            ]
             
-            issuer_config = IssuerConfiguration(
-                university_info=University(
-                    name="Université de Rennes",
-                    country="FR",
-                    city="Rennes",
-                    erasmus_code="F RENNES01",
-                    website="https://www.univ-rennes1.fr"
-                ),
-                certificate_path="./certificates/issued/university_F_RENNES01_1001.pem",
-                private_key_path="./keys/universite_rennes_private.pem",
-                private_key_password="Unisa2025",
-                backup_enabled=True,
-                backup_directory="./src/credentials/backups"
+            possible_key_paths = [
+                "keys/universite_rennes_private.pem",
+                "./keys/universite_rennes_private.pem",
+                "src/keys/universite_rennes_private.pem", 
+                "./src/keys/universite_rennes_private.pem"
+            ]
+            
+            cert_path = None
+            key_path = None
+            
+            for path in possible_cert_paths:
+                if Path(path).exists():
+                    cert_path = path
+                    self.logger.info(f"✅ Found certificate at: {cert_path}")
+                    break
+            
+            for path in possible_key_paths:
+                if Path(path).exists():
+                    key_path = path
+                    self.logger.info(f"✅ Found private key at: {key_path}")
+                    break
+            
+            if not cert_path or not key_path:
+                self.logger.error(f"❌ Required files not found:")
+                self.logger.error(f"   Certificate: {cert_path or 'NOT FOUND'}")
+                self.logger.error(f"   Private key: {key_path or 'NOT FOUND'}")
+                self.logger.error("   Please run certificate_authority.py first to generate certificates")
+                return
+            
+            university_info = University(
+                name="Université de Rennes",
+                country="FR",
+                city="Rennes",
+                erasmus_code="F RENNES01",
+                website="https://www.univ-rennes1.fr"
             )
             
-            cert_path = Path(issuer_config.certificate_path)
-            key_path = Path(issuer_config.private_key_path)
+            issuer_config = IssuerConfiguration(
+                university_info=university_info,
+                certificate_path=cert_path,
+                private_key_path=key_path,
+                private_key_password="Unisa2025",
+                backup_enabled=True,
+                backup_directory="./credentials/backups"
+            )
             
-            if not cert_path.exists():
-                self.logger.error(f"❌ Certificate not found: {cert_path}")
-                return
-                    
-            if not key_path.exists():
-                self.logger.error(f"❌ Private key not found: {key_path}")
-                return
-            
-            original_logging_level = self.logger.level
-            self.logger.setLevel(logging.CRITICAL)
-            
+            self.logger.info("🏛️ Creating AcademicCredentialIssuer...")
             self.issuer = AcademicCredentialIssuer(config=issuer_config)
+            self.logger.info("✅ Issuer initialized successfully")
             
-            self.logger.setLevel(original_logging_level)
-            
-            credentials_dir = Path("./src/credentials")
-            credentials_dir.mkdir(parents=True, exist_ok=True)
-            
-            backups_dir = Path("./src/credentials/backups")
-            backups_dir.mkdir(parents=True, exist_ok=True)
-            
-            if self.issuer:
-                self.logger.info("✅ System components initialized successfully")
-                
-        except ImportError as e:
-            self.logger.error(f"❌ ERROR importing modules: {e}")
         except Exception as e:
-            self.logger.error(f"🔥 ERROR during initialization: {e}")
+            self.logger.error(f"❌ Error initializing system components: {e}", exc_info=True)
+            self.issuer = None
+            
+    def _initialize_verification_service(self):
+        """Inizializza il servizio di verifica."""
+        self.verification_service = PresentationVerifier(self)
+        
+        if MODULES_AVAILABLE:
+            try:
+                from credentials.validator import AcademicCredentialValidator
+                self.verification_service.validator = AcademicCredentialValidator()
+            except ImportError:
+                self.verification_service.validator = None
 
     async def _call_secure_api(self, endpoint: str, payload: dict) -> dict:
         """Helper function for calling secure APIs."""
-        import httpx
         url = f"{self.config.secure_server_url}{endpoint}"
         headers = {"Authorization": f"Bearer {self.config.secure_server_api_key}"}
         
@@ -486,31 +1043,101 @@ class AcademicCredentialsDashboard:
             return response.json()
 
     def _get_student_wallet(self, user: UserSession) -> AcademicStudentWallet:
-        """Get or create a student wallet instance."""
-        if user.user_id not in self.student_wallets:
-            # Initialize wallet with a demo configuration
-            wallet_config = WalletConfiguration(
-                wallet_name=f"{user.user_id}_wallet",
-                storage_path=f"./wallets/{user.user_id}",
-                storage_mode=CredentialStorage.ENCRYPTED_LOCAL,
-                auto_backup=True
-            )
-            
-            wallet = AcademicStudentWallet(wallet_config)
-            
-            # For demo purposes, auto-unlock with a default password
-            if not wallet.wallet_file.exists():
-                wallet.create_wallet("DemoPassword123!")
-            else:
-                wallet.unlock_wallet("DemoPassword123!")
-            
-            self.student_wallets[user.user_id] = wallet
-        
-        return self.student_wallets[user.user_id]
+        """Helper per ottenere o creare il wallet di uno studente."""
+        if not user or user.role != "studente":
+            return None
 
+        common_name = user.user_id
+        if common_name.startswith("studente_"):
+            common_name = common_name[len("studente_"):].replace('_', ' ').title()
+        else:
+            common_name = common_name.replace('_', ' ').title()
+        
+        student_id = "0622702628" # Hardcoded ID for the demo user
+
+        wallet_name = f"studente_{common_name.replace(' ', '_').lower()}_wallet"
+        wallet_path = self.wallets_dir / wallet_name
+        
+        config = WalletConfiguration(
+            wallet_name=wallet_name,
+            storage_path=str(wallet_path)
+        )
+        wallet = AcademicStudentWallet(config)
+
+        if not wallet.wallet_file.exists():
+            print(f"🔧 Creazione wallet per {common_name}...")
+            
+            wallet.create_wallet(
+                password="Unisa2025",
+                student_common_name="Mario Rossi", # Hardcoded for demo user
+                student_id=student_id
+            )
+
+            if wallet.unlock_wallet("Unisa2025"):
+                print("Aggiunta di una credenziale di esempio al nuovo wallet...")
+                if MODULES_AVAILABLE:
+                    try:
+                        sample_credential = CredentialFactory.create_sample_credential()
+                        signed_credential = wallet.sign_credential_with_university_key(sample_credential)
+                        signed_credential.status = CredentialStatus.ACTIVE
+                        wallet.add_credential(signed_credential, tags=["esempio", "auto-generata"])
+                        print("✅ Credenziale di esempio aggiunta con successo.")
+                    except Exception as e:
+                        print(f"❌ Errore durante l'aggiunta della credenziale di esempio: {e}")
+
+        if wallet.status == WalletStatus.LOCKED:
+            wallet.unlock_wallet("Unisa2025")
+            
+        return wallet
+    
     def _setup_routes(self) -> None:
         """Configures all application routes."""
         
+        @self.app.post("/verification/full-verify")
+        async def handle_full_verification(
+            request: Request, 
+            user: UserSession = Depends(self.auth_deps['require_verify'])
+        ):
+            """Gestisce la verifica completa di una presentazione selettiva."""
+            try:
+                self.logger.info(f"🔍 Richiesta verifica completa da {user.user_id}")
+                
+                body = await request.json()
+                
+                presentation_data = body.get("presentation_data")
+                student_public_key = body.get("student_public_key")
+                purpose = body.get("purpose", "verification")
+                
+                if not presentation_data or not student_public_key:
+                    return JSONResponse(
+                        {"success": False, "message": "Dati presentazione e chiave pubblica richiesti"},
+                        status_code=400
+                    )
+                
+                verification_report = await self.verification_service.verify_presentation_complete(
+                    presentation_data, student_public_key, purpose
+                )
+                
+                self.logger.info(f"✅ Verifica completata: {verification_report['overall_result']}")
+                
+                return JSONResponse({
+                    "success": True,
+                    "message": "Verifica completata",
+                    "verification_report": verification_report
+                })
+                
+            except json.JSONDecodeError:
+                return JSONResponse(
+                    {"success": False, "message": "Formato JSON non valido"},
+                    status_code=400
+                )
+            except Exception as e:
+                self.logger.error(f"❌ Errore verifica completa: {e}")
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno: {str(e)}"},
+                    status_code=500
+                )
+
         @self.app.get("/", response_class=HTMLResponse)
         async def home(request: Request):
             """Main page."""
@@ -569,7 +1196,6 @@ class AcademicCredentialsDashboard:
             wallet = self._get_student_wallet(user)
             wallet_creds = wallet.list_credentials()
             
-            # Format credentials for display
             credentials = [
                 {
                     'storage_id': cred['storage_id'],
@@ -629,7 +1255,6 @@ class AcademicCredentialsDashboard:
                                                 'file_path': str(credential_file)
                                             })
                                         else:
-                                            # Use mock data if modules are unavailable
                                             credentials.append({
                                                 'credential_id': f"mock_{credential_file.stem}",
                                                 'student_name': "Mario Rossi",
@@ -676,43 +1301,58 @@ class AcademicCredentialsDashboard:
             course_date: List[str] = Form([])
         ):
             """
-            Gestisce l'emissione REALE di una nuova credenziale, invocando la logica corretta.
+            Handles the issuance of a new credential with better error handling and logging
             """
+            self.logger.info(f"📝 Credential issuance request received for student: {student_name}")
+            
             try:
-                # 1. AUTENTICAZIONE E VERIFICA PERMESSI
                 user = self.auth_deps['require_write'](request)
-
-                # 2. CONTROLLO DISPONIBILITÀ DEL SERVIZIO ISSUER
-                # Questo è il controllo cruciale. Se self.issuer non è stato inizializzato, il servizio non è disponibile.
+                self.logger.info(f"✅ User authenticated: {user.user_id}")
+                
                 if not self.issuer:
-                    self.logger.error("Tentativo di emissione ma il servizio Issuer non è inizializzato.")
-                    raise HTTPException(status_code=503, detail="Servizio di emissione non disponibile. Controllare la configurazione del server.")
+                    self.logger.error("❌ Issuer service not initialized")
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Servizio di emissione non disponibile"
+                    )
+                
+                self.logger.info("✅ Issuer service available")
 
-                # 3. PREPARAZIONE DEI DATI DALLA RICHIESTA WEB
-                # Istanziamo le utility crittografiche per hashare i dati personali.
+                self.logger.info("🔧 Preparing student data...")
                 crypto_utils = CryptoUtils()
-
-                # Creiamo un oggetto PersonalInfo con i dati hashati per la privacy.
+                
+                name_parts = student_name.strip().split()
+                first_name = name_parts[0] if name_parts else "Unknown"
+                last_name = name_parts[-1] if len(name_parts) > 1 else "Student"
+                
                 student_info = PersonalInfo(
-                    surname_hash=crypto_utils.sha256_hash_string(student_name.split()[-1]),
-                    name_hash=crypto_utils.sha256_hash_string(student_name.split()[0]),
-                    birth_date_hash=crypto_utils.sha256_hash_string("1990-01-01"), # Data fittizia per la demo
+                    surname_hash=crypto_utils.sha256_hash_string(last_name),
+                    name_hash=crypto_utils.sha256_hash_string(first_name),
+                    birth_date_hash=crypto_utils.sha256_hash_string("1990-01-01"),
                     student_id_hash=crypto_utils.sha256_hash_string(student_id),
                     pseudonym=f"student_{student_name.lower().replace(' ', '_')}"
                 )
+                self.logger.info("✅ Student info created")
 
-                # Creiamo l'oggetto StudyPeriod.
-                study_period = StudyPeriod(
-                    start_date=datetime.datetime.fromisoformat(study_period_start + "T00:00:00+00:00"),
-                    end_date=datetime.datetime.fromisoformat(study_period_end + "T23:59:59+00:00"),
-                    study_type=StudyType.ERASMUS,
-                    academic_year=f"{datetime.datetime.fromisoformat(study_period_start).year}/{datetime.datetime.fromisoformat(study_period_start).year + 1}"
-                )
+                self.logger.info("🔧 Preparing study period...")
+                try:
+                    start_date = datetime.datetime.fromisoformat(study_period_start + "T00:00:00+00:00")
+                    end_date = datetime.datetime.fromisoformat(study_period_end + "T23:59:59+00:00")
+                    academic_year = f"{start_date.year}/{start_date.year + 1}"
+                    
+                    study_period = StudyPeriod(
+                        start_date=start_date,
+                        end_date=end_date,
+                        study_type=StudyType.ERASMUS,
+                        academic_year=academic_year
+                    )
+                    self.logger.info("✅ Study period created")
+                except Exception as e:
+                    self.logger.error(f"❌ Error creating study period: {e}")
+                    raise ValueError(f"Date non valide: {e}")
 
-                # L'università ospitante è quella dell'issuer che sta emettendo la credenziale.
                 host_university = self.issuer.config.university_info
 
-                # Definiamo un programma di studio di esempio.
                 study_program = StudyProgram(
                     name="Computer Science Exchange Program",
                     isced_code="0613",
@@ -720,34 +1360,48 @@ class AcademicCredentialsDashboard:
                     program_type="Master's Degree Exchange",
                     field_of_study="Computer Science"
                 )
+                self.logger.info("✅ Study program created")
 
-                # Processiamo la lista dei corsi inseriti nel form.
+                self.logger.info("🔧 Preparing courses...")
                 courses = []
+                
                 for i in range(len(course_name)):
                     if course_name[i] and course_cfu[i] and course_grade[i]:
-                        exam_grade = ExamGrade(
-                            score=course_grade[i],
-                            passed=True, # Assumiamo che i voti inseriti siano di esami passati
-                            grade_system=GradeSystem.ITALIAN_30, # Adattare se necessario
-                            ects_grade=course_grade[i]
-                        )
-                        exam_date = datetime.datetime.fromisoformat(course_date[i] + "T10:00:00+00:00") if course_date[i] else study_period.end_date
-                        course = Course(
-                            course_name=course_name[i],
-                            course_code=f"CRS-{i+1:03d}",
-                            isced_code="0613",
-                            grade=exam_grade,
-                            exam_date=exam_date,
-                            ects_credits=int(course_cfu[i]),
-                            professor=f"Prof. {user.university_name}"
-                        )
-                        courses.append(course)
+                        try:
+                            exam_grade = ExamGrade(
+                                score=course_grade[i],
+                                passed=True,
+                                grade_system=GradeSystem.ECTS_GRADE,
+                                ects_grade=course_grade[i]
+                            )
+                            
+                            if course_date[i]:
+                                exam_date = datetime.datetime.fromisoformat(course_date[i] + "T10:00:00+00:00")
+                            else:
+                                exam_date = study_period.end_date
+                            
+                            course = Course(
+                                course_name=course_name[i],
+                                course_code=f"CRS-{i+1:03d}",
+                                isced_code="0613",
+                                grade=exam_grade,
+                                exam_date=exam_date,
+                                ects_credits=int(course_cfu[i]),
+                                professor=f"Prof. {user.university_name}"
+                            )
+                            courses.append(course)
+                            self.logger.info(f"✅ Added course: {course_name[i]}")
+                            
+                        except Exception as e:
+                            self.logger.error(f"❌ Error creating course {i}: {e}")
+                            raise ValueError(f"Errore nel corso {course_name[i]}: {e}")
 
                 if not courses:
-                    raise ValueError("È necessario specificare almeno un corso.")
+                    raise ValueError("È necessario specificare almeno un corso")
+                
+                self.logger.info(f"✅ Created {len(courses)} courses")
 
-                # 4. CREAZIONE E PROCESSO DELLA RICHIESTA DI EMISSIONE
-                # Invochiamo la logica REALE della classe AcademicCredentialIssuer.
+                self.logger.info("🔧 Creating issuance request...")
                 request_id = self.issuer.create_issuance_request(
                     student_info=student_info,
                     study_period=study_period,
@@ -757,48 +1411,65 @@ class AcademicCredentialsDashboard:
                     requested_by=user.user_id,
                     notes=f"Credenziale di tipo: {credential_type}"
                 )
+                self.logger.info(f"✅ Issuance request created: {request_id}")
 
+                self.logger.info("⚙️ Processing issuance request...")
                 issuance_result = self.issuer.process_issuance_request(request_id)
-
+                
                 if not issuance_result.success:
                     error_msg = "; ".join(issuance_result.errors)
+                    self.logger.error(f"❌ Issuance failed: {error_msg}")
                     raise ValueError(f"Emissione fallita: {error_msg}")
 
-                # 5. SALVATAGGIO DEL FILE NEL PERCORSO RICHIESTO
+                self.logger.info("✅ Credential issued successfully")
+
                 credential = issuance_result.credential
                 credential_id_str = str(credential.metadata.credential_id)
-
-                # Costruiamo il percorso: src/credentials/issuer_rennes/Mario Rossi/
-                output_dir = Path(f"src/credentials/{user.user_id}/{student_name}/")
-                output_dir.mkdir(parents=True, exist_ok=True) # Crea le directory se non esistono
-
-                # Percorso finale del file: .../IDcredenziale.json
+                
+                import re
+                safe_student_name = re.sub(r'[^\w\s-]', '', student_name).strip().replace(' ', '_')
+                
+                output_dir = Path(f"src/credentials/{user.user_id}/{safe_student_name}/")
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
                 output_path = output_dir / f"{credential_id_str}.json"
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(credential.to_json())
+                
+                self.logger.info(f"💾 Credential saved to: {output_path}")
 
-                # Esportiamo la credenziale firmata nel file JSON.
-                self.issuer.export_credential(credential_id_str, str(output_path))
-
-                self.logger.info(f"Credenziale {credential_id_str} emessa da {user.user_id} e salvata in {output_path}")
-
-                # 6. RESTITUZIONE DI UNA RISPOSTA DI SUCCESSO
-                return JSONResponse({
+                result_data = {
                     "success": True,
-                    "message": "Credenziale reale emessa e firmata con successo!",
+                    "message": "Credenziale emessa con successo!",
                     "credential_id": credential_id_str,
                     "file_path": str(output_path),
-                    "issued_at": issuance_result.issued_at.isoformat() if issuance_result.issued_at else None,
+                    "issued_at": credential.metadata.issued_at.isoformat(),
                     "total_courses": len(courses),
                     "total_ects": sum(c.ects_credits for c in courses)
-                })
-
+                }
+                
+                self.logger.info(f"🎉 Credential issuance completed successfully for {student_name}")
+                return JSONResponse(result_data)
+                
             except ValueError as e:
-                self.logger.warning(f"Errore di validazione durante l'emissione: {e}")
-                return JSONResponse({"success": False, "message": f"Errore nei dati inseriti: {str(e)}"}, status_code=400)
-
+                self.logger.warning(f"⚠️ Validation error: {e}")
+                return JSONResponse(
+                    {"success": False, "message": f"Errore nei dati: {str(e)}"}, 
+                    status_code=400
+                )
+                
+            except HTTPException as he:
+                self.logger.error(f"❌ HTTP Exception: {he.detail}")
+                raise he
+                
             except Exception as e:
-                self.logger.error(f"Errore critico durante l'emissione della credenziale: {e}", exc_info=True)
-                return JSONResponse({"success": False, "message": f"Errore interno del server: Impossibile completare l'operazione."}, status_code=500)
-                    
+                self.logger.error(f"🔥 Critical error during credential issuance: {e}", exc_info=True)
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno del server: {str(e)}"},
+                    status_code=500
+                )
+                                        
         @self.app.get("/verification", response_class=HTMLResponse)
         async def verification_page(request: Request):
             """Credential verification page."""
@@ -871,53 +1542,198 @@ class AcademicCredentialsDashboard:
 
         @self.app.post("/presentations", response_class=JSONResponse)
         async def create_presentation(
-            presentation: PresentationRequest, user: UserSession = Depends(self.auth_deps['require_auth'])
+            request: Request,
+            user: UserSession = Depends(self.auth_deps['require_auth'])
         ):
-            """Creates a new presentation from selected credentials."""
-            wallet = self._get_student_wallet(user)
-            presentation_manager = PresentationManager(wallet)
-            
-            credential_selections = [
-                {'storage_id': storage_id, 'disclosure_level': 'standard'}
-                for storage_id in presentation.credentials
-            ]
-            
-            presentation_id = presentation_manager.create_presentation(
-                purpose=presentation.purpose,
-                credential_selections=credential_selections,
-                recipient=presentation.recipient,
-                expires_hours=72
-            )
-            
-            presentation_manager.sign_presentation(presentation_id)
-            
-            export_dir = Path("./presentations")
-            export_dir.mkdir(exist_ok=True)
-            output_path = export_dir / f"{presentation_id}.json"
-            
-            presentation_manager.export_presentation(
-                presentation_id, 
-                str(output_path),
-                PresentationFormat(presentation.format)
-            )
-            
-            return {
-                "presentation_id": presentation_id,
-                "download_url": f"/presentations/{presentation_id}/download"
-            }
-        
+            """Creates a new presentation from selected credentials with selective disclosure."""
+            try:
+                body = await request.json()
+                
+                self.logger.info(f"Creating presentation for user: {user.user_id}")
+                self.logger.info(f"Request body: {body}")
+                
+                if not user.is_student:
+                    return JSONResponse(
+                        {"success": False, "message": "Solo gli studenti possono creare presentazioni"},
+                        status_code=403
+                    )
+
+                if not body.get('purpose') or len(body.get('purpose', '').strip()) < 5:
+                    return JSONResponse(
+                        {"success": False, "message": "Lo scopo deve essere di almeno 5 caratteri"},
+                        status_code=400
+                    )
+                
+                if not body.get('credentials') or len(body.get('credentials')) == 0:
+                    return JSONResponse(
+                        {"success": False, "message": "Selezionare almeno una credenziale"},
+                        status_code=400
+                    )
+
+                wallet = self._get_student_wallet(user)
+                if not wallet or wallet.status != WalletStatus.UNLOCKED:
+                    return JSONResponse(
+                        {"success": False, "message": "Wallet non disponibile o bloccato"},
+                        status_code=500
+                    )
+
+                if not MODULES_AVAILABLE:
+                    return JSONResponse(
+                        {"success": False, "message": "Moduli wallet non disponibili"},
+                        status_code=503
+                    )
+
+                from wallet.presentation import PresentationManager, PresentationFormat
+                from wallet.selective_disclosure import DisclosureLevel
+
+                presentation_manager = PresentationManager(wallet)
+                
+                selected_attributes = body.get('selected_attributes', [])
+                if not selected_attributes:
+                    selected_attributes = [
+                        "metadata.credential_id", "subject.pseudonym", 
+                        "issuer.name", "total_ects_credits"
+                    ]
+
+                self.logger.info(f"Selected attributes: {selected_attributes}")
+
+                credential_selections = []
+                for storage_id in body.get('credentials'):
+                    wallet_cred = wallet.get_credential(storage_id)
+                    if not wallet_cred:
+                        return JSONResponse(
+                            {"success": False, "message": f"Credenziale {storage_id} non trovata nel wallet"},
+                            status_code=400
+                        )
+                    
+                    selection = {
+                        'storage_id': storage_id,
+                        'disclosure_level': DisclosureLevel.CUSTOM,
+                        'custom_attributes': selected_attributes
+                    }
+                    credential_selections.append(selection)
+
+                self.logger.info(f"Credential selections prepared: {len(credential_selections)}")
+
+                presentation_id = presentation_manager.create_presentation(
+                    purpose=body.get('purpose'),
+                    credential_selections=credential_selections,
+                    recipient=body.get('recipient'),
+                    expires_hours=72
+                )
+
+                self.logger.info(f"Presentation created with ID: {presentation_id}")
+
+                sign_success = presentation_manager.sign_presentation(presentation_id)
+                if not sign_success:
+                    return JSONResponse(
+                        {"success": False, "message": "Errore durante la firma della presentazione"},
+                        status_code=500
+                    )
+
+                self.logger.info("Presentation signed successfully")
+
+                # --- MODIFICA INIZIO ---
+                # Il percorso di export ora dipende dalla directory del wallet dello studente.
+                export_dir = wallet.wallet_dir / "presentations"
+                # --- MODIFICA FINE ---
+                
+                export_dir.mkdir(exist_ok=True)
+                output_path = export_dir / f"{presentation_id}.json"
+                
+                export_success = presentation_manager.export_presentation(
+                    presentation_id,
+                    str(output_path), 
+                    PresentationFormat.SIGNED_JSON
+                )
+
+                if not export_success:
+                    return JSONResponse(
+                        {"success": False, "message": "Errore durante l'export della presentazione"},
+                        status_code=500
+                    )
+
+                self.logger.info(f"Presentation exported to: {output_path}")
+
+                presentation = presentation_manager.get_presentation(presentation_id)
+                if not presentation:
+                    return JSONResponse(
+                        {"success": False, "message": "Errore: presentazione non trovata dopo creazione"},
+                        status_code=500
+                    )
+
+                try:
+                    summary = presentation.get_summary()
+                except Exception as e:
+                    self.logger.warning(f"Error getting presentation summary: {e}")
+                    summary = {
+                        'total_disclosures': len(presentation.selective_disclosures),
+                        'total_attributes_disclosed': 0,
+                        'is_signed': presentation.signature is not None
+                    }
+
+                response_data = {
+                    "success": True,
+                    "message": "Presentazione verificabile creata con successo",
+                    "presentation_id": presentation_id,
+                    "download_url": f"/presentations/{presentation_id}/download",
+                    "details": {
+                        "total_disclosures": summary.get('total_disclosures', 0),
+                        "attributes_disclosed": summary.get('total_attributes_disclosed', 0),
+                        "signed": summary.get('is_signed', False),
+                        "expires_at": (
+                            presentation.expires_at.isoformat() 
+                            if presentation.expires_at else None
+                        )
+                    }
+                }
+
+                self.logger.info("Presentation creation completed successfully")
+                return self._create_json_response(response_data)
+
+            except ImportError as e:
+                self.logger.error(f"Import error in presentation creation: {e}")
+                return JSONResponse(
+                    {"success": False, "message": "Moduli wallet non disponibili"},
+                    status_code=503
+                )
+            except Exception as e:
+                self.logger.error(f"Error creating presentation: {e}", exc_info=True)
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno: {str(e)}"},
+                    status_code=500
+                )
+
         @self.app.get("/presentations/{presentation_id}/download")
         async def download_presentation(
-            presentation_id: str, user: UserSession = Depends(self.auth_deps['require_auth'])
+            presentation_id: str, 
+            user: UserSession = Depends(self.auth_deps['require_auth'])
         ):
             """Downloads a presentation file."""
-            file_path = Path(f"./presentations/{presentation_id}.json")
-            
-            if not file_path.exists():
-                raise HTTPException(status_code=404, detail="Presentation not found")
-            
-            return FileResponse(file_path, filename=f"presentation_{presentation_id[:8]}.json")
-
+            try:
+                # MODIFICA: Il percorso del file ora dipende dal wallet dello studente
+                if not user.is_student:
+                     raise HTTPException(status_code=403, detail="Accesso non autorizzato")
+                
+                wallet = self._get_student_wallet(user)
+                file_path = wallet.wallet_dir / "presentations" / f"{presentation_id}.json"
+                
+                if not file_path.exists():
+                    self.logger.warning(f"Presentation file not found: {file_path}")
+                    raise HTTPException(status_code=404, detail="Presentazione non trovata")
+                
+                self.logger.info(f"Downloading presentation: {presentation_id} for user {user.user_id}")
+                return FileResponse(
+                    file_path, 
+                    filename=f"presentation_{presentation_id[:8]}.json",
+                    media_type='application/json'
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Error downloading presentation: {e}")
+                raise HTTPException(status_code=500, detail="Errore durante il download")
 # =============================================================================
 # APPLICATION ENTRY POINT
 # =============================================================================

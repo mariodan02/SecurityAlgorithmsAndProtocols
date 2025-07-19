@@ -113,7 +113,6 @@ class AcademicCredentialIssuer:
         Args:
             config: Configurazione issuer
         """
-        # FIXED: Assegna config PRIMA di tutto
         self.config = config
         
         if self.config.backup_enabled:
@@ -168,7 +167,6 @@ class AcademicCredentialIssuer:
             print("   Il sistema funzionerà senza integrazione blockchain")
             self.blockchain_service = None
         
-        # Continua con il resto dell'inizializzazione...
         self._initialize_issuer()
         print(f"🏛️  Credential Issuer inizializzato per: {config.university_info.name}")
 
@@ -176,6 +174,7 @@ class AcademicCredentialIssuer:
         self._initialize_issuer()
         
         print(f"🏛️  Credential Issuer inizializzato per: {config.university_info.name}")
+
                     
     def _send_signed_transaction(self, transaction):
         """Funzione helper per firmare e inviare."""

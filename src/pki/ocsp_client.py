@@ -91,12 +91,23 @@ class OCSPClient:
         """
         serial = certificate_to_check.serial_number
 
-        # Controlla la cache
+        # --- INIZIO CODICE CORRETTO ---
+        # Controlla la cache in modo sicuro
         if self.config.cache_responses and serial in self.response_cache:
             cached_response = self.response_cache[serial]
-            if cached_response.next_update and cached_response.next_update > datetime.datetime.now(datetime.timezone.utc):
-                print(f"✅ Stato certificato {serial} da cache: {cached_response.status.value}")
-                return cached_response
+            if cached_response.next_update:
+                # Rendi "aware" entrambi gli oggetti datetime prima del confronto
+                now_aware = datetime.datetime.now(datetime.timezone.utc)
+                next_update_aware = cached_response.next_update
+                
+                # Se per qualche motivo next_update è "naive", lo rendiamo "aware"
+                if next_update_aware.tzinfo is None:
+                    next_update_aware = next_update_aware.replace(tzinfo=datetime.timezone.utc)
+
+                if next_update_aware > now_aware:
+                    print(f"✅ Stato certificato {serial} da cache: {cached_response.status.value}")
+                    return cached_response
+        # --- FINE CODICE CORRETTO ---
 
         # Estrae l'URL del responder OCSP dal certificato
         ocsp_url = self._get_ocsp_url(certificate_to_check)
@@ -126,8 +137,6 @@ class OCSPClient:
             
             if ocsp_resp.response_status != ocsp.OCSPResponseStatus.SUCCESSFUL:
                 return OCSPResponse(status=OCSPStatus.ERROR, certificate_serial=serial, error_message=f"Stato risposta OCSP non valido: {ocsp_resp.response_status.name}")
-
-            # TODO: Verificare la firma della risposta OCSP
 
             response = self._parse_ocsp_response(ocsp_resp)
             
@@ -169,13 +178,13 @@ class OCSPClient:
         return OCSPResponse(
             status=status,
             certificate_serial=serial,
-            this_update=ocsp_resp.this_update,
-            next_update=ocsp_resp.next_update,
+            this_update=ocsp_resp.this_update_utc,
+            next_update=ocsp_resp.next_update_utc,
             revocation_time=revocation_time,
             revocation_reason=revocation_reason,
             response_data=ocsp_resp.public_bytes(serialization.Encoding.DER)
         )
-
+    
 # =============================================================================
 # 3. MOCK OCSP RESPONDER (PER TESTING)
 # =============================================================================

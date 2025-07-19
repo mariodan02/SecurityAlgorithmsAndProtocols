@@ -1,40 +1,19 @@
-# =============================================================================
-# CREDENTIALS PACKAGE - ACADEMIC CREDENTIALS
-# File: credentials/__init__.py
-# Sistema Credenziali Accademiche Decentralizzate
-# =============================================================================
-
 """
 Modulo Credentials per la gestione delle credenziali accademiche
 del sistema decentralizzato.
 
-Componenti principali:
-- Models: Strutture dati e validazione credenziali
-- Issuer: Emissione credenziali da parte delle università
-- Validator: Validazione e verifica credenziali
-
-Utilizzo base:
-    from credentials import AcademicCredential, CredentialFactory
-    from credentials import AcademicCredentialIssuer, AcademicCredentialValidator
-    
-    # Crea credenziale
-    credential = CredentialFactory.create_sample_credential()
-    
-    # Emetti credenziale
-    issuer = AcademicCredentialIssuer(config)
-    result = issuer.process_issuance_request(request_id)
-    
-    # Valida credenziale
-    validator = AcademicCredentialValidator(config)
-    report = validator.validate_credential(credential)
+Questo modulo fornisce le componenti principali per:
+- Gestione strutture dati e validazione credenziali
+- Emissione credenziali da parte delle università
+- Validazione e verifica credenziali
 """
+
+import logging
+from typing import Dict, Any
 
 # Import modelli principali
 from .models import (
-    # Credenziale principale
     AcademicCredential,
-    
-    # Componenti credenziale
     PersonalInfo,
     ExamGrade,
     Course,
@@ -43,14 +22,10 @@ from .models import (
     StudyProgram,
     DigitalSignature,
     Metadata,
-    
-    # Enums
     CredentialStatus,
     StudyType,
     GradeSystem,
     EQFLevel,
-    
-    # Factory
     CredentialFactory
 )
 
@@ -72,10 +47,8 @@ from .validator import (
     ValidationError
 )
 
-# Versione del modulo
 __version__ = "1.0.0"
 
-# Esporta le classi principali
 __all__ = [
     # Modelli principali
     "AcademicCredential",
@@ -112,7 +85,7 @@ __all__ = [
     "ValidationError"
 ]
 
-# Standard supportati
+# Standard supportati dal sistema
 SUPPORTED_STANDARDS = {
     "credential_format": "Academic Credentials v1.2",
     "signature_algorithms": ["RSA-SHA256-PSS", "RSA-SHA256-PKCS1v15"],
@@ -121,8 +94,30 @@ SUPPORTED_STANDARDS = {
     "study_types": ["ERASMUS", "EXCHANGE", "DOUBLE_DEGREE", "REGULAR"]
 }
 
-def get_credentials_info():
-    """Informazioni sul modulo credentials"""
+# Configurazioni consigliate per i componenti
+RECOMMENDED_CONFIGURATIONS = {
+    "issuer": {
+        "auto_sign": True,
+        "backup_enabled": True,
+        "default_validity_days": 365,
+        "key_size": 2048
+    },
+    "validator": {
+        "validation_level": "standard",
+        "strict_merkle_validation": True,
+        "cache_enabled": True,
+        "ocsp_enabled": True
+    }
+}
+
+
+def get_credentials_info() -> Dict[str, Any]:
+    """
+    Restituisce informazioni sul modulo credentials.
+    
+    Returns:
+        Dict contenente informazioni dettagliate sul modulo
+    """
     return {
         "name": "Academic Credentials System",
         "version": __version__,
@@ -145,32 +140,17 @@ def get_credentials_info():
         ]
     }
 
-# Configurazioni consigliate
-RECOMMENDED_CONFIGURATIONS = {
-    "issuer": {
-        "auto_sign": True,
-        "backup_enabled": True,
-        "default_validity_days": 365,
-        "key_size": 2048
-    },
-    "validator": {
-        "validation_level": "standard",
-        "strict_merkle_validation": True,
-        "cache_enabled": True,
-        "ocsp_enabled": True
-    }
-}
 
-def validate_configuration(config_type: str, config: dict) -> bool:
+def validate_configuration(config_type: str, config: Dict[str, Any]) -> bool:
     """
-    Valida una configurazione
+    Valida una configurazione per issuer o validator.
     
     Args:
         config_type: Tipo configurazione ("issuer" o "validator")
-        config: Configurazione da validare
+        config: Dizionario configurazione da validare
         
     Returns:
-        True se valida
+        True se la configurazione è valida, False altrimenti
     """
     issues = []
     
@@ -186,28 +166,23 @@ def validate_configuration(config_type: str, config: dict) -> bool:
                 issues.append("OCSP timeout deve essere > 0")
     
     if issues:
-        print("⚠️  Problemi configurazione trovati:")
-        for issue in issues:
-            print(f"   - {issue}")
+        logger = logging.getLogger(__name__)
+        logger.warning("Problemi configurazione trovati: %s", issues)
         return False
     
-    print("✅ Configurazione valida")
     return True
 
-# Banner di inizializzazione
-def print_credentials_banner():
-    """Stampa banner del modulo credentials"""
-    print("🎓" * 50)
-    print("ACADEMIC CREDENTIALS SYSTEM")
-    print("Sistema Credenziali Accademiche Decentralizzate")
-    print(f"Versione: {__version__}")
-    print("🎓" * 50)
 
-# Configurazione di logging
-import logging
-
-def setup_credentials_logging(level=logging.INFO):
-    """Configura logging per il modulo credentials"""
+def setup_credentials_logging(level: int = logging.INFO) -> logging.Logger:
+    """
+    Configura il sistema di logging per il modulo credentials.
+    
+    Args:
+        level: Livello di logging (default: INFO)
+        
+    Returns:
+        Logger configurato
+    """
     logger = logging.getLogger(__name__)
     logger.setLevel(level)
     
@@ -221,22 +196,27 @@ def setup_credentials_logging(level=logging.INFO):
     
     return logger
 
-# Logger del modulo
-logger = setup_credentials_logging()
 
-# Auto-esecuzione del banner in modalità debug
-import os
-if os.environ.get('CREDENTIALS_DEBUG', '').lower() == 'true':
-    print_credentials_banner()
-    logger.info("Credentials module loaded in debug mode")
-
-# Funzioni di utilità per quick start
 def create_demo_credential() -> AcademicCredential:
-    """Crea una credenziale demo per testing rapido"""
+    """
+    Crea una credenziale demo per testing rapido.
+    
+    Returns:
+        Credenziale accademica di esempio
+    """
     return CredentialFactory.create_sample_credential()
 
+
 def quick_validate(credential: AcademicCredential) -> bool:
-    """Validazione rapida di una credenziale"""
+    """
+    Esegue una validazione rapida di una credenziale.
+    
+    Args:
+        credential: Credenziale da validare
+        
+    Returns:
+        True se la credenziale è valida, False altrimenti
+    """
     try:
         validator = AcademicCredentialValidator()
         report = validator.validate_credential(credential, ValidationLevel.BASIC)
@@ -244,30 +224,6 @@ def quick_validate(credential: AcademicCredential) -> bool:
     except Exception:
         return False
 
-# Esempi di utilizzo
-USAGE_EXAMPLES = {
-    "create_credential": """
-from credentials import CredentialFactory
-credential = CredentialFactory.create_sample_credential()
-""",
-    
-    "issue_credential": """
-from credentials import AcademicCredentialIssuer, IssuerConfiguration
-config = IssuerConfiguration(...)
-issuer = AcademicCredentialIssuer(config)
-result = issuer.process_issuance_request(request_id)
-""",
-    
-    "validate_credential": """
-from credentials import AcademicCredentialValidator, ValidationLevel
-validator = AcademicCredentialValidator()
-report = validator.validate_credential(credential, ValidationLevel.STANDARD)
-"""
-}
 
-def print_usage_examples():
-    """Stampa esempi di utilizzo"""
-    print("\n📖 ESEMPI DI UTILIZZO:")
-    for title, code in USAGE_EXAMPLES.items():
-        print(f"\n{title.upper()}:")
-        print(code.strip())
+# Inizializza logger del modulo
+logger = setup_credentials_logging()

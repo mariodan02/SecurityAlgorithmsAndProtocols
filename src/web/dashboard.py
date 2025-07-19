@@ -337,6 +337,7 @@ class PresentationVerifier:
                 
                 # 3.2 VERIFICA FIRMA UNIVERSITÀ
                 university_sig_valid = await self._verify_university_signature_from_disclosure(cred_disclosure)
+                report["technical_details"]["signature_valid"] = university_sig_valid
                 if not university_sig_valid:
                     self.logger.warning("      ⚠️ Firma università mancante")
                     report["warnings"].append({

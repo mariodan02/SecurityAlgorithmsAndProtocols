@@ -1855,77 +1855,71 @@ class AcademicCredentialsDashboard:
 
                 self.logger.info(f"Credential selections prepared: {len(credential_selections)}")
 
-                presentation_id = presentation_manager.create_presentation(
+                presentation_ids = presentation_manager.create_presentation(
                     purpose=body.get('purpose'),
                     credential_selections=credential_selections,
                     recipient=body.get('recipient'),
                     expires_hours=72
                 )
 
-                self.logger.info(f"Presentation created with ID: {presentation_id}")
-
-                sign_success = presentation_manager.sign_presentation(presentation_id)
-                if not sign_success:
-                    return JSONResponse(
-                        {"success": False, "message": "Errore durante la firma della presentazione"},
-                        status_code=500
-                    )
-
-                self.logger.info("Presentation signed successfully")
-
-                # --- MODIFICA INIZIO ---
-                # Il percorso di export ora dipende dalla directory del wallet dello studente.
-                export_dir = wallet.wallet_dir / "presentations"
-                # --- MODIFICA FINE ---
+                self.logger.info(f"Presentations created with IDs: {presentation_ids}")
                 
-                export_dir.mkdir(exist_ok=True)
-                output_path = export_dir / f"{presentation_id}.json"
-                
-                export_success = presentation_manager.export_presentation(
-                    presentation_id,
-                    str(output_path), 
-                    PresentationFormat.SIGNED_JSON
-                )
+                presentations_details = []
 
-                if not export_success:
-                    return JSONResponse(
-                        {"success": False, "message": "Errore durante l'export della presentazione"},
-                        status_code=500
+                for presentation_id in presentation_ids:
+                    sign_success = presentation_manager.sign_presentation(presentation_id)
+                    if not sign_success:
+                        return JSONResponse(
+                            {"success": False, "message": f"Errore durante la firma della presentazione {presentation_id}"},
+                            status_code=500
+                        )
+
+                    self.logger.info(f"Presentation {presentation_id} signed successfully")
+
+                    export_dir = wallet.wallet_dir / "presentations"
+                    export_dir.mkdir(exist_ok=True)
+                    output_path = export_dir / f"{presentation_id}.json"
+                    
+                    export_success = presentation_manager.export_presentation(
+                        presentation_id,
+                        str(output_path), 
+                        PresentationFormat.SIGNED_JSON
                     )
 
-                self.logger.info(f"Presentation exported to: {output_path}")
+                    if not export_success:
+                        return JSONResponse(
+                            {"success": False, "message": f"Errore durante l'export della presentazione {presentation_id}"},
+                            status_code=500
+                        )
 
-                presentation = presentation_manager.get_presentation(presentation_id)
-                if not presentation:
-                    return JSONResponse(
-                        {"success": False, "message": "Errore: presentazione non trovata dopo creazione"},
-                        status_code=500
-                    )
+                    self.logger.info(f"Presentation exported to: {output_path}")
 
-                try:
+                    presentation = presentation_manager.get_presentation(presentation_id)
+                    if not presentation:
+                        return JSONResponse(
+                            {"success": False, "message": f"Errore: presentazione {presentation_id} non trovata dopo creazione"},
+                            status_code=500
+                        )
+                    
                     summary = presentation.get_summary()
-                except Exception as e:
-                    self.logger.warning(f"Error getting presentation summary: {e}")
-                    summary = {
-                        'total_disclosures': len(presentation.selective_disclosures),
-                        'total_attributes_disclosed': 0,
-                        'is_signed': presentation.signature is not None
-                    }
+                    presentations_details.append({
+                        "presentation_id": presentation_id,
+                        "download_url": f"/presentations/{presentation_id}/download",
+                        "details": {
+                            "total_disclosures": summary.get('total_disclosures', 0),
+                            "attributes_disclosed": summary.get('total_attributes_disclosed', 0),
+                            "signed": summary.get('is_signed', False),
+                            "expires_at": (
+                                presentation.expires_at.isoformat() 
+                                if presentation.expires_at else None
+                            )
+                        }
+                    })
 
                 response_data = {
                     "success": True,
-                    "message": "Presentazione verificabile creata con successo",
-                    "presentation_id": presentation_id,
-                    "download_url": f"/presentations/{presentation_id}/download",
-                    "details": {
-                        "total_disclosures": summary.get('total_disclosures', 0),
-                        "attributes_disclosed": summary.get('total_attributes_disclosed', 0),
-                        "signed": summary.get('is_signed', False),
-                        "expires_at": (
-                            presentation.expires_at.isoformat() 
-                            if presentation.expires_at else None
-                        )
-                    }
+                    "message": "Presentazioni verificabili create con successo",
+                    "presentations": presentations_details
                 }
 
                 self.logger.info("Presentation creation completed successfully")

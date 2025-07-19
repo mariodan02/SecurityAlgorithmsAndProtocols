@@ -10,6 +10,9 @@ import datetime
 import ipaddress
 from pathlib import Path
 
+HOST = "127.0.0.1"
+PORT = 5001
+
 try:
     # Prova l'import assoluto, che funzionerà se 'src' è già nel PYTHONPATH
     from pki.certificate_manager import CertificateManager
@@ -93,7 +96,15 @@ class CertificateAuthority:
             datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365 * 10)
         ).add_extension(
             x509.BasicConstraints(ca=True, path_length=None), critical=True,
-        )
+        ).add_extension(
+            x509.AuthorityInformationAccess([
+                x509.AccessDescription(
+                x509.oid.AuthorityInformationAccessOID.OCSP,
+                x509.UniformResourceIdentifier(f"http://{HOST}:{PORT}/ocsp")
+            )
+        ]),
+        critical=False
+    )
 
         certificate = builder.sign(private_key, hashes.SHA256())
 

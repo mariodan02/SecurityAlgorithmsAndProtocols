@@ -9,11 +9,7 @@ import os
 import threading
 import time
 from pathlib import Path
-
-# AGGIUNGI LA DIRECTORY SRC AL PYTHONPATH
-current_dir = Path(__file__).parent.absolute()
-src_dir = current_dir / "src"
-sys.path.insert(0, str(src_dir))
+from src.pki.ocsp_responder import app as ocsp_app, HOST as OCSP_HOST, PORT as OCSP_PORT, load_ca_data
 
 def main():
     """Avvia entrambi i server"""
@@ -71,12 +67,22 @@ def main():
             pass
         except Exception as e:
             print(f"❌ Errore dashboard: {e}")
-    
+    #Thread per il responder OCSP
+    def run_ocsp_responder():
+        try:
+            print("\n📡 Inizializzazione OCSP Responder...")
+            load_ca_data() # Carica i dati della CA prima di avviare
+            print(f"📡 OCSP Responder pronto su: http://{OCSP_HOST}:{OCSP_PORT}/ocsp")
+            ocsp_app.run(host=OCSP_HOST, port=OCSP_PORT)
+        except Exception as e:
+            print(f"❌ Errore OCSP responder: {e}")
     # Avvia threads
+    ocsp_thread = threading.Thread(target=run_ocsp_responder, daemon=True)
     secure_thread = threading.Thread(target=run_secure_server, daemon=True)
     dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
     
     # Avvia prima il secure server
+    ocsp_thread.start()
     secure_thread.start()
     
     # Poi il dashboard

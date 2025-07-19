@@ -617,17 +617,20 @@ class AcademicCredentialValidator:
             # Check OCSP se abilitato
             if self.config.ocsp_enabled and self.ocsp_client:
                 issuer_cert = self._find_issuer_certificate(credential)
-                
-                if issuer_cert:
+                ca_cert = self.trusted_ca_certs.get("./certificates/ca/ca_certificate.pem")
+                if issuer_cert and ca_cert:
                     try:
-                        # Simula check OCSP
-                        # In implementazione reale, dovremmo avere il certificato della credenziale
                         self.stats['ocsp_checks'] += 1
-                        
-                        # Per ora, assumiamo che non sia revocata
-                        report.revocation_status = "good"
-                        report.add_info("REVOCATION_CHECK_PASSED", "Verifica revoca superata")
-                        
+                        ocsp_response = self.ocsp_client.check_certificate_status(issuer_cert, ca_cert)
+
+                        report.revocation_status = ocsp_response.status.value
+                        if ocsp_response.status == OCSPStatus.GOOD:
+                            report.add_info("OCSP_CHECK_PASSED", "Certificato issuer valido (OCSP).")
+                        elif ocsp_response.status == OCSPStatus.REVOKED:
+                            report.add_error("ISSUER_CERT_REVOKED", "Il certificato dell'issuer è stato revocato.")
+                        else:
+                            report.add_warning("OCSP_CHECK_UNKNOWN", f"Stato OCSP sconosciuto: {ocsp_response.error_message or 'N/A'}")
+
                     except Exception as e:
                         report.add_warning("OCSP_CHECK_FAILED", f"Errore verifica OCSP: {e}")
                         report.revocation_status = "unknown"

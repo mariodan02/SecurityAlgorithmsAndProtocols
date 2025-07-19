@@ -852,19 +852,64 @@ class AcademicCredentialsDashboard:
     def _safe_json_serializer(self, obj):
             """
             Serializzatore JSON personalizzato per gestire datetime e altri oggetti non serializzabili.
+            Versione migliorata per gestire tutti i tipi di oggetti delle credenziali accademiche.
             """
+            # Gestione datetime
             if isinstance(obj, datetime.datetime):
                 return obj.isoformat()
             elif isinstance(obj, datetime.date):
                 return obj.isoformat()
+            
+            # Gestione UUID
             elif isinstance(obj, uuid.UUID):
                 return str(obj)
+            
+            # Gestione Enum (per CredentialStatus, StudyType, GradeSystem, etc.)
+            elif hasattr(obj, 'value'):  # Enum objects
+                return obj.value
+            elif hasattr(obj, 'name'):   # Enum objects (alternative)
+                return obj.name
+            
+            # Gestione oggetti Pydantic/custom con to_dict
             elif hasattr(obj, 'to_dict'):
                 return obj.to_dict()
+            elif hasattr(obj, 'model_dump'):  # Pydantic v2
+                return obj.model_dump()
+            elif hasattr(obj, 'dict'):       # Pydantic v1
+                return obj.dict()
+            
+            # Gestione oggetti con __dict__
             elif hasattr(obj, '__dict__'):
-                return obj.__dict__
+                # Converte ricorsivamente usando questo serializzatore
+                result = {}
+                for key, value in obj.__dict__.items():
+                    try:
+                        # Test se il valore è serializzabile
+                        json.dumps(value, default=str)
+                        result[key] = value
+                    except TypeError:
+                        # Se non è serializzabile, usa il nostro serializzatore
+                        result[key] = self._safe_json_serializer(value)
+                return result
+            
+            # Gestione liste e dizionari
+            elif isinstance(obj, list):
+                return [self._safe_json_serializer(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {key: self._safe_json_serializer(value) for key, value in obj.items()}
+            
+            # Gestione tipi numerici speciali
+            elif isinstance(obj, (int, float, str, bool, type(None))):
+                return obj
+            
+            # Fallback finale: converte a stringa
             else:
-                return str(obj)
+                try:
+                    # Tenta di convertire direttamente a stringa
+                    return str(obj)
+                except Exception:
+                    # Se tutto fallisce, restituisce una rappresentazione di debug
+                    return f"<{type(obj).__name__} object>"
 
     def _create_json_response(self, data: Dict[str, Any], status_code: int = 200) -> JSONResponse:
         """
@@ -1569,24 +1614,71 @@ class AcademicCredentialsDashboard:
                 credential = issuance_result.credential
                 credential_id_str = str(credential.metadata.credential_id)
 
-                if callback_url:
+                # ============================================
+                # SEZIONE CALLBACK CORRETTA
+                # ============================================
+                if callback_url and callback_url.strip():
                     self.logger.info(f"🚀 Preparazione per l'invio della credenziale a {callback_url}")
                     
-                    # Definisci una funzione asincrona per l'invio
-                    async def send_credential_callback(url: str, cred_data: dict):
+                    try:
+                        # Prepara i dati della credenziale in formato JSON serializzabile
+                        credential_dict = credential.to_dict()
+                        
+                        # Usa il nostro serializzatore sicuro per gestire datetime, UUID, ecc.
                         try:
-                            async with httpx.AsyncClient() as client:
-                                response = await client.post(url, json=cred_data, timeout=10.0)
-                                if response.is_success:
-                                    self.logger.info(f"✅ Credenziale inviata con successo a {url}. Status: {response.status_code}")
-                                else:
-                                    self.logger.error(f"❌ Fallito l'invio della credenziale a {url}. Status: {response.status_code}, Response: {response.text}")
-                        except Exception as e:
-                            self.logger.error(f"🔥 Errore critico durante l'invio della credenziale a {url}: {e}")
-                    
-                    # Avvia l'invio in background per non bloccare la risposta all'utente
-                    asyncio.create_task(send_credential_callback(callback_url, credential.to_dict()))
+                            # Test di serializzazione per verificare che funzioni
+                            test_json = json.dumps(credential_dict, default=self._safe_json_serializer)
+                            self.logger.info(f"✅ Serializzazione JSON testata con successo ({len(test_json)} caratteri)")
+                        except Exception as serialize_error:
+                            self.logger.error(f"❌ Errore serializzazione JSON: {serialize_error}")
+                            raise ValueError(f"Impossibile serializzare la credenziale: {serialize_error}")
+                        
+                        # Invia la credenziale al callback URL
+                        self.logger.info(f"📡 Invio POST a {callback_url}...")
+                        
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            response = await client.post(
+                                callback_url,
+                                json=credential_dict,
+                                headers={
+                                    "Content-Type": "application/json",
+                                    "User-Agent": "AcademicCredentials-Dashboard/1.0"
+                                }
+                            )
+                            
+                            self.logger.info(f"📬 Risposta ricevuta: Status {response.status_code}")
+                            
+                            if response.is_success:
+                                self.logger.info(f"✅ Credenziale inviata con successo a {callback_url}")
+                                self.logger.info(f"   Status Code: {response.status_code}")
+                                self.logger.info(f"   Response: {response.text[:200]}...")
+                                
+                                # Aggiungi info sul successo dell'invio nella risposta
+                                callback_success_message = f" La credenziale è stata inviata con successo a {callback_url}"
+                                
+                            else:
+                                self.logger.error(f"❌ Errore HTTP durante l'invio a {callback_url}")
+                                self.logger.error(f"   Status Code: {response.status_code}")
+                                self.logger.error(f"   Response: {response.text}")
+                                callback_success_message = f" ATTENZIONE: Errore nell'invio a {callback_url} (HTTP {response.status_code})"
+                                
+                    except httpx.TimeoutException:
+                        self.logger.error(f"⏰ Timeout durante l'invio a {callback_url}")
+                        callback_success_message = f" ATTENZIONE: Timeout durante l'invio a {callback_url}"
+                        
+                    except httpx.ConnectError as connect_error:
+                        self.logger.error(f"🔌 Errore di connessione a {callback_url}: {connect_error}")
+                        callback_success_message = f" ATTENZIONE: Impossibile connettersi a {callback_url}"
+                        
+                    except Exception as callback_error:
+                        self.logger.error(f"🔥 Errore critico durante l'invio a {callback_url}: {callback_error}")
+                        import traceback
+                        self.logger.error(f"Traceback: {traceback.format_exc()}")
+                        callback_success_message = f" ATTENZIONE: Errore durante l'invio a {callback_url}: {str(callback_error)}"
+                else:
+                    callback_success_message = ""
 
+                # Salva la credenziale su file
                 import re
                 safe_student_name = re.sub(r'[^\w\s-]', '', student_name).strip().replace(' ', '_')
 
@@ -1600,19 +1692,16 @@ class AcademicCredentialsDashboard:
 
                 self.logger.info(f"💾 Credenziale salvata in: {output_path}")
 
+                # Prepara la risposta finale
                 result_data = {
                     "success": True,
-                    "message": "Credenziale emessa con successo!",
+                    "message": f"Credenziale emessa con successo!{callback_success_message}",
                     "credential_id": credential_id_str,
                     "file_path": str(output_path),
                     "issued_at": credential.metadata.issued_at.isoformat(),
                     "total_courses": len(courses),
                     "total_ects": sum(c.ects_credits for c in courses)
                 }
-                if callback_url:
-                    result_data["message"] += f" L'invio a {callback_url} è stato avviato."
-
-                    return JSONResponse(result_data)
 
                 self.logger.info(f"🎉 Emissione della credenziale completata con successo per {student_name}")
                 return JSONResponse(result_data)

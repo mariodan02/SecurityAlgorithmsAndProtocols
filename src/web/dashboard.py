@@ -1152,6 +1152,83 @@ class AcademicCredentialsDashboard:
     
     def _setup_routes(self) -> None:
         """Configures all application routes."""
+
+        @self.app.post("/request_credential")
+        async def handle_credential_request(
+            request: Request,
+            user: UserSession = Depends(self.auth_deps['require_auth'])
+        ):
+            """Gestisce la richiesta di credenziale a un'università esterna"""
+            try:
+                if not user.is_student:
+                    return JSONResponse(
+                        {"success": False, "message": "Solo gli studenti possono richiedere credenziali"},
+                        status_code=403
+                    )
+                
+                data = await request.json()
+                university = data.get('university')
+                purpose = data.get('purpose', '')
+                
+                # Configurazione per Università de Rennes (esempio)
+                university_config = {
+                    "Université de Rennes": {
+                        "url": "https://localhost:8443/api/v1/credentials/request",
+                        "api_key": "issuer_rennes"
+                    }
+                }
+                
+                if university not in university_config:
+                    return JSONResponse(
+                        {"success": False, "message": "Università non supportata"},
+                        status_code=400
+                    )
+                
+                config = university_config[university]
+                
+                # Dati studente (da wallet)
+                wallet = self._get_student_wallet(user)
+                student_id = "0622702628"  # Esempio, in realtà da wallet
+                
+                # Crea payload per la richiesta TLS
+                payload = {
+                    "student_name": "Mario Rossi",
+                    "student_id": student_id,
+                    "purpose": purpose,
+                    "requested_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }
+                
+                # Invia richiesta TLS al server universitario
+                async with httpx.AsyncClient(verify=False) as client:  # verify=False solo per testing!
+                    response = await client.post(
+                        config['url'],
+                        json=payload,
+                        headers={
+                            "Authorization": f"Bearer {config['api_key']}",
+                            "Content-Type": "application/json"
+                        },
+                        timeout=10.0
+                    )
+                    
+                    if response.status_code == 200:
+                        return JSONResponse({
+                            "success": True,
+                            "message": "Richiesta inviata con successo",
+                            "request_id": response.json().get('request_id'),
+                            "university": university
+                        })
+                    else:
+                        return JSONResponse({
+                            "success": False,
+                            "message": f"Errore università: {response.text}",
+                            "status_code": response.status_code
+                        }, status_code=502)
+                        
+            except Exception as e:
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno: {str(e)}"},
+                    status_code=500
+                )
         
         @self.app.post("/verification/full-verify")
         async def handle_full_verification(

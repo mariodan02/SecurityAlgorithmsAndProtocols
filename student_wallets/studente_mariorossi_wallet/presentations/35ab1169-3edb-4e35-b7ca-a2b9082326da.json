@@ -1,0 +1,114 @@
+{
+  "presentation_id": "35ab1169-3edb-4e35-b7ca-a2b9082326da",
+  "created_at": "2025-07-19T14:16:37.320988+00:00",
+  "created_by": "student_mario_r",
+  "purpose": "mmamamam",
+  "recipient": null,
+  "expires_at": "2025-07-22T14:16:37.320979+00:00",
+  "status": "ready",
+  "selective_disclosures": [
+    {
+      "credential_id": "acd34b24-299b-4e5d-88ee-a8359b1cb200",
+      "disclosure_id": "d9a935ac-f25d-4235-b508-56dfac5538b4",
+      "disclosed_attributes": {
+        "issuer.name": "Université de Rennes",
+        "subject.pseudonym": "student_mario_r"
+      },
+      "merkle_proofs": [
+        {
+          "attribute_index": 41,
+          "attribute_value": "Université de Rennes",
+          "proof_path": [
+            {
+              "hash": "06c188aea1d5cf0e70d94058c9facdb73b79457cd6019387bbcbb0a425ea79dd",
+              "is_right": false
+            },
+            {
+              "hash": "622275aca4e57ede9f4c8366499ba312b89e229a6a9fa417af2a57ac3ab9444c",
+              "is_right": true
+            },
+            {
+              "hash": "0a62c0275945764b35b6877474866b0c8524eb34303dfc678afb11655efd31fd",
+              "is_right": true
+            },
+            {
+              "hash": "ee8e729b00c1a2add78ff8da8e1fb6ad7087c11b2b9d90fe5cc2f65f11cdd4ed",
+              "is_right": false
+            },
+            {
+              "hash": "52cf686239fe51f48996c598418bbef5210acb167537ff44f31e1578525d0de6",
+              "is_right": true
+            },
+            {
+              "hash": "68612791a5253381eacbccd0519663254aa53e1dcc2906ed4ef8e92bfd8642ab",
+              "is_right": false
+            },
+            {
+              "hash": "351e145b2732aa5154a4a99044ade48327e2f23887e63e00bb86e6dc45e2d0f5",
+              "is_right": true
+            }
+          ],
+          "merkle_root": "c2eddf03e98c5f25ec6d0483e0d32548a24e6604d459afbc213a3f329c8a8bac"
+        },
+        {
+          "attribute_index": 63,
+          "attribute_value": "student_mario_r",
+          "proof_path": [
+            {
+              "hash": "eef69faa92d01ec2893dee3911d15da2b41f388b177b53626673cbe20edafca7",
+              "is_right": false
+            },
+            {
+              "hash": "e57d4b5b3ec0fd86a2cc75669ddc86b48fff68c159f4f0411272a5fb57c84811",
+              "is_right": false
+            },
+            {
+              "hash": "1085c344d8ad855660f5669680c123b080191ac4d3d6b5ae810203643da9f2c9",
+              "is_right": false
+            },
+            {
+              "hash": "69e048cfcf4612cf438cfc930cc1e0844f2cefb8aa488788e8517284212198e5",
+              "is_right": false
+            },
+            {
+              "hash": "19aee1416c72c2059b939b30722876681269fb92ccc6c53cb78126d0a18128a3",
+              "is_right": false
+            },
+            {
+              "hash": "68612791a5253381eacbccd0519663254aa53e1dcc2906ed4ef8e92bfd8642ab",
+              "is_right": false
+            },
+            {
+              "hash": "351e145b2732aa5154a4a99044ade48327e2f23887e63e00bb86e6dc45e2d0f5",
+              "is_right": true
+            }
+          ],
+          "merkle_root": "c2eddf03e98c5f25ec6d0483e0d32548a24e6604d459afbc213a3f329c8a8bac"
+        }
+      ],
+      "disclosure_level": "custom",
+      "created_at": "2025-07-19T14:16:37.320926+00:00",
+      "created_by": "student_mario_r",
+      "purpose": "mmamamam",
+      "recipient": null,
+      "expires_at": "2025-07-22T14:16:37.320934+00:00"
+    }
+  ],
+  "additional_documents": [],
+  "format": "signed_json",
+  "verification_url": null,
+  "signature": {
+    "algoritmo": "RSA-SHA256-PSS",
+    "valore": "nX6Dxw2ykDOMaLYmmfdFGW5M/VTBmrA7VfPnQB04gyTTB68wgJ9g+vzZtByxoaYnLqaFbHJmIxazjXg9Vo3O54i2sjtp77oT7Izx4ivAoIavF/IZSW5q11RWWLlEt5KHTet9GedDlJFzqXip7PhIGEGKtIYZOfNgASFMqfuZ7D0Rxc5yEBooeeYhzwii9bQNYieLRSZizUj7Mg4qQC3xN9YdxyAonY8q8EMkFxmnFIBjH2mYOegzsQd3aA8JsLElnSaNdLuBfDJAF+BMTC1Kc3pR/GLpcXQcG3lEXFAB9EMQGGHXuydCTQMUnMA/W7REt19EEHZ/6+b+zt6jdJCTlQ==",
+    "timestamp": "2025-07-19T14:16:37.322657Z"
+  },
+  "summary": {
+    "total_disclosures": 1,
+    "unique_credentials": 1,
+    "total_attributes_disclosed": 2,
+    "universities_involved": [],
+    "is_expired": false,
+    "is_signed": true,
+    "additional_docs_count": 0
+  }
+}

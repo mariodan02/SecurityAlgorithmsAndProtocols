@@ -27,22 +27,6 @@ try:
     from crypto.foundations import CryptoUtils, MerkleTree
 except ImportError:
     print("⚠️  Assicurati che i moduli crypto (CryptoUtils, MerkleTree) siano disponibili.")
-    # Per permettere l'esecuzione dello script anche senza crypto, creo dei mock
-    class MockCryptoUtils:
-        def sha256_hash_string(self, s: str) -> str:
-            import hashlib
-            return hashlib.sha256(s.encode('utf-8')).hexdigest()
-    class MockMerkleTree:
-        def __init__(self, data: list):
-            self.data = data
-        def get_merkle_root(self) -> str:
-            import hashlib
-            if not self.data: return ""
-            return hashlib.sha256(str(self.data).encode('utf-8')).hexdigest()
-    CryptoUtils = MockCryptoUtils
-    MerkleTree = MockMerkleTree
-    print("   -> Utilizzo di Mocks per CryptoUtils e MerkleTree.")
-
 
 # =============================================================================
 # 1. ENUMS E COSTANTI

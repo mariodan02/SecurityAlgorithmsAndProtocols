@@ -558,8 +558,8 @@ class AcademicCredentialsSecureServer:
                 "block_number": 123456,
                 "transaction_hash": "0x1234567890abcdef",
                 "timestamp": "2025-07-18T12:34:56Z",
-                "is_valid": True,
-                "revoked": False  # Nuovo campo
+                "is_valid": False,
+                "revoked": False  
             }
             
             self.stats['verifications_performed'] += 1

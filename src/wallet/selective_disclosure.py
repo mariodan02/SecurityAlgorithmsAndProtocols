@@ -384,83 +384,60 @@ class SelectiveDisclosureManager:
             Oggetto SelectiveDisclosure con attributi divulgati e proofs
         """
         try:
-            # 1. Estrai tutti gli attributi della credenziale
+            # 1. Appiattisci e ordina tutti gli attributi della credenziale per consistenza
             all_attributes = self._flatten_credential(credential)
-            
-            # 2. Filtra solo gli attributi da divulgare
-            disclosed_attributes = {}
-            for attr_path in attributes_to_disclose:
-                if attr_path in all_attributes:
-                    disclosed_attributes[attr_path] = all_attributes[attr_path]
-            
-            # 3. Calcola gli hash di TUTTI gli attributi per costruire l'albero Merkle
-            crypto_utils = CryptoUtils()
-            attribute_hashes = []
-            attribute_values = []
-            
-            # Ordina gli attributi per percorso per garantire consistenza
             sorted_attributes = sorted(all_attributes.items(), key=lambda x: x[0])
-            for attr_path, attr_value in sorted_attributes:
-                # Serializza il valore per l'hashing
-                if isinstance(attr_value, (dict, list)):
-                    serialized_value = json.dumps(attr_value, sort_keys=True)
-                else:
-                    serialized_value = str(attr_value)
-                    
-                attribute_hash = crypto_utils.sha256_hash_string(serialized_value)
-                attribute_hashes.append(attribute_hash)
-                attribute_values.append((attr_path, attr_value))
-            
-            # 4. Costruisci l'albero Merkle
-            merkle_tree = MerkleTree(attribute_hashes)
+
+            # Estrai solo i valori nell'ordine corretto per costruire l'albero
+            attribute_values_for_tree = [attr_value for attr_path, attr_value in sorted_attributes]
+
+            # 2. Costruisci l'albero Merkle direttamente dai valori.
+            #    La classe MerkleTree gestirà l'hashing internamente in modo corretto.
+            merkle_tree = MerkleTree(attribute_values_for_tree)
             merkle_root = merkle_tree.get_merkle_root()
-            
-            # 5. Genera le Merkle Proof per gli attributi divulgati
+
+            # 3. Filtra gli attributi che l'utente vuole effettivamente divulgare
+            disclosed_attributes = {
+                path: value
+                for path, value in sorted_attributes
+                if path in attributes_to_disclose
+            }
+
+            # 4. Genera le Merkle Proof per ciascun attributo divulgato
             merkle_proofs = []
             for attr_path, attr_value in disclosed_attributes.items():
-                # Trova l'indice dell'attributo nella lista ordinata
-                idx = next((i for i, (path, _) in enumerate(attribute_values) 
-                        if path == attr_path), -1)
-                
-                if idx == -1:
-                    continue
-                    
-                # Genera la proof Merkle
-                proof_path = merkle_tree.generate_proof(idx)
-                
-                # Memorizza la proof
-                merkle_proofs.append({
-                    "attribute_path": attr_path,
-                    "attribute_value": attr_value,
-                    "merkle_root": merkle_root,
-                    "proof_path": proof_path
-                })
-            
-            # 6. Crea l'oggetto di divulgazione selettiva
-            proof_objects = [MerkleProof.from_dict({
-                'attribute_index': next((i for i, (path, _) in enumerate(sorted(all_attributes.items(), key=lambda x: x[0])) if path == p.get("attribute_path")), -1),
-                'attribute_value': p.get("attribute_value"),
-                'proof_path': p.get("proof_path"),
-                'merkle_root': p.get("merkle_root")
-            }) for p in merkle_proofs]
+                # Trova l'indice dell'attributo nella lista *originale e ordinata*
+                # Questa è la riga corretta che usa 'sorted_attributes'
+                idx = next((i for i, (path, _) in enumerate(sorted_attributes) if path == attr_path), -1)
 
+                if idx != -1:
+                    proof_path = merkle_tree.generate_proof(idx)
+                    merkle_proofs.append(
+                        MerkleProof(
+                            attribute_index=idx,
+                            attribute_value=attr_value,
+                            proof_path=proof_path,
+                            merkle_root=merkle_root
+                        )
+                    )
 
+            # 5. Crea l'oggetto finale di divulgazione selettiva
             return SelectiveDisclosure(
                 credential_id=str(credential.metadata.credential_id),
                 disclosure_id=str(uuid.uuid4()),
                 disclosed_attributes=disclosed_attributes,
-                merkle_proofs=proof_objects,
+                merkle_proofs=merkle_proofs,
                 disclosure_level=disclosure_level,
                 created_at=datetime.datetime.now(datetime.timezone.utc),
                 created_by=credential.subject.pseudonym,
                 purpose=purpose,
                 recipient=recipient,
                 expires_at=(
-                    datetime.datetime.now(datetime.timezone.utc) + 
+                    datetime.datetime.now(datetime.timezone.utc) +
                     datetime.timedelta(hours=expires_hours)
                 ) if expires_hours > 0 else None
             )
-            
+
         except Exception as e:
             print(f"❌ Errore creazione divulgazione selettiva: {e}")
             raise

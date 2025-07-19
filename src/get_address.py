@@ -1,4 +1,3 @@
-# get_address.py (versione corretta)
 from cryptography.hazmat.primitives import serialization
 from eth_keys.datatypes import PrivateKey
 import os

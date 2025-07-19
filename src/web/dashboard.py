@@ -69,6 +69,9 @@ class LoginRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
 
+class CredentialImportRequest(BaseModel):
+    credential_json: str
+
 class UserSession(BaseModel):
     user_id: str
     university_name: str
@@ -1230,6 +1233,62 @@ class AcademicCredentialsDashboard:
                     status_code=500
                 )
         
+        @self.app.post("/wallet/import-credential", response_class=JSONResponse)
+        async def import_credential(
+            request_body: CredentialImportRequest,
+            user: UserSession = Depends(self.auth_deps['require_auth'])
+        ):
+            """
+            Endpoint per importare una credenziale da un file JSON nel wallet dello studente.
+            """
+            self.logger.info(f"📥 Richiesta di importazione credenziale per l'utente: {user.user_id}")
+            
+            # Verifica che l'utente sia uno studente
+            if not user.is_student:
+                self.logger.warning(f"Tentativo di importazione non autorizzato da {user.user_id} (ruolo: {user.role})")
+                return JSONResponse(
+                    {"success": False, "message": "Solo gli studenti possono importare credenziali."},
+                    status_code=403
+                )
+            
+            try:
+                # Ottieni il wallet dello studente
+                wallet = self._get_student_wallet(user)
+                if not wallet or wallet.status != WalletStatus.UNLOCKED:
+                    self.logger.error(f"Wallet non disponibile o bloccato per l'utente {user.user_id}")
+                    return JSONResponse(
+                        {"success": False, "message": "Wallet non disponibile o bloccato."},
+                        status_code=500
+                    )
+                
+                # Chiama la funzione del wallet per aggiungere la credenziale dal JSON
+                storage_id = wallet.add_credential_from_json(
+                    request_body.credential_json,
+                    tags=["importata"]
+                )
+                
+                if storage_id:
+                    self.logger.info(f"✅ Credenziale importata con successo nel wallet di {user.user_id}. Storage ID: {storage_id}")
+                    return JSONResponse({
+                        "success": True,
+                        "message": "Credenziale importata con successo nel tuo wallet!",
+                        "storage_id": storage_id
+                    })
+                else:
+                    # Questo caso copre errori come credenziali duplicate o fallimenti interni
+                    self.logger.warning(f"Importazione fallita per {user.user_id}. Possibile duplicato o errore interno.")
+                    return JSONResponse(
+                        {"success": False, "message": "Impossibile importare la credenziale. Potrebbe essere già presente o il file potrebbe essere corrotto."},
+                        status_code=400
+                    )
+            
+            except Exception as e:
+                self.logger.error(f"🔥 Errore critico durante l'importazione della credenziale per {user.user_id}: {e}", exc_info=True)
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno del server: {str(e)}"},
+                    status_code=500
+                )
+
         @self.app.post("/verification/full-verify")
         async def handle_full_verification(
             request: Request, 

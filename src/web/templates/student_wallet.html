@@ -2,12 +2,17 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="h4 mb-0">Wallet credenziali</h1>
-    <button id="createPresentationBtn" type="button" class="btn btn-sm btn-primary disabled">
-        Crea presentazione verificabile
-    </button>
-    <button id="requestCredentialBtn" type="button" class="btn btn-sm btn-success">
-    Richiedi Credenziale Universitaria
-    </button>
+    <div>
+        <button id="importCredentialBtn" type="button" class="btn btn-sm btn-outline-secondary">
+            Importa Credenziale (.json)
+        </button>
+        <button id="createPresentationBtn" type="button" class="btn btn-sm btn-primary disabled">
+            Crea presentazione verificabile
+        </button>
+        <button id="requestCredentialBtn" type="button" class="btn btn-sm btn-success">
+        Richiedi Credenziale Universitaria
+        </button>
+    </div>
 </div>
 
 {% if credentials %}
@@ -60,12 +65,11 @@
 <div class="card">
     <div class="card-body text-center py-5">
         <p class="text-muted">Nessuna credenziale nel wallet</p>
-        <p class="small">Le credenziali emesse appariranno qui automaticamente</p>
+        <p class="small">Importa una credenziale ricevuta dalla tua università per iniziare.</p>
     </div>
 </div>
 {% endif %}
 
-<!-- Credential Details Modal -->
 <div class="modal fade" id="credentialModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
@@ -85,7 +89,6 @@
   </div>
 </div>
 
-<!-- Selective Disclosure Presentation Modal -->
 <div class="modal fade" id="presentationModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
@@ -115,8 +118,7 @@
             <div class="mb-3">
                 <label class="form-label">Credenziali selezionate</label>
                 <ul id="selectedCredentials" class="list-group mb-3">
-                    <!-- Populated by JavaScript -->
-                </ul>
+                    </ul>
             </div>
 
             <div class="mb-3">
@@ -165,8 +167,7 @@
                 <div class="mt-3">
                     <h6 class="text-muted">Corsi Specifici</h6>
                     <div id="courseAttributes">
-                        <!-- Populated dynamically based on selected credentials -->
-                    </div>
+                        </div>
                 </div>
             </div>
         </form>
@@ -182,6 +183,33 @@
   </div>
 </div>
 
+<div class="modal fade" id="importCredentialModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">📥 Importa Credenziale</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">Seleziona il file <code>.json</code> della credenziale che hai ricevuto dalla tua università.</p>
+        <form id="importForm">
+            <div class="mb-3">
+                <label for="credentialFile" class="form-label">File Credenziale</label>
+                <input class="form-control" type="file" id="credentialFile" accept=".json" required>
+            </div>
+        </form>
+        <div id="importResult" class="mt-3"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-primary" id="submitImportBtn">
+            <span id="importText">Importa nel Wallet</span>
+            <span id="importSpinner" class="spinner-border spinner-border-sm d-none"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const createBtn = document.getElementById('createPresentationBtn');
@@ -194,6 +222,76 @@ document.addEventListener('DOMContentLoaded', function() {
     let selectedCredentials = [];
 
     console.log('Wallet page loaded. Found checkboxes:', checkboxes.length);
+
+    // =============================================
+    // NUOVO CODICE JAVASCRIPT PER L'IMPORTAZIONE
+    // =============================================
+    const importBtn = document.getElementById('importCredentialBtn');
+    const importModal = new bootstrap.Modal(document.getElementById('importCredentialModal'));
+    const submitImportBtn = document.getElementById('submitImportBtn');
+    const credentialFileInput = document.getElementById('credentialFile');
+    const importResultDiv = document.getElementById('importResult');
+
+    importBtn.addEventListener('click', function() {
+        // Resetta lo stato del modal prima di aprirlo
+        credentialFileInput.value = '';
+        importResultDiv.innerHTML = '';
+        submitImportBtn.disabled = false;
+        document.getElementById('importText').style.display = 'inline';
+        document.getElementById('importSpinner').classList.add('d-none');
+        importModal.show();
+    });
+
+    submitImportBtn.addEventListener('click', async function() {
+        if (credentialFileInput.files.length === 0) {
+            importResultDiv.innerHTML = `<div class="alert alert-warning">Per favore, seleziona un file.</div>`;
+            return;
+        }
+
+        const file = credentialFileInput.files[0];
+        const reader = new FileReader();
+
+        reader.onload = async function(event) {
+            const jsonContent = event.target.result;
+            
+            // Mostra lo spinner di caricamento
+            document.getElementById('importText').style.display = 'none';
+            document.getElementById('importSpinner').classList.remove('d-none');
+            submitImportBtn.disabled = true;
+
+            try {
+                // Invia il contenuto del JSON al backend
+                const response = await fetch('/wallet/import-credential', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ credential_json: jsonContent })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    importResultDiv.innerHTML = `<div class="alert alert-success">${result.message}</div>`;
+                    // Ricarica la pagina dopo un breve ritardo per mostrare la nuova credenziale
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    throw new Error(result.message || 'Errore durante l\'importazione.');
+                }
+
+            } catch (error) {
+                importResultDiv.innerHTML = `<div class="alert alert-danger"><strong>Errore:</strong> ${error.message}</div>`;
+                // Riabilita il pulsante in caso di errore
+                document.getElementById('importText').style.display = 'inline';
+                document.getElementById('importSpinner').classList.add('d-none');
+                submitImportBtn.disabled = false;
+            }
+        };
+
+        reader.readAsText(file);
+    });
+    // =============================================
+
 
     // Handle "Select All" checkbox
     if (selectAllCheckbox) {

@@ -267,12 +267,6 @@ class CertificateAuthority:
 
         print(f"\n- Revocando il certificato: {cert_to_revoke_path}")
 
-        # La CA interna userà il suo database per gestire la revoca
-        # (Questa è una simulazione, il tuo MockOCSPResponder leggerà lo stato)
-        print("NOTA: La revoca viene registrata nel database della CA (index.txt).")
-        print("Il MockOCSPResponder simulerà la lettura di questo stato.")
-
-
 
 def main():
     """Funzione principale per creare la CA e i certificati per le entità."""

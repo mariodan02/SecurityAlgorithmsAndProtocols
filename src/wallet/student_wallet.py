@@ -1,5 +1,5 @@
 # =============================================================================
-# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - STUDENT WALLET (MODIFICATO)
+# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - STUDENT WALLET (CORRETTO)
 # File: wallet/student_wallet.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
@@ -28,7 +28,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from crypto.foundations import RSAKeyManager, DigitalSignature
-    from credentials.models import AcademicCredential
+    from credentials.models import AcademicCredential, DigitalSignature as ModelDigitalSignature  # CORREZIONE 1
     from credentials.validator import AcademicCredentialValidator, ValidationLevel
     from pki.certificate_authority import CertificateAuthority
 except ImportError as e:
@@ -152,7 +152,6 @@ class AcademicStudentWallet:
         print(f"🔨 Creando nuovo wallet per {student_common_name} (caricando identità pre-generata)")
         
         try:
-            # --- MODIFICA INIZIO ---
             # 1. Carica la chiave privata e il certificato dello studente generati dalla CA
             student_key_name = f"{student_common_name.replace(' ', '_').lower()}_{student_id}"
             
@@ -180,7 +179,6 @@ class AcademicStudentWallet:
             # Genera il salt per la password del wallet
             self.wallet_salt = os.urandom(16)
             self.salt_file.write_bytes(self.wallet_salt)
-            # --- MODIFICA FINE ---
 
             # 2. Crea l'oggetto Fernet per la sessione
             fernet_key = self._derive_key_from_password(password, self.wallet_salt)
@@ -293,30 +291,58 @@ class AcademicStudentWallet:
         return True
     
     def sign_credential_with_university_key(self, credential: AcademicCredential) -> AcademicCredential:
-        """Firma una credenziale con la chiave privata dell'università (demo)"""
+        """Firma una credenziale con la chiave privata dell'università (demo) - CORRETTO"""
         try:
-            # Percorso hardcoded alla chiave dell'università di Rennes
-            UNI_KEY_PATH = "./keys/universite_rennes_private.pem"
-            UNI_KEY_PASSWORD = "Unisa2025"
+            # CORREZIONE: Usa il nome dell'issuer per determinare quale chiave usare
+            issuer_name = credential.issuer.name.lower()
             
-            if not Path(UNI_KEY_PATH).exists():
-                print(f"❌ Chiave università non trovata: {UNI_KEY_PATH}")
-                # Restituisci comunque la credenziale originale
+            # Mapping università -> chiave privata
+            university_keys = {
+                "université de rennes": {
+                    "key_path": "./keys/universite_rennes_private.pem",
+                    "password": "Unisa2025"
+                },
+                "università degli studi di salerno": {
+                    "key_path": "./keys/university_salerno_private.pem", 
+                    "password": "Unisa2025"
+                },
+                "università di salerno": {
+                    "key_path": "./keys/university_salerno_private.pem",
+                    "password": "Unisa2025" 
+                }
+            }
+            
+            # Trova la configurazione per questa università
+            key_config = None
+            for uni_name, config in university_keys.items():
+                if issuer_name in uni_name or uni_name in issuer_name:
+                    key_config = config
+                    break
+            
+            if not key_config:
+                print(f"❌ Configurazione chiave non trovata per: {credential.issuer.name}")
                 return credential
             
-            print(f"🔑 Caricamento chiave universitaria da: {UNI_KEY_PATH}")
-            with open(UNI_KEY_PATH, "rb") as key_file:
+            key_path = key_config["key_path"]
+            key_password = key_config["password"]
+            
+            if not Path(key_path).exists():
+                print(f"❌ Chiave università non trovata: {key_path}")
+                return credential
+            
+            print(f"🔑 Caricamento chiave universitaria da: {key_path}")
+            with open(key_path, "rb") as key_file:
                 private_key = serialization.load_pem_private_key(
                     key_file.read(),
-                    password=UNI_KEY_PASSWORD.encode(),
+                    password=key_password.encode(),
                     backend=default_backend()
                 )
             
-            # Prepara i dati per la firma
+            # Prepara i dati per la firma (COERENTI con l'issuer)
             data_to_sign = {
                 "credential_id": str(credential.metadata.credential_id),
                 "student_id": credential.subject.student_id_hash,
-                "issuer": credential.issuer.name,
+                "issuer": credential.issuer.name,  # Ora sarà "Université de Rennes"
                 "issue_date": credential.metadata.issued_at.isoformat(),
                 "courses": [c.course_name for c in credential.courses]
             }
@@ -326,23 +352,22 @@ class AcademicStudentWallet:
             signature_data = signer.sign_document(private_key, data_to_sign)
             
             # Import locale per evitare dipendenze circolari
-            from credentials.models import Signature
+            from credentials.models import DigitalSignature as ModelDigitalSignature
             
             # Aggiorna la credenziale con la firma
-            credential.signature = Signature(
+            credential.signature = ModelDigitalSignature(
                 value=signature_data['firma']['valore'],
                 algorithm=signature_data['firma']['algoritmo'],
-                timestamp=datetime.datetime.utcnow()
+                timestamp=datetime.datetime.now(datetime.timezone.utc)
             )
             
-            print(f"✅ Credenziale firmata con chiave universitaria")
+            print(f"✅ Credenziale firmata con chiave di: {credential.issuer.name}")
             return credential
             
         except Exception as e:
             print(f"❌ Errore durante la firma: {e}")
             import traceback
             traceback.print_exc()
-            # Restituisci comunque la credenziale originale
             return credential
 
     def _save_encrypted_keys(self):
@@ -369,31 +394,46 @@ class AcademicStudentWallet:
         return True
     
     def add_credential(self, credential, tags=None):
-        if self.status != WalletStatus.UNLOCKED: raise RuntimeError("Wallet bloccato")
+        if self.status != WalletStatus.UNLOCKED: 
+            raise RuntimeError("Wallet bloccato")
+        
         storage_id = str(uuid.uuid4())
+        
+        # CORREZIONE 3: Verifica che la credenziale sia firmata prima di aggiungere
+        if not credential.signature:
+            print("⚠️ Credenziale non firmata, la sto firmando con la chiave dell'università...")
+            credential = self.sign_credential_with_university_key(credential)
+        
         if self.credential_validator:
             report = self.credential_validator.validate_credential(credential, ValidationLevel.BASIC)
-            if not report.is_valid(): print(f"⚠️  Credenziale non valida: {report.errors}")
+            if not report.is_valid(): 
+                print(f"⚠️ Credenziale non valida: {report.errors}")
+        
         self.credentials[storage_id] = WalletCredential(
             credential=credential, storage_id=storage_id, added_date=datetime.datetime.utcnow(),
             tags=tags or [], last_accessed=datetime.datetime.utcnow()
         )
         self._save_wallet_data()
-        if self.config.auto_backup: self._create_backup()
+        if self.config.auto_backup: 
+            self._create_backup()
         return storage_id
     
     def get_credential(self, storage_id):
-        if self.status != WalletStatus.UNLOCKED: raise RuntimeError("Wallet bloccato")
+        if self.status != WalletStatus.UNLOCKED: 
+            raise RuntimeError("Wallet bloccato")
         cred = self.credentials.get(storage_id)
-        if cred: cred.last_accessed = datetime.datetime.utcnow()
+        if cred: 
+            cred.last_accessed = datetime.datetime.utcnow()
         return cred
         
     def list_credentials(self):
-        if self.status != WalletStatus.UNLOCKED: raise RuntimeError("Wallet bloccato")
+        if self.status != WalletStatus.UNLOCKED: 
+            raise RuntimeError("Wallet bloccato")
         return [c.credential.get_summary() | {'storage_id': sid} for sid, c in self.credentials.items()]
         
     def remove_credential(self, storage_id):
-        if self.status != WalletStatus.UNLOCKED: raise RuntimeError("Wallet bloccato")
+        if self.status != WalletStatus.UNLOCKED: 
+            raise RuntimeError("Wallet bloccato")
         if storage_id in self.credentials:
             del self.credentials[storage_id]
             self._save_wallet_data()
@@ -401,7 +441,8 @@ class AcademicStudentWallet:
         return False
         
     def _create_backup(self):
-        if self.status != WalletStatus.UNLOCKED: return False
+        if self.status != WalletStatus.UNLOCKED: 
+            return False
         try:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_file = self.backup_dir / f"wallet_backup_{timestamp}.enc"

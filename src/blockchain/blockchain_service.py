@@ -17,7 +17,7 @@ def load_contract_data():
             address = f.read().strip()
         return abi, address
     except FileNotFoundError as e:
-        raise RuntimeError(f"Errore: file ABI/address non trovato. Dettagli: {e}")
+        raise RuntimeError(f"Errore: file ABI o indirizzo non trovato. Dettagli: {e}")
 
 
 class BlockchainService:
@@ -37,7 +37,7 @@ class BlockchainService:
         print(f"Modulo Blockchain inizializzato per l'account: {self.account.address}")
 
     def build_registration_transaction(self, credential_uuid: str, from_address: str):
-        print(f"[BLOCKCHAIN] Preparazione registrazione per UUID: {credential_uuid}...")
+        print(f"BLOCKCHAIN: Preparazione registrazione per UUID: {credential_uuid}...")
         function_call = self.contract.functions.registerCredential(credential_uuid)
         transaction = function_call.build_transaction({
             'from': from_address,
@@ -48,7 +48,7 @@ class BlockchainService:
         return transaction
 
     def build_revocation_transaction(self, credential_uuid: str, reason: str, from_address: str):
-        print(f"[BLOCKCHAIN] Preparazione revoca per UUID: {credential_uuid}...")
+        print(f"BLOCKCHAIN: Preparazione revoca per UUID: {credential_uuid}...")
         function_call = self.contract.functions.revokeCredential(credential_uuid, reason)
         transaction = function_call.build_transaction({
             'from': from_address,
@@ -59,7 +59,7 @@ class BlockchainService:
         return transaction
 
     def verify_credential(self, credential_uuid: str):
-        print(f"[VERIFIER] Verifica di UUID: {credential_uuid}...")
+        print(f"VERIFIER: Verifica di UUID: {credential_uuid}...")
         try:
             result = self.contract.functions.verifyCredential(credential_uuid).call()
             issuer, timestamp, is_revoked = result[0], result[1], result[2]

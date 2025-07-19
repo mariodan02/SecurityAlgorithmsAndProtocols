@@ -31,10 +31,7 @@ from pydantic import BaseModel, Field
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
-# =============================================================================
 # 1. MODELLI DATI API
-# =============================================================================
 
 class APIResponse(BaseModel):
     """Risposta API standardizzata"""
@@ -84,9 +81,7 @@ class UniversityRegistrationRequest(BaseModel):
     certificate_request: Dict[str, Any]
 
 
-# =============================================================================
 # 2. CONFIGURAZIONE SERVER
-# =============================================================================
 
 @dataclass
 class ServerConfiguration:
@@ -99,10 +94,9 @@ class ServerConfiguration:
     ssl_ca_file: str = "./certificates/ca/ca_certificate.pem"
     cors_origins: List[str] = field(default_factory=lambda: [
         "https://localhost:8443", 
-        "http://localhost:8000"  # Aggiungi l'URL del dashboard
+        "http://localhost:8000" 
     ])
 
-    # Sicurezza
     require_client_certificates: bool = False
     trusted_hosts: List[str] = field(default_factory=lambda: ["localhost", "127.0.0.1"])
     api_key_required: bool = True
@@ -120,9 +114,7 @@ class ServerConfiguration:
     blockchain_network: str = "testnet"
 
 
-# =============================================================================
 # 3. MIDDLEWARE E SECURITY
-# =============================================================================
 
 class RateLimiter:
     """Rate limiter semplice"""
@@ -201,10 +193,7 @@ class CredentialRequest(BaseModel):
     purpose: str
     requested_at: str
 
-
-# =============================================================================
 # 4. SECURE SERVER PRINCIPALE
-# =============================================================================
 
 class AcademicCredentialsSecureServer:
     """Server sicuro per il sistema di credenziali accademiche"""
@@ -250,7 +239,7 @@ class AcademicCredentialsSecureServer:
         self._setup_middleware()
         self._setup_routes()
         
-        print(f"🌐 Secure Server inizializzato")
+        print(f"   Secure Server inizializzato")
         print(f"   Host: {config.host}:{config.port}")
         print(f"   SSL: {'Abilitato' if config.ssl_enabled else 'Disabilitato'}")
         print(f"   API Key: {'Richiesta' if config.api_key_required else 'Opzionale'}")
@@ -323,7 +312,7 @@ class AcademicCredentialsSecureServer:
         ):
             return await self._handle_credential_validation(request, auth)
         
-        # Verify credential (tutti gli utenti)
+        # Verify credential (tutti gli utenti possono verificare)
         @self.app.post("/api/v1/credentials/verify")
         async def verify_credential(
             request: CredentialVerificationRequest,
@@ -437,7 +426,7 @@ class AcademicCredentialsSecureServer:
             # Solo issuer e verifier possono vedere le statistiche
             auth_info = await self._authenticate_request(auth)
             if auth_info["role"] not in ["issuer", "verifier"]:
-                raise HTTPException(status_code=403, detail="Insufficient permissions")
+                raise HTTPException(status_code=403, detail="permessi insufficienti")
             
             return APIResponse(
                 success=True,
@@ -479,9 +468,9 @@ class AcademicCredentialsSecureServer:
             
             # Solo issuer può sottomettere credenziali
             if auth_info["role"] != "issuer":
-                raise HTTPException(status_code=403, detail="Solo issuer può sottomettere credenziali")
+                raise HTTPException(status_code=403, detail="Solo l'issuer può sottomettere credenziali")
             
-            print(f"📤 Ricevuta sottomissione credenziale da {auth_info['username']}")
+            print(f"Ricevuta sottomissione della credenziale da {auth_info['username']}")
             
             # Genera ID sottomissione
             submission_id = str(uuid.uuid4())
@@ -514,7 +503,7 @@ class AcademicCredentialsSecureServer:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"❌ Errore sottomissione credenziale: {e}")
+            print(f"Errore sottomissione credenziale: {e}")
             return APIResponse(
                 success=False,
                 message=f"Errore interno: {e}"
@@ -532,7 +521,7 @@ class AcademicCredentialsSecureServer:
             if auth_info["role"] not in ["issuer", "verifier"]:
                 raise HTTPException(status_code=403, detail="Non autorizzato a validare credenziali")
             
-            print(f"🔍 Ricevuta richiesta validazione da {auth_info['username']}")
+            print(f"🔍Ricevuta richiesta di validazione da {auth_info['username']}")
             
             # Genera ID validazione
             validation_id = str(uuid.uuid4())
@@ -567,7 +556,7 @@ class AcademicCredentialsSecureServer:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"❌ Errore validazione credenziale: {e}")
+            print(f"Errore validazione credenziale: {e}")
             return APIResponse(
                 success=False,
                 message=f"Errore interno: {e}"
@@ -581,13 +570,12 @@ class AcademicCredentialsSecureServer:
             # Autentica
             auth_info = await self._authenticate_request(auth)
             
-            print(f"🔍 Ricevuta richiesta verifica da {auth_info['username']}")
+            print(f"Ricevuta richiesta verifica da {auth_info['username']}")
             
             # Genera ID verifica
             verification_id = str(uuid.uuid4())
             
             # Simula verifica blockchain
-            # (In un'implementazione reale, qui si chiamerebbe il modulo blockchain)
             blockchain_result = {
                 "on_chain": False,
                 "block_number": 123456,
@@ -611,7 +599,7 @@ class AcademicCredentialsSecureServer:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"❌ Errore verifica credenziale: {e}")
+            print(f"Errore verifica credenziale: {e}")
             return APIResponse(
                 success=False,
                 message=f"Errore interno: {e}"
@@ -655,7 +643,7 @@ class AcademicCredentialsSecureServer:
         try:
             auth_info = await self._authenticate_request(auth)
             
-            print(f"📊 Richiesta status credenziale: {credential_id[:8]}...")
+            print(f"Richiesta status credenziale: {credential_id[:8]}...")
             
             # Cerca nelle sottomissioni
             for submission_id, submission in self.submitted_credentials.items():
@@ -673,7 +661,7 @@ class AcademicCredentialsSecureServer:
                         }
                     )
             
-            # Non trovata
+            # Credenziale non trovata
             return APIResponse(
                 success=False,
                 message="Credenziale non trovata",

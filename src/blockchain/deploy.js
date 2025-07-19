@@ -2,8 +2,8 @@ const { Web3 } = require('web3');
 const fs = require('fs');
 const path = require('path');
 
-// Connettiti a Ganache [cite: 966]
-const ganacheUrl = 'http://127.0.0.1:7545'; // Assicurati che sia l'URL corretto di Ganache
+// Connettiamo a Ganache
+const ganacheUrl = 'http://127.0.0.1:7545'; 
 const web3 = new Web3(ganacheUrl);
 
 const contractName = 'CredentialRegistry';
@@ -16,17 +16,17 @@ const bytecodePath = path.resolve(__dirname, `${contractName}Bytecode.bin`);
 const bytecode = fs.readFileSync(bytecodePath, 'utf8');
 
 async function deploy() {
-    console.log('Attempting to deploy contract...');
+    console.log('deploy del contratto...');
 
-    // Prendi la lista degli account da Ganache [cite: 1171, 1174]
+    // Prende la lista degli account da Ganache
     const accounts = await web3.eth.getAccounts();
     const deployerAccount = accounts[0]; // Usiamo il primo account come emittente/deployer
-    console.log(`Deploying from account: ${deployerAccount}`);
+    console.log(`Deploying dall'account: ${deployerAccount}`);
 
-    // Crea un'istanza del contratto [cite: 1185, 1188]
+    // Crea un'istanza del contratto
     const contract = new web3.eth.Contract(abi);
 
-    // Esegui il deploy [cite: 1200, 1205]
+    // Esegue il deploy
     const deployedContract = await contract.deploy({
         data: '0x' + bytecode,
     }).send({
@@ -35,13 +35,13 @@ async function deploy() {
     });
 
     const contractAddress = deployedContract.options.address;
-    console.log(`✅ Contract deployed successfully at address: ${contractAddress}`);
+    console.log(` Contratto deployato con successo all'indirizzo: ${contractAddress}`);
 
     // Salva l'indirizzo del contratto per poterlo usare in altri script
     fs.writeFileSync(path.resolve(__dirname, 'contract-address.txt'), contractAddress);
-    console.log('Contract address saved to contract-address.txt');
+    console.log('Indirizzo del contratto salvato in: contract-address.txt');
 }
 
 deploy().catch(err => {
-    console.error('Deployment failed:', err);
+    console.error('Deployment fallito:', err);
 });

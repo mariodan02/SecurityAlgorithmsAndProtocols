@@ -176,15 +176,15 @@ class PresentationManager:
                           credential_selections: List[Dict[str, Any]],
                           recipient: Optional[str] = None,
                           expires_hours: int = 24,
-                          additional_documents: List[Dict[str, Any]] = None) -> str:
+                          additional_documents: List[Dict[str, Any]] = None) -> List[str]:
+        presentation_ids = []
         try:
             if self.wallet.status.value != "unlocked":
                 raise RuntimeError("Wallet deve essere sbloccato")
             
-            presentation_id = str(uuid.uuid4())
-            selective_disclosures = []
-            
             for selection in credential_selections:
+                presentation_id = str(uuid.uuid4())
+                
                 storage_id = selection['storage_id']
                 disclosure_level = selection.get('disclosure_level', DisclosureLevel.STANDARD)
                 custom_attributes = selection.get('custom_attributes', [])
@@ -203,27 +203,26 @@ class PresentationManager:
                         credential, disclosure_level,
                         purpose=purpose, recipient=recipient, expires_hours=expires_hours
                     )
-                selective_disclosures.append(disclosure)
-            
-            expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expires_hours)
-            student_pseudonym = "unknown_student"
-            if selective_disclosures:
-                student_pseudonym = selective_disclosures[0].created_by
-            
-            presentation = VerifiablePresentation(
-                presentation_id=presentation_id,
-                created_at=datetime.datetime.now(datetime.timezone.utc),
-                created_by=student_pseudonym,
-                purpose=purpose,
-                recipient=recipient,
-                expires_at=expires_at,
-                selective_disclosures=selective_disclosures,
-                additional_documents=additional_documents or [],
-                status=PresentationStatus.DRAFT
-            )
-            
-            self.presentations[presentation_id] = presentation
-            return presentation_id
+                
+                expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expires_hours)
+                student_pseudonym = disclosure.created_by
+                
+                presentation = VerifiablePresentation(
+                    presentation_id=presentation_id,
+                    created_at=datetime.datetime.now(datetime.timezone.utc),
+                    created_by=student_pseudonym,
+                    purpose=purpose,
+                    recipient=recipient,
+                    expires_at=expires_at,
+                    selective_disclosures=[disclosure],
+                    additional_documents=additional_documents or [],
+                    status=PresentationStatus.DRAFT
+                )
+                
+                self.presentations[presentation_id] = presentation
+                presentation_ids.append(presentation_id)
+
+            return presentation_ids
             
         except Exception as e:
             raise

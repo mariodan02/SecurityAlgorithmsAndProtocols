@@ -1,0 +1,78 @@
+{
+  "presentation_id": "5c268639-af4c-4b27-9300-e478ce63c368",
+  "created_at": "2025-07-19T10:13:42.407014+00:00",
+  "created_by": "student_mario_r",
+  "purpose": "Ciaone",
+  "recipient": null,
+  "expires_at": "2025-07-22T10:13:42.407005+00:00",
+  "status": "ready",
+  "selective_disclosures": [
+    {
+      "credential_id": "9e49882a-5539-4f13-825d-b817b1147269",
+      "disclosure_id": "e5d29e6f-741b-4995-90e2-dd812ffcf925",
+      "disclosed_attributes": {
+        "metadata.credential_id": "9e49882a-5539-4f13-825d-b817b1147269",
+        "subject.pseudonym": "student_mario_r",
+        "issuer.name": "Università degli Studi di Salerno"
+      },
+      "merkle_proofs": [
+        {
+          "attribute_index": 0,
+          "attribute_value": "9e49882a-5539-4f13-825d-b817b1147269",
+          "proof_path": [
+            {
+              "hash": "proof_hash_0",
+              "is_right": true
+            }
+          ],
+          "merkle_root": "bdc5bca5dd846894b901ffb2c0302b6aefa52b4cc7630285db9647480c08e20c"
+        },
+        {
+          "attribute_index": 1,
+          "attribute_value": "student_mario_r",
+          "proof_path": [
+            {
+              "hash": "proof_hash_1",
+              "is_right": false
+            }
+          ],
+          "merkle_root": "bdc5bca5dd846894b901ffb2c0302b6aefa52b4cc7630285db9647480c08e20c"
+        },
+        {
+          "attribute_index": 2,
+          "attribute_value": "Università degli Studi di Salerno",
+          "proof_path": [
+            {
+              "hash": "proof_hash_2",
+              "is_right": true
+            }
+          ],
+          "merkle_root": "bdc5bca5dd846894b901ffb2c0302b6aefa52b4cc7630285db9647480c08e20c"
+        }
+      ],
+      "disclosure_level": "custom",
+      "created_at": "2025-07-19T10:13:42.406964",
+      "created_by": "student_mario_r",
+      "purpose": "Ciaone",
+      "recipient": null,
+      "expires_at": "2025-07-22T10:13:42.406945"
+    }
+  ],
+  "additional_documents": [],
+  "format": "signed_json",
+  "verification_url": null,
+  "signature": {
+    "algoritmo": "RSA-SHA256-PSS",
+    "valore": "KcgSGWEh+07Taalf+zTlO9IoVACQ7M9XOZXSoYFOe3cYeioFvdix5NNqDKbwVTdhVMSiI3lX+laN5uCQ/dweii9CM7oZ18ZPe66YMBSPaSw/3q43U4FlpY+s9cKG3Rbthg0DffCMXxq4xJb6S9lEGZfSN1bx57IbvRpzxOefu38KwUCx8/SflDqKq0pfOqNmVrDrY/Kh9oIt9GmzhXsP7qGPa+TfeWkCckJpY5PqZW/YAillgnW4qwyJXFyk0Z/H1zB3+VUlkbM/mdqt/uVi1mOU2rSC4bX2ilkUrudv4kcO2Wh6Dw3i647clYRUW0IhNS4sPQ6kQ/jP5WnNrC5WXA==",
+    "timestamp": "2025-07-19T10:13:42.408527Z"
+  },
+  "summary": {
+    "total_disclosures": 1,
+    "unique_credentials": 1,
+    "total_attributes_disclosed": 3,
+    "universities_involved": [],
+    "is_expired": false,
+    "is_signed": true,
+    "additional_docs_count": 0
+  }
+}

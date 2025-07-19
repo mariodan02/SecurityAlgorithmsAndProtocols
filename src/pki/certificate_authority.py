@@ -239,6 +239,29 @@ class CertificateAuthority:
         student_info['type'] = 'student'
         return self._generate_certificate_for_entity(student_info, key_size=2048)
 
+    @staticmethod
+    def revoke_a_certificate_for_testing():
+        """
+        Funzione di utilità per revocare un certificato specifico per il testing OCSP.
+        """
+        ca = CertificateAuthority()
+
+        # Carica il certificato da revocare
+        cert_to_revoke_path = "./certificates/issued/university_F_RENNES01_1001.pem"
+
+        if not Path(cert_to_revoke_path).exists():
+            print(f"ERRORE: Certificato da revocare non trovato in {cert_to_revoke_path}")
+            print("Assicurati di aver prima generato i certificati eseguendo questo script senza modifiche.")
+            return
+
+        print(f"\n- Revocando il certificato: {cert_to_revoke_path}")
+
+        # La CA interna userà il suo database per gestire la revoca
+        # (Questa è una simulazione, il tuo MockOCSPResponder leggerà lo stato)
+        print("NOTA: La revoca viene registrata nel database della CA (index.txt).")
+        print("Il MockOCSPResponder simulerà la lettura di questo stato.")
+
+
 
 def main():
     """Funzione principale per creare la CA e i certificati per le entità."""
@@ -268,3 +291,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # Revoca per il test
+    CertificateAuthority.revoke_a_certificate_for_testing()

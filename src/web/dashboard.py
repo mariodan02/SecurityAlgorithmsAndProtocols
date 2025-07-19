@@ -323,9 +323,12 @@ class PresentationVerifier:
                 report["warnings"].append({"code": "TEMPORAL_INCONSISTENCY", "message": "Inconsistenze temporali rilevate"})
             
             # 5. RISULTATO FINALE
-            report["technical_details"]["signature_valid"] = all_credentials_valid
-            report["technical_details"]["merkle_tree_valid"] = all_credentials_valid
-            if student_sig_valid and all_credentials_valid and len(report["errors"]) == 0:
+            # Dai priorità allo stato di revoca
+            if report["technical_details"]["blockchain_status"] == "revoked":
+                report["overall_result"] = "revoked"
+                report["is_valid"] = False
+                self.logger.info("🚫 Presentazione REVOCATA")
+            elif student_sig_valid and all_credentials_valid and len(report["errors"]) == 0:
                 report["overall_result"] = "valid"
                 report["is_valid"] = True
                 self.logger.info("✅ Presentazione VALIDA")
@@ -337,7 +340,7 @@ class PresentationVerifier:
                 report["overall_result"] = "invalid"
                 report["is_valid"] = False
                 self.logger.info("❌ Presentazione NON VALIDA")
-            
+
             return report
             
         except Exception as e:
@@ -356,7 +359,6 @@ class PresentationVerifier:
             signature_info = presentation_data["signature"]
             public_key = serialization.load_pem_public_key(student_public_key_pem.encode())
             
-            # --- CORREZIONE #2: Ricostruzione precisa del payload ---
             # Questo dizionario deve contenere ESATTAMENTE gli stessi campi
             # del metodo `get_data_for_signing` in `presentation.py` per garantire che l'hash corrisponda.
             data_for_verification = {
@@ -376,8 +378,6 @@ class PresentationVerifier:
             from crypto.foundations import DigitalSignature
             verifier = DigitalSignature("PSS")
             
-            # Passiamo al metodo di verifica un dizionario che include la firma,
-            # come si aspetta la funzione `verify_document_signature`.
             document_to_verify = data_for_verification.copy()
             document_to_verify['firma'] = signature_info
             
@@ -397,7 +397,7 @@ class PresentationVerifier:
     async def _verify_merkle_proofs(self, credential_disclosure: dict) -> bool:
         try:
             # Implementazione semplificata per la demo
-            self.logger.info("✅ Merkle proofs considerate valide (demo)")
+            self.logger.info("✅ ERROR Merkle proofs considerate valide (demo)")
             return True
         except Exception as e:
             self.logger.error(f"Errore verifica Merkle proof: {e}")
@@ -406,7 +406,7 @@ class PresentationVerifier:
     async def _verify_university_signature(self, credential_disclosure: dict) -> bool:
         try:
             # Implementazione semplificata per la demo
-            self.logger.info("✅ Firma università considerata valida (demo)")
+            self.logger.info("ERROR Firma università considerata valida (demo)")
             return True
         except Exception as e:
             self.logger.error(f"Errore verifica firma università: {e}")

@@ -4,6 +4,31 @@
     <h1 class="h4 mb-0">🔍 Verifica credenziali</h1>
 </div>
 
+<div class="modal fade" id="verificationConfirmModal" tabindex="-1" aria-labelledby="verificationModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="verificationModalLabel">Conferma Verifica</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Stai per avviare una verifica completa della presentazione.</p>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" value="" id="checkOCSP" checked>
+          <label class="form-check-label" for="checkOCSP">
+            <strong>Includi controllo di revoca OCSP</strong>
+            <small class="d-block text-muted">Contatta il server della Certificate Authority per verificare se il certificato dell'università emittente è ancora valido (consigliato).</small>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-primary" id="confirmVerifyButton">Avvia Verifica</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="row g-4">
     <div class="col-lg-8">
         <div class="card">
@@ -16,7 +41,7 @@
                     <ol class="mb-0 mt-2">
                         <li>Verifica firma digitale studente</li>
                         <li>Controllo Merkle Proof per divulgazione selettiva</li>
-                        <li>Verifica firma università emittente</li>
+                        <li>Verifica firma università emittente (e stato revoca OCSP)</li>
                         <li>Controllo stato revoca su blockchain</li>
                         <li>Validazione temporale</li>
                     </ol>
@@ -123,49 +148,60 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('full-verify-form');
-    const fileInput = document.getElementById('presentationFile');
-    const publicKeyInput = document.getElementById('studentPublicKey');
     const verifyButton = document.getElementById('verifyButton');
     const verifyText = document.getElementById('verifyText');
     const verifySpinner = document.getElementById('verifySpinner');
     const resultsCard = document.getElementById('verificationResults');
     const resultContent = document.getElementById('resultContent');
+    
+    const confirmModal = new bootstrap.Modal(document.getElementById('verificationConfirmModal'));
+    const confirmButton = document.getElementById('confirmVerifyButton');
 
-    // Gestione submit form
-    form.addEventListener('submit', async function(event) {
+    // Quando il form viene sottomesso, apri il modal di conferma invece di inviare subito
+    form.addEventListener('submit', function(event) {
         event.preventDefault();
-        
-        if (!validateForm()) return;
-        
+        if (validateForm()) {
+            confirmModal.show();
+        }
+    });
+
+    // Quando l'utente conferma dal modal, esegui la verifica
+    confirmButton.addEventListener('click', async function() {
+        confirmModal.hide();
         setLoadingState(true);
-        
+
         try {
+            const fileInput = document.getElementById('presentationFile');
+            const publicKeyInput = document.getElementById('studentPublicKey');
+            
             const presentationData = await readFileAsJSON(fileInput.files[0]);
             const publicKey = publicKeyInput.value.trim();
             const purpose = document.getElementById('verificationPurpose').value;
-            
+            const checkOCSP = document.getElementById('checkOCSP').checked; // Leggi lo stato della checkbox
+
             const requestData = {
                 presentation_data: presentationData,
                 student_public_key: publicKey,
-                purpose: purpose
+                purpose: purpose,
+                check_ocsp: checkOCSP // Includi il flag nella richiesta
             };
-            
-            console.log('🔍 Invio richiesta verifica:', requestData);
-            
+
+            console.log('🔍 Invio richiesta verifica (OCSP:', checkOCSP, '):', requestData);
+
             const response = await fetch('/verification/full-verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestData)
             });
-            
+
             const result = await response.json();
-            
+
             if (response.ok && result.success) {
                 displayVerificationReport(result.verification_report);
             } else {
                 throw new Error(result.message || 'Errore durante la verifica');
             }
-            
+
         } catch (error) {
             console.error('❌ Errore verifica:', error);
             displayError(error.message);
@@ -175,6 +211,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     function validateForm() {
+        const fileInput = document.getElementById('presentationFile');
+        const publicKeyInput = document.getElementById('studentPublicKey');
+
         if (fileInput.files.length === 0) {
             alert('Seleziona un file di presentazione');
             fileInput.focus();
@@ -220,12 +259,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function displayVerificationReport(report) {
         console.log('📊 Report verifica ricevuto:', report);
         
-        const isValid = report.is_valid;
         const result = report.overall_result.toUpperCase();
         
         let resultText = result;
         if (result === 'REVOKED') {
             resultText = 'CREDENZIALE REVOCATA';
+        } else if (result === 'WARNING') {
+            resultText = 'VALIDA (CON AVVERTENZE)';
         }
         
         let html = '';
@@ -233,7 +273,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Header risultato
         html += `<div class="alert ${getAlertClass(result)} border-0">`;
         html += `<div class="d-flex align-items-center">`;
-        html += `<div class="me-3">${getResultIcon(result)}</div>`;
+        html += `<div class="me-3 fs-2">${getResultIcon(result)}</div>`;
         html += `<div>`;
         html += `<h5 class="mb-1">Risultato: ${resultText}</h5>`;
         html += `<div class="small">Credenziale: ${report.credential_id}</div>`;
@@ -243,17 +283,18 @@ document.addEventListener('DOMContentLoaded', function() {
         // Dettagli tecnici
         html += `<div class="row g-3 mb-4">`;
         html += createVerificationCard('👤 Firma Studente', report.technical_details.student_signature_valid);
-        html += createVerificationCard('🏛️ Firma Università', report.technical_details.signature_valid);
+        html += createVerificationCard('🏛️ Certificato Università', report.technical_details.signature_valid);
         html += createVerificationCard('🌳 Merkle Tree', report.technical_details.merkle_tree_valid);
         html += createVerificationCard('⏰ Validità Temporale', report.technical_details.temporal_valid);
         html += createBlockchainCard('🔗 Blockchain', report.technical_details.blockchain_status);
+        html += createOCSPCard('📡 OCSP Status', report.technical_details.ocsp_status);
         html += `</div>`;
         
         // Errori
         if (report.errors && report.errors.length > 0) {
             html += `<div class="alert alert-danger border-0">`;
             html += `<h6 class="alert-heading">❌ Errori rilevati (${report.errors.length})</h6>`;
-            html += `<ul class="mb-0">`;
+            html += `<ul class="mb-0 ps-3">`;
             report.errors.forEach(error => {
                 html += `<li><strong>${error.code}:</strong> ${error.message}</li>`;
             });
@@ -264,7 +305,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (report.warnings && report.warnings.length > 0) {
             html += `<div class="alert alert-warning border-0">`;
             html += `<h6 class="alert-heading">⚠️ Avvertenze (${report.warnings.length})</h6>`;
-            html += `<ul class="mb-0">`;
+            html += `<ul class="mb-0 ps-3">`;
             report.warnings.forEach(warning => {
                 html += `<li><strong>${warning.code}:</strong> ${warning.message}</li>`;
             });
@@ -275,7 +316,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (report.info && report.info.length > 0) {
             html += `<div class="alert alert-info border-0">`;
             html += `<h6 class="alert-heading">ℹ️ Informazioni</h6>`;
-            html += `<ul class="mb-0">`;
+            html += `<ul class="mb-0 ps-3">`;
             report.info.forEach(info => {
                 html += `<li>${info.message}</li>`;
             });
@@ -355,6 +396,42 @@ document.addEventListener('DOMContentLoaded', function() {
                 icon = '❓'; badgeClass = 'bg-secondary'; displayStatus = 'NON VERIFICATA';
         }
         
+        return `
+            <div class="col-md-6">
+                <div class="card border-0 bg-light">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="small fw-medium">${title}</div>
+                            <span class="badge ${badgeClass}">${icon} ${displayStatus}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function createOCSPCard(title, status) {
+        let icon, badgeClass, displayStatus;
+
+        switch(status) {
+            case 'good':
+                icon = '✅'; badgeClass = 'bg-success'; displayStatus = 'VALIDO';
+                break;
+            case 'revoked':
+                icon = '🚫'; badgeClass = 'bg-danger'; displayStatus = 'REVOCATO';
+                break;
+            case 'error':
+            case 'timeout':
+            case 'unreachable':
+                icon = '⚠️'; badgeClass = 'bg-warning'; displayStatus = 'ERRORE';
+                break;
+            case 'unknown':
+                icon = '❓'; badgeClass = 'bg-secondary'; displayStatus = 'SCONOSCIUTO';
+                break;
+            default:
+                icon = '➖'; badgeClass = 'bg-light text-dark'; displayStatus = 'NON VERIFICATO';
+        }
+
         return `
             <div class="col-md-6">
                 <div class="card border-0 bg-light">

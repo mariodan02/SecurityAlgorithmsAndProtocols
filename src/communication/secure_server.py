@@ -554,7 +554,7 @@ class AcademicCredentialsSecureServer:
             # Simula verifica blockchain
             # (In un'implementazione reale, qui si chiamerebbe il modulo blockchain)
             blockchain_result = {
-                "on_chain": True,
+                "on_chain": False,
                 "block_number": 123456,
                 "transaction_hash": "0x1234567890abcdef",
                 "timestamp": "2025-07-18T12:34:56Z",

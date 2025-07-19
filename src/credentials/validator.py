@@ -361,14 +361,10 @@ class AcademicCredentialValidator:
             for i, (course, proof) in enumerate(zip(disclosed_courses, merkle_proofs)):
                 print(f"   Validando proof {i+1}/{len(disclosed_courses)}: {course.course_name}")
                 
-                # Crea Merkle Tree temporaneo per validazione
-                # Nota: In implementazione reale, dovremmo ricostruire il path
                 course_data = course.dict()
                 
                 try:
-                    # Simulazione validazione proof (implementazione semplificata)
-                    # In realtà dovremmo ricostruire il path fino alla root
-                    is_valid = self._verify_merkle_proof_simplified(course_data, proof, original_merkle_root)
+                    is_valid = self._verify_merkle_proof(course_data, proof, original_merkle_root)
                     
                     if not is_valid:
                         report.add_error("INVALID_MERKLE_PROOF", 
@@ -786,23 +782,38 @@ class AcademicCredentialValidator:
         except Exception as e:
             return {'valid': False, 'error': f'Errore validazione trust chain: {e}'}
     
-    def _verify_merkle_proof_simplified(self, course_data: Dict, proof: List[Dict], root: str) -> bool:
-        """Verifica semplificata di una Merkle proof"""
+    def _verify_merkle_proof(self, data: Dict, proof: List[Dict], root: str) -> bool:
+        """
+        **CORRETTO**: Verifica crittografica completa di una Merkle proof.
+        """
         try:
-            # Implementazione semplificata per demo
-            # In realtà dovremmo ricostruire il path completo
+            # 1. Hash del dato originale
+            current_hash = self.crypto_utils.sha256_hash_string(json.dumps(data, sort_keys=True))
             
-            # Hash del corso
-            course_hash = self.crypto_utils.sha256_hash_string(json.dumps(course_data, sort_keys=True))
+            # 2. Ricostruisce il percorso verso la radice
+            for step in proof:
+                sibling_hash = step.get('hash')
+                is_right_sibling = step.get('is_right', False)
+                
+                if not sibling_hash:
+                    continue # Salta step non validi
+
+                if is_right_sibling:
+                    # Il sibling è a destra, quindi il nostro hash è a sinistra
+                    combined = current_hash + sibling_hash
+                else:
+                    # Il sibling è a sinistra
+                    combined = sibling_hash + current_hash
+                
+                current_hash = self.crypto_utils.sha256_hash_string(combined)
             
-            # Simula la verifica del path
-            # Per la demo, assumiamo sia valida se la proof non è vuota
-            return len(proof) > 0
-            
+            # 3. Confronta la radice calcolata con quella attesa
+            return current_hash == root
+
         except Exception as e:
             print(f"⚠️  Errore verifica Merkle proof: {e}")
             return False
-    
+
     def _load_trusted_ca_certificates(self):
         """Carica certificati CA di fiducia"""
         try:
@@ -1023,7 +1034,6 @@ def demo_credential_validator():
         import traceback
         traceback.print_exc()
         return None
-
 
 # =============================================================================
 # 4. MAIN - PUNTO DI INGRESSO

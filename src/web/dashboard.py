@@ -10,7 +10,7 @@ import json
 import uuid
 import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import logging
 from dataclasses import dataclass
 
@@ -296,7 +296,7 @@ class PresentationVerifier:
             for i, cred_disclosure in enumerate(credentials):
                 self.logger.info(f"  3️⃣ Verifica credenziale {i+1}/{len(credentials)}...")
                 if "merkle_proofs" in cred_disclosure:
-                    merkle_valid = await self._verify_merkle_proofs(cred_disclosure)
+                    merkle_valid = await self._verify_merkle_proofs(cred_disclosure, report)
                     if not merkle_valid:
                         report["warnings"].append({"code": "MERKLE_PROOF_INVALID", "message": f"Merkle proof non valida per credenziale {i+1}"})
                         all_credentials_valid = False
@@ -394,14 +394,50 @@ class PresentationVerifier:
     def _extract_credentials_from_presentation(self, presentation_data: dict) -> list:
         return presentation_data.get("selective_disclosures", [])
     
-    async def _verify_merkle_proofs(self, credential_disclosure: dict) -> bool:
+    async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
+        """
+        **FIX**: Esegue una verifica reale dei Merkle Proof usando il validator.
+        """
         try:
-            # Implementazione semplificata per la demo
-            self.logger.info("✅ ERROR Merkle proofs considerate valide (demo)")
-            return True
+            self.logger.info("  Verifica Merkle proofs...")
+            disclosed_attributes = disclosure.get("disclosed_attributes", {})
+            merkle_proofs = disclosure.get("merkle_proofs", [])
+            
+            # L'architettura attuale genera Merkle proof solo per i corsi.
+            # Filtriamo quindi gli attributi e le prove relative ai corsi.
+            course_proofs = [p for p in merkle_proofs if "courses" in p.get("attribute_value", {})]
+            disclosed_courses = [Course.from_dict(v) for k, v in disclosed_attributes.items() if k.startswith("courses.")]
+
+            if not disclosed_courses:
+                 report["info"].append({"code": "NO_COURSES_DISCLOSED", "message": "Nessun corso divulgato, verifica Merkle non applicabile."})
+                 return True, ""
+
+            if not course_proofs:
+                return False, "Nessuna Merkle proof trovata per i corsi divulgati."
+
+            # La root è la stessa per tutte le prove di una stessa credenziale
+            original_merkle_root = course_proofs[0].get("merkle_root")
+            if not original_merkle_root:
+                return False, "Merkle root mancante nelle prove."
+
+            # Utilizza il validator per la verifica
+            report = self.validator.validate_selective_disclosure(
+                disclosed_courses,
+                [p['proof_path'] for p in course_proofs],
+                original_merkle_root
+            )
+            
+            if report.is_valid():
+                self.logger.info("  ✅ Merkle proofs valide.")
+                return True, ""
+            else:
+                error_msg = report.errors[0].message if report.errors else "Verifica Merkle fallita"
+                self.logger.warning(f"  ❌ Merkle proofs non valide: {error_msg}")
+                return False, error_msg
+                
         except Exception as e:
-            self.logger.error(f"Errore verifica Merkle proof: {e}")
-            return False
+            self.logger.error(f"  ❌ Errore critico durante verifica Merkle proof: {e}")
+            return False, f"Errore interno: {e}"
     
     async def _verify_university_signature(self, credential_disclosure: dict) -> bool:
         try:

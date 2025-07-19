@@ -147,8 +147,8 @@ class AcademicCredentialIssuer:
         
         try:
             # Carica la chiave privata di Ganache dal file di testo
-            with open('ganache_key.txt', '..', 'r') as f:
-                ganache_private_key = f.read().strip()
+            #with open('ganache_key.txt', 'r') as f:
+            ganache_private_key = '0xc6e10d62b4d468cd29192e693c78cb888b1e327f4847dac9bc305dd65bfffb55'
 
             self.blockchain_service = BlockchainService(
                 raw_private_key=ganache_private_key

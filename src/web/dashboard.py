@@ -57,7 +57,7 @@ from cryptography.x509 import load_pem_x509_certificate
 class AppConfig:
     """Configurazione centralizzata dell'applicazione."""
     secret_key: str = "Unisa2025"
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = True
     templates_dir: str = "./src/web/templates"
@@ -1437,6 +1437,7 @@ class AcademicCredentialsDashboard:
             credential_type: str = Form(...),
             study_period_start: str = Form(...),
             study_period_end: str = Form(...),
+            callback_url: Optional[str] = Form(None),
             course_name: List[str] = Form([]),
             course_cfu: List[str] = Form([]),
             course_grade: List[str] = Form([]),
@@ -1568,6 +1569,24 @@ class AcademicCredentialsDashboard:
                 credential = issuance_result.credential
                 credential_id_str = str(credential.metadata.credential_id)
 
+                if callback_url:
+                    self.logger.info(f"🚀 Preparazione per l'invio della credenziale a {callback_url}")
+                    
+                    # Definisci una funzione asincrona per l'invio
+                    async def send_credential_callback(url: str, cred_data: dict):
+                        try:
+                            async with httpx.AsyncClient() as client:
+                                response = await client.post(url, json=cred_data, timeout=10.0)
+                                if response.is_success:
+                                    self.logger.info(f"✅ Credenziale inviata con successo a {url}. Status: {response.status_code}")
+                                else:
+                                    self.logger.error(f"❌ Fallito l'invio della credenziale a {url}. Status: {response.status_code}, Response: {response.text}")
+                        except Exception as e:
+                            self.logger.error(f"🔥 Errore critico durante l'invio della credenziale a {url}: {e}")
+                    
+                    # Avvia l'invio in background per non bloccare la risposta all'utente
+                    asyncio.create_task(send_credential_callback(callback_url, credential.to_dict()))
+
                 import re
                 safe_student_name = re.sub(r'[^\w\s-]', '', student_name).strip().replace(' ', '_')
 
@@ -1590,6 +1609,10 @@ class AcademicCredentialsDashboard:
                     "total_courses": len(courses),
                     "total_ects": sum(c.ects_credits for c in courses)
                 }
+                if callback_url:
+                    result_data["message"] += f" L'invio a {callback_url} è stato avviato."
+
+                    return JSONResponse(result_data)
 
                 self.logger.info(f"🎉 Emissione della credenziale completata con successo per {student_name}")
                 return JSONResponse(result_data)

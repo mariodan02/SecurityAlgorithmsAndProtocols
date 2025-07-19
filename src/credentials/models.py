@@ -569,7 +569,7 @@ class CredentialFactory:
     @staticmethod
     def create_sample_credential() -> AcademicCredential:
         """
-        Crea una credenziale di esempio per testing.
+        Crea una credenziale di esempio per inizializzare il wallet.
         
         Returns:
             Credenziale di esempio completamente configurata

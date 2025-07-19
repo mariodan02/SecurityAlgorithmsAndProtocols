@@ -98,7 +98,7 @@ class ServerConfiguration:
     ])
 
     require_client_certificates: bool = False
-    trusted_hosts: List[str] = field(default_factory=lambda: ["localhost", "127.0.0.1"])
+    trusted_hosts: List[str] = field(default_factory=lambda: ["localhost", "0.0.0.0"])
     api_key_required: bool = True
     rate_limit_requests: int = 100
     rate_limit_window_seconds: int = 60

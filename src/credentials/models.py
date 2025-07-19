@@ -27,22 +27,6 @@ try:
     from crypto.foundations import CryptoUtils, MerkleTree
 except ImportError:
     print("⚠️  Assicurati che i moduli crypto (CryptoUtils, MerkleTree) siano disponibili.")
-    # Per permettere l'esecuzione dello script anche senza crypto, creo dei mock
-    class MockCryptoUtils:
-        def sha256_hash_string(self, s: str) -> str:
-            import hashlib
-            return hashlib.sha256(s.encode('utf-8')).hexdigest()
-    class MockMerkleTree:
-        def __init__(self, data: list):
-            self.data = data
-        def get_merkle_root(self) -> str:
-            import hashlib
-            if not self.data: return ""
-            return hashlib.sha256(str(self.data).encode('utf-8')).hexdigest()
-    CryptoUtils = MockCryptoUtils
-    MerkleTree = MockMerkleTree
-    print("   -> Utilizzo di Mocks per CryptoUtils e MerkleTree.")
-
 
 # =============================================================================
 # 1. ENUMS E COSTANTI
@@ -479,36 +463,120 @@ class CredentialFactory:
     
     @staticmethod
     def create_sample_credential() -> AcademicCredential:
-        """Crea una credenziale di esempio per testing"""
-        univ_salerno = University(name="Università degli Studi di Salerno", country="IT", erasmus_code="I SALERNO01", city="Fisciano", website="https://www.unisa.it")
-        univ_rennes = University(name="Université de Rennes", country="FR", erasmus_code="F RENNES01", city="Rennes", website="https://www.univ-rennes1.fr")
+        """Crea una credenziale di esempio per testing - SCENARIO ERASMUS CORRETTO"""
+        
+        # CORREZIONE: Inverti issuer e host_university per scenario realistico
+        # Università francese (EMETTE la credenziale - ha certificato e chiave)
+        univ_rennes = University(
+            name="Université de Rennes", 
+            country="FR", 
+            erasmus_code="F RENNES01", 
+            city="Rennes", 
+            website="https://www.univ-rennes1.fr"
+        )
+        
+        # Università italiana (OSPITA lo studente normalmente - verifica la credenziale)
+        univ_salerno = University(
+            name="Università degli Studi di Salerno", 
+            country="IT", 
+            erasmus_code="I SALERNO01", 
+            city="Fisciano", 
+            website="https://www.unisa.it"
+        )
+        
         crypto_utils = CryptoUtils()
+        
+        # Studente italiano
         student_info = PersonalInfo(
-            surname_hash=crypto_utils.sha256_hash_string("Rossi"), name_hash=crypto_utils.sha256_hash_string("Mario"),
-            birth_date_hash=crypto_utils.sha256_hash_string("1995-03-15"), student_id_hash=crypto_utils.sha256_hash_string("0622702628"),
+            surname_hash=crypto_utils.sha256_hash_string("Rossi"), 
+            name_hash=crypto_utils.sha256_hash_string("Mario"),
+            birth_date_hash=crypto_utils.sha256_hash_string("1995-03-15"), 
+            student_id_hash=crypto_utils.sha256_hash_string("0622702628"),
             pseudonym="student_mario_r"
         )
+        
+        # Periodo Erasmus in Francia
         study_period = StudyPeriod(
             start_date=datetime.datetime(2024, 9, 1, tzinfo=datetime.timezone.utc),
             end_date=datetime.datetime(2025, 2, 28, tzinfo=datetime.timezone.utc),
-            study_type=StudyType.ERASMUS, academic_year="2024/2025", semester="Fall 2024"
+            study_type=StudyType.ERASMUS, 
+            academic_year="2024/2025", 
+            semester="Fall 2024"
         )
+        
+        # Programma di studio in Francia
         study_program = StudyProgram(
-            name="Computer Science and Engineering", isced_code="0613", eqf_level=EQFLevel.LEVEL_7,
-            program_type="Laurea Magistrale", field_of_study="Informatica"
+            name="Computer Science and Engineering", 
+            isced_code="0613", 
+            eqf_level=EQFLevel.LEVEL_7,
+            program_type="Laurea Magistrale", 
+            field_of_study="Informatica"
         )
+        
+        # Corsi sostenuti in Francia (con voti francesi convertiti)
         courses = [
-            Course(course_name="Algoritmi e Protocolli per la Sicurezza", course_code="INF/01-APS", isced_code="0613", grade=ExamGrade(score="28/30", passed=True, grade_system=GradeSystem.ITALIAN_30, ects_grade="B"), exam_date=datetime.datetime(2024, 12, 15, 9, 30, tzinfo=datetime.timezone.utc), ects_credits=6, professor="Prof. Carlo Mazzocca", course_description="Algoritmi crittografici e protocolli di sicurezza"),
-            Course(course_name="Intelligenza Artificiale", course_code="INF/01-AI", isced_code="0613", grade=ExamGrade(score="30/30", passed=True, grade_system=GradeSystem.ITALIAN_30, ects_grade="A"), exam_date=datetime.datetime(2024, 11, 20, 14, 0, tzinfo=datetime.timezone.utc), ects_credits=8, professor="Prof.ssa Anna Bianchi", course_description="Fondamenti di intelligenza artificiale e machine learning"),
-            Course(course_name="Sistemi Distribuiti", course_code="INF/01-SD", isced_code="0613", grade=ExamGrade(score="25/30", passed=True, grade_system=GradeSystem.ITALIAN_30, ects_grade="C"), exam_date=datetime.datetime(2025, 1, 10, 10, 0, tzinfo=datetime.timezone.utc), ects_credits=6, professor="Prof. Giuseppe Verdi", course_description="Architetture e algoritmi per sistemi distribuiti")
+            Course(
+                course_name="Algoritmes et Protocoles pour la Sécurité", 
+                course_code="INF/01-APS", 
+                isced_code="0613", 
+                grade=ExamGrade(
+                    score="B", 
+                    passed=True, 
+                    grade_system=GradeSystem.ECTS_GRADE, 
+                    ects_grade="B"
+                ), 
+                exam_date=datetime.datetime(2024, 12, 15, 9, 30, tzinfo=datetime.timezone.utc), 
+                ects_credits=6, 
+                professor="Prof. Jean Dupont", 
+                course_description="Algorithmes cryptographiques et protocoles de sécurité"
+            ),
+            Course(
+                course_name="Intelligence Artificielle", 
+                course_code="INF/01-AI", 
+                isced_code="0613", 
+                grade=ExamGrade(
+                    score="A", 
+                    passed=True, 
+                    grade_system=GradeSystem.ECTS_GRADE, 
+                    ects_grade="A"
+                ), 
+                exam_date=datetime.datetime(2024, 11, 20, 14, 0, tzinfo=datetime.timezone.utc), 
+                ects_credits=8, 
+                professor="Prof. Marie Martin", 
+                course_description="Fondements de l'intelligence artificielle et machine learning"
+            ),
+            Course(
+                course_name="Systèmes Distribués", 
+                course_code="INF/01-SD", 
+                isced_code="0613", 
+                grade=ExamGrade(
+                    score="C", 
+                    passed=True, 
+                    grade_system=GradeSystem.ECTS_GRADE, 
+                    ects_grade="C"
+                ), 
+                exam_date=datetime.datetime(2025, 1, 10, 10, 0, tzinfo=datetime.timezone.utc), 
+                ects_credits=6, 
+                professor="Prof. Pierre Durand", 
+                course_description="Architectures et algorithmes pour systèmes distribués"
+            )
         ]
+        
         total_credits = sum(c.ects_credits for c in courses)
         metadata = Metadata(merkle_root="placeholder")
+        
+        # CORREZIONE CRUCIALE: issuer = Rennes (ha certificato), host = Salerno (studente italiano)
         credential = AcademicCredential(
-            metadata=metadata, issuer=univ_salerno, subject=student_info, study_period=study_period,
-            host_university=univ_rennes, study_program=study_program, courses=courses,
+            metadata=metadata, 
+            issuer=univ_rennes,           # 🇫🇷 EMETTE la credenziale (ha certificato)
+            subject=student_info, 
+            study_period=study_period,
+            host_university=univ_salerno, # 🇮🇹 OSPITA lo studente (università di origine)
+            study_program=study_program, 
+            courses=courses,
             total_ects_credits=total_credits
         )
+        
         credential.update_merkle_root()
         credential.average_grade = credential.calculate_average_grade()
         return credential

@@ -10,6 +10,9 @@ import datetime
 import ipaddress
 from pathlib import Path
 
+HOST = "127.0.0.1"
+PORT = 5001
+
 try:
     # Prova l'import assoluto, che funzionerà se 'src' è già nel PYTHONPATH
     from pki.certificate_manager import CertificateManager
@@ -93,7 +96,15 @@ class CertificateAuthority:
             datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365 * 10)
         ).add_extension(
             x509.BasicConstraints(ca=True, path_length=None), critical=True,
-        )
+        ).add_extension(
+            x509.AuthorityInformationAccess([
+                x509.AccessDescription(
+                x509.oid.AuthorityInformationAccessOID.OCSP,
+                x509.UniformResourceIdentifier(f"http://{HOST}:{PORT}/ocsp")
+            )
+        ]),
+        critical=False
+    )
 
         certificate = builder.sign(private_key, hashes.SHA256())
 
@@ -255,12 +266,6 @@ class CertificateAuthority:
             return
 
         print(f"\n- Revocando il certificato: {cert_to_revoke_path}")
-
-        # La CA interna userà il suo database per gestire la revoca
-        # (Questa è una simulazione, il tuo MockOCSPResponder leggerà lo stato)
-        print("NOTA: La revoca viene registrata nel database della CA (index.txt).")
-        print("Il MockOCSPResponder simulerà la lettura di questo stato.")
-
 
 
 def main():

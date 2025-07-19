@@ -1,46 +1,42 @@
-# =============================================================================
-# FASE 3: STRUTTURA CREDENZIALI ACCADEMICHE - VALIDATOR
-# File: credentials/validator.py
-# Sistema Credenziali Accademiche Decentralizzate
-# =============================================================================
-import json
+"""
+Sistema di validazione credenziali accademiche.
+
+Questo modulo fornisce la funzionalità per:
+- Validazione formato e struttura credenziali
+- Verifica firme digitali e certificati
+- Controllo integrità Merkle Tree
+- Validazione aspetti temporali
+- Verifica stato di revoca (OCSP)
+- Analisi forense avanzata
+- Validazione divulgazione selettiva
+"""
+
 import datetime
-import os
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+import json
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-# Cryptography imports
 from cryptography import x509
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.exceptions import InvalidSignature
-
-# Import moduli interni
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from cryptography.hazmat.primitives import serialization
 
 try:
-    from crypto.foundations import DigitalSignature, CryptoUtils, MerkleTree
+    from crypto.foundations import CryptoUtils, DigitalSignature
+    from credentials.models import AcademicCredential, Course, CredentialStatus
     from pki.certificate_manager import CertificateManager
-    from pki.ocsp_client import OCSPClient, OCSPStatus
-    from credentials.models import (
-        AcademicCredential, CredentialStatus, Course,
-        CredentialFactory
-    )
+    from pki.ocsp_client import OCSPClient, OCSPConfiguration, OCSPStatus
 except ImportError as e:
-    print(f"⚠️  Errore import moduli interni: {e}")
-    print("   Assicurati che tutti i moduli siano presenti nel progetto")
-    raise
+    raise ImportError(f"Moduli richiesti non disponibili: {e}")
 
 
-# =============================================================================
-# 1. ENUMS E STRUTTURE DATI VALIDATION
-# =============================================================================
+logger = logging.getLogger(__name__)
+
 
 class ValidationLevel(Enum):
-    """Livelli di validazione"""
+    """Livelli di validazione disponibili."""
     BASIC = "basic"               # Validazione base formato
     STANDARD = "standard"         # Include verifica firma
     COMPLETE = "complete"         # Include OCSP e revoca
@@ -48,7 +44,7 @@ class ValidationLevel(Enum):
 
 
 class ValidationResult(Enum):
-    """Risultati validazione"""
+    """Possibili risultati di validazione."""
     VALID = "valid"
     INVALID = "invalid"
     WARNING = "warning"
@@ -59,7 +55,7 @@ class ValidationResult(Enum):
 
 @dataclass
 class ValidationError:
-    """Errore di validazione"""
+    """Rappresenta un errore di validazione."""
     code: str
     severity: str  # "error", "warning", "info"
     message: str
@@ -67,6 +63,7 @@ class ValidationError:
     details: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
+        """Converte l'errore in dizionario."""
         return {
             'code': self.code,
             'severity': self.severity,
@@ -78,7 +75,7 @@ class ValidationError:
 
 @dataclass
 class ValidationReport:
-    """Report completo di validazione"""
+    """Report completo di una validazione."""
     credential_id: str
     validation_level: ValidationLevel
     overall_result: ValidationResult
@@ -87,7 +84,7 @@ class ValidationReport:
     warnings: List[ValidationError] = field(default_factory=list)
     info: List[ValidationError] = field(default_factory=list)
     
-    # Risultati specifici
+    # Risultati specifici delle verifiche
     format_valid: bool = False
     signature_valid: bool = False
     certificate_valid: bool = False
@@ -101,31 +98,34 @@ class ValidationReport:
     trusted_issuers: List[str] = field(default_factory=list)
     
     def is_valid(self) -> bool:
-        """Determina se la credenziale è valida overall"""
+        """Determina se la credenziale è valida overall."""
         return self.overall_result == ValidationResult.VALID
     
     def has_errors(self) -> bool:
-        """Verifica presenza errori"""
+        """Verifica presenza di errori."""
         return len(self.errors) > 0
     
     def has_warnings(self) -> bool:
-        """Verifica presenza warning"""
+        """Verifica presenza di warning."""
         return len(self.warnings) > 0
     
-    def add_error(self, code: str, message: str, field: Optional[str] = None, details: Optional[Dict] = None):
-        """Aggiunge errore"""
+    def add_error(self, code: str, message: str, field: Optional[str] = None, 
+                  details: Optional[Dict] = None) -> None:
+        """Aggiunge un errore al report."""
         self.errors.append(ValidationError(code, "error", message, field, details))
     
-    def add_warning(self, code: str, message: str, field: Optional[str] = None, details: Optional[Dict] = None):
-        """Aggiunge warning"""
+    def add_warning(self, code: str, message: str, field: Optional[str] = None, 
+                   details: Optional[Dict] = None) -> None:
+        """Aggiunge un warning al report."""
         self.warnings.append(ValidationError(code, "warning", message, field, details))
     
-    def add_info(self, code: str, message: str, field: Optional[str] = None, details: Optional[Dict] = None):
-        """Aggiunge info"""
+    def add_info(self, code: str, message: str, field: Optional[str] = None, 
+                 details: Optional[Dict] = None) -> None:
+        """Aggiunge un'informazione al report."""
         self.info.append(ValidationError(code, "info", message, field, details))
     
     def to_dict(self) -> Dict[str, Any]:
-        """Converte in dizionario"""
+        """Converte il report in dizionario."""
         return {
             'credential_id': self.credential_id,
             'validation_level': self.validation_level.value,
@@ -151,7 +151,7 @@ class ValidationReport:
 
 @dataclass
 class ValidatorConfiguration:
-    """Configurazione validator"""
+    """Configurazione per il validator."""
     trusted_ca_certificates: List[str] = field(default_factory=list)
     revocation_check_enabled: bool = True
     ocsp_enabled: bool = True
@@ -163,30 +163,33 @@ class ValidatorConfiguration:
     cache_duration_minutes: int = 30
 
 
-# =============================================================================
-# 2. ACADEMIC CREDENTIAL VALIDATOR
-# =============================================================================
-
 class AcademicCredentialValidator:
-    """Validator per credenziali accademiche"""
+    """
+    Validator per credenziali accademiche.
+    
+    Gestisce tutti gli aspetti della validazione:
+    - Formato e struttura dati
+    - Integrità crittografica
+    - Verifica certificati e revoche
+    - Analisi temporale e forense
+    """
     
     def __init__(self, config: Optional[ValidatorConfiguration] = None):
         """
-        Inizializza il validator
+        Inizializza il validator con la configurazione specificata.
         
         Args:
-            config: Configurazione validator
+            config: Configurazione del validator (usa default se None)
         """
         self.config = config or ValidatorConfiguration()
         
-        # Componenti crittografici
+        # Inizializza componenti crittografici
         self.crypto_utils = CryptoUtils()
         self.digital_signature = DigitalSignature("PSS")
         self.cert_manager = CertificateManager()
         
-        # OCSP client
+        # Inizializza client OCSP se abilitato
         if self.config.ocsp_enabled:
-            from pki.ocsp_client import OCSPConfiguration
             ocsp_config = OCSPConfiguration(
                 timeout_seconds=self.config.ocsp_timeout_seconds,
                 cache_responses=True
@@ -195,13 +198,13 @@ class AcademicCredentialValidator:
         else:
             self.ocsp_client = None
         
-        # Cache validazioni
+        # Cache per risultati validazione
         self.validation_cache: Dict[str, Tuple[ValidationReport, datetime.datetime]] = {}
         
-        # CA certificate di fiducia
+        # Certificati CA di fiducia
         self.trusted_ca_certs: Dict[str, x509.Certificate] = {}
         
-        # Statistiche
+        # Statistiche operative
         self.stats = {
             'validations_performed': 0,
             'valid_credentials': 0,
@@ -211,40 +214,39 @@ class AcademicCredentialValidator:
             'ocsp_checks': 0
         }
         
-        # Inizializza
+        # Carica certificati di fiducia
         self._load_trusted_ca_certificates()
         
-        print("🔍 Academic Credential Validator inizializzato")
-        print(f"   CA di fiducia: {len(self.trusted_ca_certs)}")
-        print(f"   OCSP abilitato: {self.config.ocsp_enabled}")
-        print(f"   Cache abilitata: {self.config.cache_validation_results}")
+        logger.info("Academic Credential Validator inizializzato")
+        logger.info(f"CA di fiducia: {len(self.trusted_ca_certs)}")
+        logger.info(f"OCSP abilitato: {self.config.ocsp_enabled}")
     
     def validate_credential(self, credential: AcademicCredential, 
                           validation_level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationReport:
         """
-        Valida una credenziale accademica
+        Valida una credenziale accademica al livello specificato.
         
         Args:
             credential: Credenziale da validare
-            validation_level: Livello di validazione
+            validation_level: Livello di validazione richiesto
             
         Returns:
-            Report di validazione
+            Report dettagliato della validazione
         """
         start_time = datetime.datetime.utcnow()
         credential_id = str(credential.metadata.credential_id)
         
-        # Controlla cache
+        # Controlla cache se abilitata
         if self.config.cache_validation_results:
             cached_report = self._get_cached_validation(credential_id)
             if cached_report:
                 self.stats['cache_hits'] += 1
-                print(f"💾 Validazione da cache: {credential_id[:8]}...")
+                logger.debug(f"Validazione da cache: {credential_id[:8]}...")
                 return cached_report
         
-        print(f"🔍 Validando credenziale: {credential_id[:8]}... (livello: {validation_level.value})")
+        logger.info(f"Validando credenziale: {credential_id[:8]}... (livello: {validation_level.value})")
         
-        # Crea report
+        # Inizializza report
         report = ValidationReport(
             credential_id=credential_id,
             validation_level=validation_level,
@@ -253,73 +255,67 @@ class AcademicCredentialValidator:
         )
         
         try:
-            # 1. Validazione formato base
-            print("   1️⃣ Validazione formato...")
+            # Validazioni base (sempre eseguite)
+            logger.debug("Validazione formato")
             self._validate_format(credential, report)
             
-            # 2. Validazione temporale
-            print("   2️⃣ Validazione temporale...")
+            logger.debug("Validazione temporale")
             self._validate_temporal(credential, report)
             
-            # 3. Validazione Merkle Tree
-            print("   3️⃣ Validazione Merkle Tree...")
+            logger.debug("Validazione Merkle Tree")
             self._validate_merkle_tree(credential, report)
             
             # Validazioni avanzate
             if validation_level in [ValidationLevel.STANDARD, ValidationLevel.COMPLETE, ValidationLevel.FORENSIC]:
-                # 4. Validazione firma digitale
-                print("   4️⃣ Validazione firma digitale...")
+                logger.debug("Validazione firma digitale")
                 self._validate_signature(credential, report)
                 
-                # 5. Validazione certificato issuer
-                print("   5️⃣ Validazione certificato...")
+                logger.debug("Validazione certificato")
                 self._validate_certificate(credential, report)
             
             # Validazioni complete
             if validation_level in [ValidationLevel.COMPLETE, ValidationLevel.FORENSIC]:
-                # 6. Check revoca/OCSP
-                print("   6️⃣ Verifica revoca...")
+                logger.debug("Verifica revoca")
                 self._validate_revocation_status(credential, report)
             
             # Validazioni forensi
             if validation_level == ValidationLevel.FORENSIC:
-                # 7. Analisi forense avanzata
-                print("   7️⃣ Analisi forense...")
+                logger.debug("Analisi forense")
                 self._validate_forensic(credential, report)
             
-            # 8. Determina risultato finale
+            # Determina risultato finale
             self._determine_overall_result(report)
             
-            # 9. Aggiorna statistiche
+            # Aggiorna statistiche
             self.stats['validations_performed'] += 1
             if report.is_valid():
                 self.stats['valid_credentials'] += 1
             else:
                 self.stats['invalid_credentials'] += 1
             
-            # 10. Calcola durata
+            # Calcola durata e aggiorna report
             duration = (datetime.datetime.utcnow() - start_time).total_seconds() * 1000
             report.validation_duration_ms = duration
             
-            # 11. Cache risultato
+            # Cache risultato se abilitato
             if self.config.cache_validation_results:
                 self._cache_validation_result(credential_id, report)
             
-            # 12. Log risultato
+            # Log risultato
             result_icon = "✅" if report.is_valid() else "❌"
-            print(f"   {result_icon} Validazione completata: {report.overall_result.value} ({duration:.2f}ms)")
+            logger.info(f"{result_icon} Validazione completata: {report.overall_result.value} ({duration:.2f}ms)")
             
             if report.has_errors():
-                print(f"      Errori: {len(report.errors)}")
+                logger.debug(f"Errori: {len(report.errors)}")
             if report.has_warnings():
-                print(f"      Warning: {len(report.warnings)}")
+                logger.debug(f"Warning: {len(report.warnings)}")
             
             return report
             
         except Exception as e:
+            logger.error(f"Errore durante validazione: {e}")
             report.add_error("VALIDATION_EXCEPTION", f"Errore durante validazione: {e}")
             report.overall_result = ValidationResult.INVALID
-            print(f"❌ Errore validazione: {e}")
             return report
     
     def validate_selective_disclosure(self, 
@@ -327,15 +323,15 @@ class AcademicCredentialValidator:
                                     merkle_proofs: List[List[Dict[str, Any]]],
                                     original_merkle_root: str) -> ValidationReport:
         """
-        Valida una presentazione con divulgazione selettiva
+        Valida una presentazione con divulgazione selettiva.
         
         Args:
-            disclosed_courses: Corsi divulgati
-            merkle_proofs: Prove Merkle per ogni corso
-            original_merkle_root: Radice Merkle originale
+            disclosed_courses: Corsi divulgati nella presentazione
+            merkle_proofs: Prove Merkle per ogni corso divulgato
+            original_merkle_root: Radice Merkle originale della credenziale
             
         Returns:
-            Report di validazione
+            Report di validazione della divulgazione selettiva
         """
         start_time = datetime.datetime.utcnow()
         
@@ -347,21 +343,22 @@ class AcademicCredentialValidator:
         )
         
         try:
-            print(f"🔍 Validando divulgazione selettiva: {len(disclosed_courses)} corsi")
+            logger.info(f"Validando divulgazione selettiva: {len(disclosed_courses)} corsi")
             
+            # Verifica coerenza numero corsi e prove
             if len(disclosed_courses) != len(merkle_proofs):
                 report.add_error("PROOF_COUNT_MISMATCH", 
                                "Numero di corsi e prove Merkle non corrispondente")
                 report.overall_result = ValidationResult.INVALID
                 return report
             
-            # Valida ogni proof
+            # Valida ogni proof Merkle
             all_proofs_valid = True
             
             for i, (course, proof) in enumerate(zip(disclosed_courses, merkle_proofs)):
-                print(f"   Validando proof {i+1}/{len(disclosed_courses)}: {course.course_name}")
+                logger.debug(f"Validando proof {i+1}/{len(disclosed_courses)}: {course.course_name}")
                 
-                course_data = course.dict()
+                course_data = course.model_dump()
                 
                 try:
                     is_valid = self._verify_merkle_proof(course_data, proof, original_merkle_root)
@@ -380,18 +377,19 @@ class AcademicCredentialValidator:
                                    f"Errore validazione proof corso {course.course_name}: {e}")
                     all_proofs_valid = False
             
-            # Risultato finale
+            # Determina risultato finale
             if all_proofs_valid:
                 report.overall_result = ValidationResult.VALID
                 report.merkle_tree_valid = True
-                print(f"✅ Divulgazione selettiva VALIDA")
+                logger.info("Divulgazione selettiva VALIDA")
             else:
                 report.overall_result = ValidationResult.INVALID
-                print(f"❌ Divulgazione selettiva NON VALIDA")
+                logger.info("Divulgazione selettiva NON VALIDA")
             
             return report
             
         except Exception as e:
+            logger.error(f"Errore validazione divulgazione selettiva: {e}")
             report.add_error("SELECTIVE_DISCLOSURE_ERROR", f"Errore validazione: {e}")
             report.overall_result = ValidationResult.INVALID
             return report
@@ -399,21 +397,21 @@ class AcademicCredentialValidator:
     def validate_batch_credentials(self, credentials: List[AcademicCredential],
                                  validation_level: ValidationLevel = ValidationLevel.STANDARD) -> List[ValidationReport]:
         """
-        Valida un batch di credenziali
+        Valida un batch di credenziali.
         
         Args:
-            credentials: Lista credenziali da validare
-            validation_level: Livello di validazione
+            credentials: Lista delle credenziali da validare
+            validation_level: Livello di validazione da applicare
             
         Returns:
-            Lista report di validazione
+            Lista dei report di validazione
         """
-        print(f"🔍 Validazione batch: {len(credentials)} credenziali")
+        logger.info(f"Validazione batch: {len(credentials)} credenziali")
         
         reports = []
         
         for i, credential in enumerate(credentials):
-            print(f"   Validando {i+1}/{len(credentials)}...")
+            logger.debug(f"Validando {i+1}/{len(credentials)}")
             report = self.validate_credential(credential, validation_level)
             reports.append(report)
         
@@ -421,14 +419,14 @@ class AcademicCredentialValidator:
         valid_count = sum(1 for r in reports if r.is_valid())
         invalid_count = len(reports) - valid_count
         
-        print(f"📊 Batch completato: {valid_count} valide, {invalid_count} non valide")
+        logger.info(f"Batch completato: {valid_count} valide, {invalid_count} non valide")
         
         return reports
     
-    def _validate_format(self, credential: AcademicCredential, report: ValidationReport):
-        """Valida formato base della credenziale"""
+    def _validate_format(self, credential: AcademicCredential, report: ValidationReport) -> None:
+        """Valida il formato base della credenziale."""
         try:
-            # Verifica che la credenziale sia ben formata
+            # Usa il metodo is_valid della credenziale
             is_valid, errors = credential.is_valid()
             
             if is_valid:
@@ -439,14 +437,14 @@ class AcademicCredentialValidator:
                 for error in errors:
                     report.add_error("FORMAT_ERROR", error)
             
-            # Verifica campi obbligatori
+            # Verifiche aggiuntive
             if not credential.courses:
                 report.add_error("MISSING_COURSES", "Nessun corso presente nella credenziale")
             
             if credential.total_ects_credits <= 0:
                 report.add_error("INVALID_ECTS", "Crediti ECTS non validi")
             
-            # Verifica metadati
+            # Verifica metadati essenziali
             if not credential.metadata.credential_id:
                 report.add_error("MISSING_CREDENTIAL_ID", "ID credenziale mancante")
             
@@ -456,8 +454,8 @@ class AcademicCredentialValidator:
         except Exception as e:
             report.add_error("FORMAT_VALIDATION_ERROR", f"Errore validazione formato: {e}")
     
-    def _validate_temporal(self, credential: AcademicCredential, report: ValidationReport):
-        """Valida aspetti temporali della credenziale"""
+    def _validate_temporal(self, credential: AcademicCredential, report: ValidationReport) -> None:
+        """Valida gli aspetti temporali della credenziale."""
         try:
             now = datetime.datetime.now(datetime.timezone.utc)
             
@@ -468,12 +466,12 @@ class AcademicCredentialValidator:
                                    f"Credenziale scaduta il {credential.metadata.expires_at}")
                     return
             
-            # Verifica date emissione
+            # Verifica data emissione non nel futuro
             if credential.metadata.issued_at > now:
                 report.add_error("FUTURE_ISSUANCE", "Data emissione nel futuro")
                 return
             
-            # Verifica coerenza date studio
+            # Verifica coerenza periodo di studio
             if credential.study_period.start_date >= credential.study_period.end_date:
                 report.add_error("INVALID_STUDY_PERIOD", "Periodo di studio non valido")
             
@@ -483,10 +481,10 @@ class AcademicCredentialValidator:
         except Exception as e:
             report.add_error("TEMPORAL_VALIDATION_ERROR", f"Errore validazione temporale: {e}")
                 
-    def _validate_merkle_tree(self, credential: AcademicCredential, report: ValidationReport):
-        """Valida integrità Merkle Tree"""
+    def _validate_merkle_tree(self, credential: AcademicCredential, report: ValidationReport) -> None:
+        """Valida l'integrità del Merkle Tree."""
         try:
-            # Calcola merkle root dai corsi
+            # Calcola merkle root dai corsi attuali
             calculated_root = credential.calculate_merkle_root()
             stored_root = credential.metadata.merkle_root
             
@@ -510,8 +508,8 @@ class AcademicCredentialValidator:
         except Exception as e:
             report.add_error("MERKLE_VALIDATION_ERROR", f"Errore validazione Merkle Tree: {e}")
     
-    def _validate_signature(self, credential: AcademicCredential, report: ValidationReport):
-        """Valida firma digitale della credenziale - CORRETTO"""
+    def _validate_signature(self, credential: AcademicCredential, report: ValidationReport) -> None:
+        """Valida la firma digitale della credenziale."""
         try:
             if not credential.signature:
                 report.add_error("MISSING_SIGNATURE", "Firma digitale mancante")
@@ -534,9 +532,9 @@ class AcademicCredentialValidator:
                             f"Errore estrazione chiave pubblica: {e}")
                 return
             
-            # CORREZIONE 1: Prepara documento per verifica nel formato corretto
+            # Prepara documento per verifica
             try:
-                # Ricostruisce i dati firmati come nel metodo di firma
+                # Ricostruisce i dati firmati nel formato corretto
                 signature_data = {
                     "credential_id": str(credential.metadata.credential_id),
                     "student_id": credential.subject.student_id_hash,
@@ -545,7 +543,7 @@ class AcademicCredentialValidator:
                     "courses": [c.course_name for c in credential.courses]
                 }
                 
-                # Crea il documento per la verifica nel formato atteso
+                # Crea documento con firma per verifica
                 document_with_signature = signature_data.copy()
                 document_with_signature['firma'] = {
                     'algoritmo': credential.signature.algorithm,
@@ -571,8 +569,8 @@ class AcademicCredentialValidator:
         except Exception as e:
             report.add_error("SIGNATURE_VALIDATION_ERROR", f"Errore validazione firma: {e}")
         
-    def _validate_certificate(self, credential: AcademicCredential, report: ValidationReport):
-        """Valida certificato dell'issuer"""
+    def _validate_certificate(self, credential: AcademicCredential, report: ValidationReport) -> None:
+        """Valida il certificato dell'issuer."""
         try:
             # Trova certificato issuer
             issuer_cert = self._find_issuer_certificate(credential)
@@ -605,19 +603,20 @@ class AcademicCredentialValidator:
         except Exception as e:
             report.add_error("CERTIFICATE_VALIDATION_ERROR", f"Errore validazione certificato: {e}")
     
-    def _validate_revocation_status(self, credential: AcademicCredential, report: ValidationReport):
-        """Valida stato di revoca della credenziale"""
+    def _validate_revocation_status(self, credential: AcademicCredential, report: ValidationReport) -> None:
+        """Valida lo stato di revoca della credenziale."""
         try:
-            # Check status locale
+            # Verifica stato locale
             if credential.status == CredentialStatus.REVOKED:
                 report.add_error("CREDENTIAL_REVOKED", "Credenziale revocata localmente")
                 report.revocation_status = "revoked"
                 return
             
-            # Check OCSP se abilitato
+            # Verifica OCSP se abilitato
             if self.config.ocsp_enabled and self.ocsp_client:
                 issuer_cert = self._find_issuer_certificate(credential)
                 ca_cert = self.trusted_ca_certs.get("./certificates/ca/ca_certificate.pem")
+                
                 if issuer_cert and ca_cert:
                     try:
                         self.stats['ocsp_checks'] += 1
@@ -625,11 +624,12 @@ class AcademicCredentialValidator:
 
                         report.revocation_status = ocsp_response.status.value
                         if ocsp_response.status == OCSPStatus.GOOD:
-                            report.add_info("OCSP_CHECK_PASSED", "Certificato issuer valido (OCSP).")
+                            report.add_info("OCSP_CHECK_PASSED", "Certificato issuer valido (OCSP)")
                         elif ocsp_response.status == OCSPStatus.REVOKED:
-                            report.add_error("ISSUER_CERT_REVOKED", "Il certificato dell'issuer è stato revocato.")
+                            report.add_error("ISSUER_CERT_REVOKED", "Il certificato dell'issuer è stato revocato")
                         else:
-                            report.add_warning("OCSP_CHECK_UNKNOWN", f"Stato OCSP sconosciuto: {ocsp_response.error_message or 'N/A'}")
+                            report.add_warning("OCSP_CHECK_UNKNOWN", 
+                                             f"Stato OCSP sconosciuto: {ocsp_response.error_message or 'N/A'}")
 
                     except Exception as e:
                         report.add_warning("OCSP_CHECK_FAILED", f"Errore verifica OCSP: {e}")
@@ -641,10 +641,10 @@ class AcademicCredentialValidator:
         except Exception as e:
             report.add_error("REVOCATION_VALIDATION_ERROR", f"Errore verifica revoca: {e}")
     
-    def _validate_forensic(self, credential: AcademicCredential, report: ValidationReport):
-        """Validazione forense avanzata"""
+    def _validate_forensic(self, credential: AcademicCredential, report: ValidationReport) -> None:
+        """Esegue validazione forense avanzata."""
         try:
-            # Analisi timestamp
+            # Analisi timestamp firma vs emissione
             if credential.signature:
                 signature_time = credential.signature.timestamp
                 issuance_time = credential.metadata.issued_at
@@ -656,9 +656,8 @@ class AcademicCredentialValidator:
                     report.add_warning("SIGNATURE_TIME_ANOMALY", 
                                      f"Differenza temporale firma-emissione: {time_diff/60:.1f} minuti")
             
-            # Analisi statistica corsi
+            # Analisi statistica dei voti
             if len(credential.courses) > 0:
-                # Verifica distribuzione voti
                 grades = []
                 for course in credential.courses:
                     if course.grade.passed:
@@ -674,7 +673,7 @@ class AcademicCredentialValidator:
                     avg_grade = sum(grades) / len(grades)
                     
                     # Flag per voti sospettosamente alti
-                    if avg_grade > 29:  # Media molto alta
+                    if avg_grade > 29:  # Media molto alta nel sistema italiano
                         report.add_warning("SUSPICIOUS_HIGH_GRADES", 
                                          f"Media voti molto alta: {avg_grade:.1f}")
             
@@ -688,10 +687,10 @@ class AcademicCredentialValidator:
         except Exception as e:
             report.add_error("FORENSIC_VALIDATION_ERROR", f"Errore analisi forense: {e}")
     
-    def _determine_overall_result(self, report: ValidationReport):
-        """Determina il risultato finale della validazione"""
+    def _determine_overall_result(self, report: ValidationReport) -> None:
+        """Determina il risultato finale basato su tutti i controlli."""
         try:
-            # Se ci sono errori critici, la credenziale è invalida
+            # Errori critici che invalidano sempre la credenziale
             critical_errors = [e for e in report.errors if e.code in [
                 'CREDENTIAL_REVOKED', 'SIGNATURE_INVALID', 'ISSUER_CERT_EXPIRED',
                 'MERKLE_TREE_MISMATCH', 'MISSING_SIGNATURE'
@@ -701,7 +700,7 @@ class AcademicCredentialValidator:
                 report.overall_result = ValidationResult.INVALID
                 return
             
-            # Se ci sono errori non critici ma importanti
+            # Se ci sono errori non critici ma comunque importanti
             if report.has_errors():
                 report.overall_result = ValidationResult.INVALID
                 return
@@ -711,7 +710,7 @@ class AcademicCredentialValidator:
                 report.overall_result = ValidationResult.WARNING
                 return
             
-            # Se tutto ok
+            # Verifica che le validazioni base siano superate
             if (report.format_valid and 
                 report.temporal_valid and 
                 report.merkle_tree_valid):
@@ -732,11 +731,9 @@ class AcademicCredentialValidator:
             report.overall_result = ValidationResult.INVALID
     
     def _find_issuer_certificate(self, credential: AcademicCredential) -> Optional[x509.Certificate]:
-        """Trova certificato dell'issuer - CORRETTO"""
+        """Trova il certificato dell'issuer della credenziale."""
         try:
-            # CORREZIONE 2: Logica di ricerca migliorata
-            
-            # Prima cerca per thumbprint se disponibile
+            # Cerca prima per thumbprint se disponibile
             if credential.signature and credential.signature.signer_certificate_thumbprint:
                 thumbprint = credential.signature.signer_certificate_thumbprint
                 
@@ -747,7 +744,7 @@ class AcademicCredentialValidator:
                     if cert_thumbprint == thumbprint:
                         return cert
             
-            # Poi cerca per nome università con logica migliorata
+            # Cerca per nome università
             issuer_name = credential.issuer.name.lower()
             
             # Mapping specifico per le università demo
@@ -765,7 +762,6 @@ class AcademicCredentialValidator:
             # Cerca nei certificati caricati
             for cert_path, cert in self.trusted_ca_certs.items():
                 try:
-                    cert_info = self.cert_manager.parse_certificate(cert)
                     cert_org = self.cert_manager._get_organization(cert).lower()
                     cert_common_name = self.cert_manager._get_common_name(cert).lower()
                     
@@ -773,14 +769,14 @@ class AcademicCredentialValidator:
                     for term in search_terms:
                         if (term in cert_org or term in cert_common_name or 
                             term in cert_path.lower()):
-                            print(f"✅ Certificato issuer trovato: {cert_path}")
+                            logger.debug(f"Certificato issuer trovato: {cert_path}")
                             return cert
                             
                 except Exception as e:
-                    print(f"⚠️ Errore analisi certificato {cert_path}: {e}")
+                    logger.warning(f"Errore analisi certificato {cert_path}: {e}")
                     continue
             
-            # CORREZIONE 3: Fallback - cerca direttamente nei file se non trovato
+            # Fallback - cerca direttamente nei file se non trovato
             possible_cert_paths = [
                 "./certificates/issued/university_F_RENNES01_1001.pem",
                 "./certificates/issued/university_I_SALERNO_2001.pem",
@@ -796,30 +792,27 @@ class AcademicCredentialValidator:
                         
                         for term in search_terms:
                             if term in cert_org or term in cert_path.lower():
-                                print(f"✅ Certificato trovato da fallback: {cert_path}")
+                                logger.debug(f"Certificato trovato da fallback: {cert_path}")
                                 # Aggiunge alla cache per uso futuro
                                 self.trusted_ca_certs[cert_path] = cert
                                 return cert
-                except Exception as e:
+                except Exception:
                     continue
             
-            print(f"❌ Certificato issuer non trovato per: {credential.issuer.name}")
-            print(f"   Termini cercati: {search_terms}")
-            print(f"   Certificati disponibili: {list(self.trusted_ca_certs.keys())}")
+            logger.warning(f"Certificato issuer non trovato per: {credential.issuer.name}")
             return None
             
         except Exception as e:
-            print(f"⚠️ Errore ricerca certificato issuer: {e}")
+            logger.warning(f"Errore ricerca certificato issuer: {e}")
             return None
         
     def _validate_certificate_trust_chain(self, certificate: x509.Certificate) -> Dict[str, Any]:
-        """Valida catena di fiducia del certificato"""
+        """Valida la catena di fiducia del certificato."""
         try:
-            # Implementazione semplificata
-            # In produzione, dovremmo validare l'intera catena fino alla CA root
+            # Implementazione semplificata per demo
+            # In produzione si dovrebbe validare l'intera catena fino alla CA root
             
             for ca_cert in self.trusted_ca_certs.values():
-                # Verifica se il certificato è firmato dalla CA
                 try:
                     ca_public_key = ca_cert.public_key()
                     ca_public_key.verify(
@@ -842,19 +835,27 @@ class AcademicCredentialValidator:
     
     def _verify_merkle_proof(self, data: Dict, proof: List[Dict], root: str) -> bool:
         """
-        **CORRETTO**: Verifica crittografica completa di una Merkle proof.
+        Verifica una prova Merkle per un dato specifico.
+        
+        Args:
+            data: Dati del corso da verificare
+            proof: Prova Merkle fornita
+            root: Radice Merkle attesa
+            
+        Returns:
+            True se la prova è valida
         """
         try:
-            # 1. Hash del dato originale
+            # Hash del dato originale
             current_hash = self.crypto_utils.sha256_hash_string(json.dumps(data, sort_keys=True))
             
-            # 2. Ricostruisce il percorso verso la radice
+            # Ricostruisce il percorso verso la radice
             for step in proof:
                 sibling_hash = step.get('hash')
                 is_right_sibling = step.get('is_right', False)
                 
                 if not sibling_hash:
-                    continue # Salta step non validi
+                    continue  # Salta step non validi
 
                 if is_right_sibling:
                     # Il sibling è a destra, quindi il nostro hash è a sinistra
@@ -865,26 +866,26 @@ class AcademicCredentialValidator:
                 
                 current_hash = self.crypto_utils.sha256_hash_string(combined)
             
-            # 3. Confronta la radice calcolata con quella attesa
+            # Confronta la radice calcolata con quella attesa
             return current_hash == root
 
         except Exception as e:
-            print(f"⚠️  Errore verifica Merkle proof: {e}")
+            logger.warning(f"Errore verifica Merkle proof: {e}")
             return False
 
-    def _load_trusted_ca_certificates(self):
-        """Carica certificati CA di fiducia - MIGLIORATO"""
+    def _load_trusted_ca_certificates(self) -> None:
+        """Carica i certificati CA di fiducia."""
         try:
             # Carica certificati specificati nella configurazione
             for cert_path in self.config.trusted_ca_certificates:
                 if Path(cert_path).exists():
                     cert = self.cert_manager.load_certificate_from_file(cert_path)
                     self.trusted_ca_certs[cert_path] = cert
-                    print(f"   ✅ CA di fiducia caricata: {Path(cert_path).name}")
+                    logger.debug(f"CA di fiducia caricata: {Path(cert_path).name}")
                 else:
-                    print(f"   ⚠️ CA non trovata: {cert_path}")
+                    logger.warning(f"CA non trovata: {cert_path}")
             
-            # CORREZIONE 4: Carica automaticamente certificati demo se esistenti
+            # Carica automaticamente certificati demo se esistenti
             demo_cert_paths = [
                 "./certificates/ca/ca_certificate.pem",
                 "./certificates/issued/university_F_RENNES01_1001.pem", 
@@ -899,24 +900,24 @@ class AcademicCredentialValidator:
                     if Path(cert_path).exists() and cert_path not in self.trusted_ca_certs:
                         cert = self.cert_manager.load_certificate_from_file(cert_path)
                         self.trusted_ca_certs[cert_path] = cert
-                        print(f"   ✅ Certificato demo caricato: {Path(cert_path).name}")
+                        logger.debug(f"Certificato demo caricato: {Path(cert_path).name}")
                 except Exception as e:
-                    print(f"   ⚠️ Errore caricamento {cert_path}: {e}")
+                    logger.warning(f"Errore caricamento {cert_path}: {e}")
                     continue
                     
-            print(f"   📊 Totale certificati caricati: {len(self.trusted_ca_certs)}")
+            logger.info(f"Totale certificati caricati: {len(self.trusted_ca_certs)}")
                     
         except Exception as e:
-            print(f"⚠️ Errore caricamento CA: {e}")
+            logger.warning(f"Errore caricamento CA: {e}")
 
     def _get_cached_validation(self, credential_id: str) -> Optional[ValidationReport]:
-        """Ottiene validazione da cache se valida"""
+        """Ottiene un risultato di validazione dalla cache se valido."""
         if credential_id not in self.validation_cache:
             return None
         
         report, cached_time = self.validation_cache[credential_id]
         
-        # Verifica se cache è ancora valida
+        # Verifica se la cache è ancora valida
         cache_age = datetime.datetime.utcnow() - cached_time
         max_age = datetime.timedelta(minutes=self.config.cache_duration_minutes)
         
@@ -926,16 +927,16 @@ class AcademicCredentialValidator:
         
         return report
     
-    def _cache_validation_result(self, credential_id: str, report: ValidationReport):
-        """Salva risultato validazione in cache"""
+    def _cache_validation_result(self, credential_id: str, report: ValidationReport) -> None:
+        """Salva un risultato di validazione nella cache."""
         self.validation_cache[credential_id] = (report, datetime.datetime.utcnow())
         
-        # Pulisce cache se troppo grande
+        # Pulisce la cache se troppo grande
         if len(self.validation_cache) > 1000:
-            # Rimuove 20% delle entry più vecchie
+            # Rimuove il 20% delle entry più vecchie
             sorted_cache = sorted(
                 self.validation_cache.items(),
-                key=lambda x: x[1][1]  # Sort by timestamp
+                key=lambda x: x[1][1]  # Ordina per timestamp
             )
             
             entries_to_remove = len(sorted_cache) // 5
@@ -943,200 +944,25 @@ class AcademicCredentialValidator:
                 del self.validation_cache[credential_id]
     
     def get_statistics(self) -> Dict[str, Any]:
-        """Ottiene statistiche del validator"""
+        """
+        Ottiene le statistiche operative del validator.
+        
+        Returns:
+            Dizionario con statistiche dettagliate
+        """
+        cache_hit_rate = 0
+        if self.stats['validations_performed'] > 0:
+            cache_hit_rate = (self.stats['cache_hits'] / self.stats['validations_performed']) * 100
+        
         return {
             **self.stats,
             'cache_size': len(self.validation_cache),
             'trusted_cas': len(self.trusted_ca_certs),
-            'cache_hit_rate': (
-                self.stats['cache_hits'] / max(1, self.stats['validations_performed'])
-            ) * 100 if self.stats['validations_performed'] > 0 else 0
+            'cache_hit_rate': cache_hit_rate
         }
     
-    def clear_cache(self):
-        """Pulisce cache validazioni"""
+    def clear_cache(self) -> None:
+        """Pulisce la cache delle validazioni."""
         cache_size = len(self.validation_cache)
         self.validation_cache.clear()
-        print(f"🗑️  Cache validazioni pulita ({cache_size} entries)")
-
-
-# =============================================================================
-# 3. DEMO E TESTING
-# =============================================================================
-
-def demo_credential_validator():
-    """Demo del Credential Validator"""
-    
-    print("🔍" * 40)
-    print("DEMO CREDENTIAL VALIDATOR")
-    print("Validazione Credenziali Accademiche")
-    print("🔍" * 40)
-    
-    try:
-        # 1. Configurazione validator
-        print("\n1️⃣ CONFIGURAZIONE VALIDATOR")
-        
-        config = ValidatorConfiguration(
-            trusted_ca_certificates=["./certificates/ca/ca_certificate.pem"],
-            revocation_check_enabled=True,
-            ocsp_enabled=False,  # Disabilitato per demo
-            accept_expired_credentials=False,
-            strict_merkle_validation=True,
-            cache_validation_results=True
-        )
-        
-        validator = AcademicCredentialValidator(config)
-        
-        # 2. Crea credenziale di test
-        print("\n2️⃣ CREAZIONE CREDENZIALE DI TEST")
-        
-        test_credential = CredentialFactory.create_sample_credential()
-        print(f"✅ Credenziale test creata: {test_credential.metadata.credential_id}")
-        
-        # 3. Validazione livello BASIC
-        print("\n3️⃣ VALIDAZIONE LIVELLO BASIC")
-        
-        basic_report = validator.validate_credential(test_credential, ValidationLevel.BASIC)
-        
-        print(f"   Risultato: {basic_report.overall_result.value}")
-        print(f"   Formato valido: {basic_report.format_valid}")
-        print(f"   Temporale valido: {basic_report.temporal_valid}")
-        print(f"   Merkle Tree valido: {basic_report.merkle_tree_valid}")
-        
-        if basic_report.has_errors():
-            print(f"   Errori: {len(basic_report.errors)}")
-            for error in basic_report.errors[:3]:  # Primi 3
-                print(f"      - {error.message}")
-        
-        # 4. Validazione livello STANDARD (con firma)
-        print("\n4️⃣ VALIDAZIONE LIVELLO STANDARD")
-        
-        standard_report = validator.validate_credential(test_credential, ValidationLevel.STANDARD)
-        
-        print(f"   Risultato: {standard_report.overall_result.value}")
-        print(f"   Firma valida: {standard_report.signature_valid}")
-        print(f"   Certificato valido: {standard_report.certificate_valid}")
-        
-        # 5. Test validazione con credenziale modificata
-        print("\n5️⃣ TEST CON CREDENZIALE MODIFICATA")
-        
-        # Modifica un corso per rompere Merkle Tree
-        modified_credential = CredentialFactory.create_sample_credential()
-        modified_credential.courses[0].grade.score = "30/30"  # Modifica voto
-        # Non aggiorna Merkle root per creare inconsistenza
-        
-        modified_report = validator.validate_credential(modified_credential, ValidationLevel.BASIC)
-        
-        print(f"   Risultato credenziale modificata: {modified_report.overall_result.value}")
-        print(f"   Merkle Tree valido: {modified_report.merkle_tree_valid}")
-        
-        if modified_report.has_errors():
-            print(f"   Errori rilevati: {len(modified_report.errors)}")
-        
-        # 6. Test divulgazione selettiva
-        print("\n6️⃣ TEST DIVULGAZIONE SELETTIVA")
-        
-        # Simula divulgazione solo primo corso
-        disclosed_courses = [test_credential.courses[0]]
-        merkle_proofs = [
-            [{"hash": "dummy_hash", "is_right": False}]  # Proof semplificata
-        ]
-        original_root = test_credential.metadata.merkle_root
-        
-        selective_report = validator.validate_selective_disclosure(
-            disclosed_courses, merkle_proofs, original_root
-        )
-        
-        print(f"   Risultato divulgazione selettiva: {selective_report.overall_result.value}")
-        print(f"   Corsi divulgati: {len(disclosed_courses)}")
-        
-        # 7. Test batch validation
-        print("\n7️⃣ TEST VALIDAZIONE BATCH")
-        
-        # Crea più credenziali di test
-        batch_credentials = [
-            CredentialFactory.create_sample_credential(),
-            CredentialFactory.create_sample_credential(),
-            modified_credential  # Include quella modificata
-        ]
-        
-        batch_reports = validator.validate_batch_credentials(batch_credentials, ValidationLevel.BASIC)
-        
-        valid_count = sum(1 for r in batch_reports if r.is_valid())
-        print(f"   Batch risultati: {valid_count}/{len(batch_reports)} valide")
-        
-        # 8. Test cache
-        print("\n8️⃣ TEST CACHE VALIDAZIONI")
-        
-        # Seconda validazione della stessa credenziale (dovrebbe usare cache)
-        cached_report = validator.validate_credential(test_credential, ValidationLevel.BASIC)
-        
-        print(f"   Cache hit: {cached_report.credential_id == basic_report.credential_id}")
-        
-        # 9. Export report
-        print("\n9️⃣ EXPORT REPORT VALIDAZIONE")
-        
-        report_dict = standard_report.to_dict()
-        
-        report_file = "./credentials/validation_report.json"
-        Path("./credentials").mkdir(exist_ok=True)
-        
-        with open(report_file, 'w', encoding='utf-8') as f:
-            json.dump(report_dict, f, indent=2, ensure_ascii=False, default=str)
-        
-        print(f"   💾 Report salvato: {report_file}")
-        
-        # 10. Statistiche finali
-        print("\n🔟 STATISTICHE VALIDATOR")
-        
-        stats = validator.get_statistics()
-        print("📊 Statistiche:")
-        for key, value in stats.items():
-            if isinstance(value, float):
-                print(f"   {key}: {value:.2f}")
-            else:
-                print(f"   {key}: {value}")
-        
-        print("\n" + "✅" * 40)
-        print("DEMO CREDENTIAL VALIDATOR COMPLETATA!")
-        print("✅" * 40)
-        
-        return validator
-        
-    except Exception as e:
-        print(f"\n❌ Errore durante demo: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-# =============================================================================
-# 4. MAIN - PUNTO DI INGRESSO
-# =============================================================================
-
-if __name__ == "__main__":
-    print("🔍" * 50)
-    print("CREDENTIAL VALIDATOR")
-    print("Validazione Credenziali Accademiche")
-    print("🔍" * 50)
-    
-    validator_instance = demo_credential_validator()
-    
-    if validator_instance:
-        print("\n🎉 Credential Validator pronto!")
-        print("\nFunzionalità disponibili:")
-        print("✅ Validazione formato credenziali")
-        print("✅ Verifica firme digitali")
-        print("✅ Validazione certificati issuer")
-        print("✅ Controllo Merkle Tree")
-        print("✅ Verifica aspetti temporali")
-        print("✅ Validazione divulgazione selettiva")
-        print("✅ Check revoca e OCSP")
-        print("✅ Analisi forense avanzata")
-        print("✅ Validazione batch")
-        print("✅ Cache risultati")
-        print("✅ Report dettagliati")
-        
-        print(f"\n🚀 FASE 3 COMPLETATA!")
-        print("Pronto per la Fase 4: Wallet e Divulgazione Selettiva!")
-    else:
-        print("\n❌ Errore inizializzazione Credential Validator")
+        logger.info(f"Cache validazioni pulita ({cache_size} entries)")

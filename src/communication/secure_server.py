@@ -306,20 +306,7 @@ class AcademicCredentialsSecureServer:
     
     def _setup_routes(self):
         """Configura routes API"""
-        
-        # Health check
-        @self.app.get("/health")
-        async def health_check():
-            return APIResponse(
-                success=True,
-                message="Server operativo",
-                data={
-                    "status": "healthy",
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
-                    "stats": self.stats
-                }
-            )
-        
+                
         # Submit credential
         @self.app.post("/api/v1/credentials/submit")
         async def submit_credential(
@@ -406,7 +393,7 @@ class AcademicCredentialsSecureServer:
         async def get_university_certificate(name: str):
             """Restituisce il certificato PEM di un'università"""
             try:
-                # Mappa demo delle università (in produzione sarebbe un database)
+                # Mappa demo delle università 
                 university_certs = {
                     "Université de Rennes": "./certificates/issued/university_F_RENNES01_1001.pem",
                     "Università di Salerno": "./certificates/issued/university_I_SALERNO_2001.pem"
@@ -748,152 +735,3 @@ class AcademicCredentialsSecureServer:
         except Exception as e:
             print(f"❌ Errore avvio server: {e}")
             raise
-
-# =============================================================================
-# 5. DEMO E TESTING
-# =============================================================================
-
-def demo_secure_server():
-    """Demo del Secure Server"""
-    
-    print("🌐" * 40)
-    print("DEMO SECURE SERVER")
-    print("Server HTTPS per Credenziali Accademiche")
-    print("🌐" * 40)
-    
-    try:
-        # 1. Configurazione server
-        print("\n1️⃣ CONFIGURAZIONE SERVER")
-        
-        config = ServerConfiguration(
-            host="localhost",
-            port=8443,
-            ssl_enabled=True,
-            require_client_certificates=False,
-            api_key_required=True,
-            rate_limit_requests=50,
-            enable_request_logging=True
-        )
-        
-        print(f"✅ Server configurato:")
-        print(f"   Host: {config.host}:{config.port}")
-        print(f"   SSL: {'Abilitato' if config.ssl_enabled else 'Disabilitato'}")
-        print(f"   API Key: {'Richiesta' if config.api_key_required else 'Opzionale'}")
-        print(f"   Rate Limit: {config.rate_limit_requests} req/min")
-        
-        # 2. Inizializzazione server
-        print("\n2️⃣ INIZIALIZZAZIONE SERVER")
-        
-        server = AcademicCredentialsSecureServer(config)
-        
-        print(f"✅ Server inizializzato")
-        print(f"   Endpoints configurati: 6")
-        print(f"   Middleware attivi: CORS, Rate Limiting, Logging")
-        
-        # 3. Informazioni API Keys
-        print("\n3️⃣ API KEYS DISPONIBILI")
-        
-        api_keys = {
-            "issuer_rennes": "Issuer - Université de Rennes",
-            "verifier_unisa": "Verifier - Università di Salerno",
-            "studente_mariorossi": "Studente - Mario Rossi"
-        }
-        
-        for key, desc in api_keys.items():
-            print(f"   🔑 {key}: {desc}")
-        
-        # 4. Endpoints disponibili
-        print("\n4️⃣ ENDPOINTS DISPONIBILI")
-        
-        endpoints = [
-            ("GET", "/health", "Health check del server"),
-            ("POST", "/api/v1/credentials/submit", "Solo issuer_rennes"),
-            ("POST", "/api/v1/credentials/validate", "Solo issuer e verifier"),
-            ("POST", "/api/v1/credentials/verify", "Tutti gli utenti"),
-            ("POST", "/api/v1/presentations/submit", "Tutti gli utenti"),
-            ("GET", "/api/v1/credentials/{id}/status", "Tutti gli utenti"),
-            ("GET", "/api/v1/stats", "Solo issuer e verifier")
-        ]
-        
-        for method, path, desc in endpoints:
-            print(f"   📡 {method:4} {path:35} - {desc}")
-        
-        # 5. Esempio richieste
-        print("\n5️⃣ ESEMPI RICHIESTE")
-        
-        print("📤 Sottomissione credenziale (issuer_rennes):")
-        print("""
-curl -X POST https://localhost:8443/api/v1/credentials/submit \\
-  -H "Authorization: Bearer issuer_rennes" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "credential_data": {...},
-    "presentation_purpose": "Riconoscimento crediti",
-    "recipient_id": "università_destinataria",
-    "expires_hours": 48
-  }'
-""")
-        
-        print("🔍 Verifica credenziale (tutti gli utenti):")
-        print("""
-curl -X POST https://localhost:8443/api/v1/credentials/verify \\
-  -H "Authorization: Bearer studente_mariorossi" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "credential_data": {...},
-    "blockchain_network": "mainnet"
-  }'
-""")
-        
-        # 6. Avvio server
-        print("\n6️⃣ PRONTO PER AVVIO")
-        
-        print("🚀 Per avviare il server:")
-        print("   python communication/secure_server.py")
-        print("")
-        print("💡 Usa le API keys fornite per autenticazione")
-        
-        print("\n" + "✅" * 40)
-        print("DEMO SECURE SERVER COMPLETATA!")
-        print("✅" * 40)
-        
-        return server
-        
-    except Exception as e:
-        print(f"\n❌ Errore durante demo: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-
-# =============================================================================
-# 6. MAIN - PUNTO DI INGRESSO
-# =============================================================================
-
-if __name__ == "__main__":
-    print("🌐" * 50)
-    print("SECURE SERVER")
-    print("Server HTTPS per Credenziali Accademiche")
-    print("🌐" * 50)
-    
-    # Esegui demo
-    server_instance = demo_secure_server()
-    
-    if server_instance:
-        print("\n🎉 Secure Server pronto!")
-        print("\nFunzionalità disponibili:")
-        print("✅ Server HTTPS con TLS")
-        print("✅ API REST sicure")
-        print("✅ Autenticazione API Key")
-        print("✅ Rate limiting")
-        print("✅ Verifica credenziali tramite blockchain")
-        
-        print(f"\n🚀 Avvio server...")
-        try:
-            server_instance.run()
-        except KeyboardInterrupt:
-            print("\n🛑 Server fermato dall'utente")
-        except Exception as e:
-            print(f"\n❌ Errore server: {e}")
-    else:
-        print("\n❌ Errore inizializzazione Secure Server")

@@ -184,56 +184,6 @@ class OCSPClient:
             revocation_reason=revocation_reason,
             response_data=ocsp_resp.public_bytes(serialization.Encoding.DER)
         )
-    
-# =============================================================================
-# 3. MOCK OCSP RESPONDER (PER TESTING)
-# =============================================================================
-
-class MockOCSPResponder:
-    """Un semplice OCSP responder fittizio per scopi di test."""
-    
-    def __init__(self, ca_private_key, ca_certificate):
-        self.revoked_serials = {}  # {serial: (revocation_time, reason)}
-        self.ca_private_key = ca_private_key
-        self.ca_certificate = ca_certificate
-
-    def revoke(self, serial_number: int, reason: x509.ReasonFlags = x509.ReasonFlags.unspecified):
-        self.revoked_serials[serial_number] = (datetime.datetime.now(datetime.timezone.utc), reason)
-
-def handle_request(self, ocsp_request_der: bytes) -> bytes:
-    """Gestisce una richiesta OCSP e restituisce una risposta firmata."""
-    req = ocsp.load_der_ocsp_request(ocsp_request_der)
-
-    builder = ocsp.OCSPResponseBuilder()
-
-    serial_to_check = req.serial_number
-
-    if serial_to_check in self.revoked_serials:
-        revocation_time, reason_flag = self.revoked_serials[serial_to_check]
-        # Aggiungi l'estensione CRLReason alla risposta
-        builder = builder.add_response(
-            cert_status=ocsp.OCSPCertStatus.REVOKED,
-            issuer_key_hash=req.issuer_key_hash,
-            issuer_name_hash=req.issuer_name_hash,
-            serial_number=serial_to_check,
-            this_update=datetime.datetime.now(datetime.timezone.utc),
-            next_update=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1),
-            revocation_time=revocation_time,
-            revocation_reason=x509.CRLReason(reason_flag) # CORREZIONE QUI
-        ).responder_id(ocsp.OCSPResponderEncoding.NAME, self.ca_certificate)
-    else:
-         builder = builder.add_response(
-            cert_status=ocsp.OCSPCertStatus.GOOD,
-            issuer_key_hash=req.issuer_key_hash,
-            issuer_name_hash=req.issuer_name_hash,
-            serial_number=serial_to_check,
-            this_update=datetime.datetime.now(datetime.timezone.utc),
-            next_update=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
-        ).responder_id(ocsp.OCSPResponderEncoding.NAME, self.ca_certificate)
-
-    response = builder.build(self.ca_private_key, hashes.SHA256())
-    return response.public_bytes(serialization.Encoding.DER)
-
 
 if __name__ == "__main__":
     print("OCSP Client - Questo file non è pensato per essere eseguito direttamente.")

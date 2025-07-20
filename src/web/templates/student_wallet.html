@@ -121,12 +121,12 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Crea Presentazione Verificabile</h5>
+        <h5 class="modal-title">Crea presentazione verificabile</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="alert alert-info">
-          <strong>Divulgazione Selettiva:</strong> Seleziona solo gli attributi che vuoi condividere. 
+          <strong>Divulgazione selettiva:</strong> Seleziona solo gli attributi che vuoi condividere. 
           La presentazione includerà Merkle Proof per garantire autenticità.
         </div>
         
@@ -155,8 +155,14 @@
                     <div class="col-md-6">
                         <h6 class="text-muted">Informazioni Base</h6>
                         <div class="form-check">
-                            <input class="form-check-input attribute-check" type="checkbox" value="metadata.credential_id" id="attr_id" checked>
-                            <label class="form-check-label" for="attr_id">ID Credenziale</label>
+                        <input class="form-check-input attribute-check" 
+                                type="checkbox" 
+                                value="metadata.credential_id" 
+                                id="attr_id" 
+                                checked 
+                                disabled
+                                style="opacity: 1; cursor: default;"> 
+                        <label class="form-check-label" for="attr_id">ID Credenziale</label>
                         </div>
                         <div class="form-check">
                             <input class="form-check-input attribute-check" type="checkbox" value="subject.pseudonym" id="attr_pseudo" checked>
@@ -190,7 +196,7 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
         <button type="button" class="btn btn-primary" id="generatePresentationBtn">
-            <span id="generateText">🔐 Genera Presentazione JSON Firmata</span>
+            <span id="generateText"> Genera presentazione</span>
             <span id="generateSpinner" class="spinner-border spinner-border-sm d-none"></span>
         </button>
       </div>
@@ -245,10 +251,6 @@
 </div>
 
 <script>
-// =============================================================================
-// CONFIGURAZIONE API BLOCKCHAIN (come per l'issuer)
-// =============================================================================
-
 // URL base dell'API consolidata 
 const API_BASE_URL = 'https://localhost:8443';  // Secure server
 const STUDENT_AUTH_TOKEN = 'student_token';  // API key per studenti

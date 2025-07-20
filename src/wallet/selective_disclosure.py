@@ -1,5 +1,5 @@
 # =============================================================================
-# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - SELECTIVE DISCLOSURE
+# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - SELECTIVE DISCLOSURE (CORRETTO)
 # File: wallet/selective_disclosure.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
@@ -92,6 +92,18 @@ class MerkleProof:
             merkle_root=data['merkle_root']
         )
 
+# ***** NEW HELPER FUNCTION *****
+# Function to recursively serialize datetime objects
+def _serialize_datetimes(obj: Any) -> Any:
+    if isinstance(obj, datetime.datetime):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: _serialize_datetimes(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_serialize_datetimes(i) for i in obj]
+    return obj
+# ***** END NEW FUNCTION *****
+
 
 @dataclass
 class SelectiveDisclosure:
@@ -108,10 +120,19 @@ class SelectiveDisclosure:
     expires_at: Optional[datetime.datetime] = None
     
     def to_dict(self) -> Dict[str, Any]:
+        """
+        Converts to a dictionary, handling datetime serialization.
+        """
+        # ***** MAIN CHANGE *****
+        # Ensure all datetime objects in disclosed attributes
+        # are converted to ISO format strings.
+        serialized_attributes = _serialize_datetimes(self.disclosed_attributes)
+        # ***** END CHANGE *****
+
         return {
             'credential_id': self.credential_id,
             'disclosure_id': self.disclosure_id,
-            'disclosed_attributes': self.disclosed_attributes,
+            'disclosed_attributes': serialized_attributes, # Use serialized attributes
             'merkle_proofs': [proof.to_dict() for proof in self.merkle_proofs],
             'disclosure_level': self.disclosure_level.value,
             'created_at': self.created_at.isoformat(),
@@ -139,6 +160,7 @@ class SelectiveDisclosure:
             )
         )
 
+# The rest of the file remains unchanged
 # 2. SELECTIVE DISCLOSURE MANAGER
 
 class SelectiveDisclosureManager:

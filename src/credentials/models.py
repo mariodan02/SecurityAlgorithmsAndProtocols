@@ -66,9 +66,13 @@ class PersonalInfo(BaseModel):
     la privacy mantenendo la verificabilità.
     """
     surname_hash: str = Field(..., description="Hash SHA-256 del cognome")
+    surname_salt: str = Field(..., description="Salt per l'hash del cognome")
     name_hash: str = Field(..., description="Hash SHA-256 del nome")
+    name_salt: str = Field(..., description="Salt per l'hash del nome")
     birth_date_hash: str = Field(..., description="Hash SHA-256 della data di nascita")
+    birth_date_salt: str = Field(..., description="Salt per l'hash della data di nascita")
     student_id_hash: str = Field(..., description="Hash SHA-256 dell'ID studente")
+    student_id_salt: str = Field(..., description="Salt per l'hash dell'ID studente")
     pseudonym: str = Field(..., description="Pseudonimo pubblico")
 
     @field_validator('surname_hash', 'name_hash', 'birth_date_hash', 'student_id_hash')
@@ -565,7 +569,7 @@ class CredentialFactory:
         credential.average_grade = credential.calculate_average_grade()
         
         return credential
-    
+        
     @staticmethod
     def create_sample_credential() -> AcademicCredential:
         """
@@ -594,12 +598,21 @@ class CredentialFactory:
             website="https://www.unisa.it"
         )
         
-        # Informazioni studente
+        # Informazioni studente con salt
+        surname_salt = crypto_utils.generate_salt()
+        name_salt = crypto_utils.generate_salt()
+        birth_date_salt = crypto_utils.generate_salt()
+        student_id_salt = crypto_utils.generate_salt()
+
         student_info = PersonalInfo(
-            surname_hash=crypto_utils.sha256_hash_string("D'Aniello"), 
-            name_hash=crypto_utils.sha256_hash_string("Mario"),
-            birth_date_hash=crypto_utils.sha256_hash_string("1995-03-15"), 
-            student_id_hash=crypto_utils.sha256_hash_string("0622702628"),
+            surname_hash=crypto_utils.hash_with_salt("D'Aniello", surname_salt), 
+            surname_salt=surname_salt.hex(),
+            name_hash=crypto_utils.hash_with_salt("Mario", name_salt),
+            name_salt=name_salt.hex(),
+            birth_date_hash=crypto_utils.hash_with_salt("1995-03-15", birth_date_salt),
+            birth_date_salt=birth_date_salt.hex(),
+            student_id_hash=crypto_utils.hash_with_salt("0622702628", student_id_salt),
+            student_id_salt=student_id_salt.hex(),
             pseudonym="student_mario_d'aniello"
         )
         

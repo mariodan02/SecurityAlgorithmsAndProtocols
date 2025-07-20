@@ -10,6 +10,7 @@ import hashlib
 import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
+import cryptography
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.backends import default_backend
@@ -510,7 +511,27 @@ class MerkleTree:
 # 4. UTILITIES CRITTOGRAFICHE
 
 class CryptoUtils:
-    """Utilità crittografiche generali"""
+    """Utilities crittografiche generali"""
+
+    @staticmethod
+    def generate_salt() -> bytes:
+        """Genera un salt casuale per l'hashing."""
+        return os.urandom(16)
+
+    @staticmethod
+    def hash_with_salt(data: str, salt: bytes) -> str:
+        """
+        Calcola l'hash di una stringa usando un salt con PBKDF2HMAC.
+        Questo è più sicuro di un semplice hash SHA-256.
+        """
+        kdf = cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=480000, # Numero di iterazioni raccomandato da OWASP
+            backend=default_backend()
+        )
+        return kdf.derive(data.encode('utf-8')).hex()
     
     @staticmethod
     def sha256_hash(data: bytes) -> str:

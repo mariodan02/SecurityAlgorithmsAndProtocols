@@ -1,5 +1,5 @@
 # =============================================================================
-# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - SELECTIVE DISCLOSURE (CORRETTO)
+# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - SELECTIVE DISCLOSURE 
 # File: wallet/selective_disclosure.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================
@@ -100,20 +100,25 @@ class MerkleProof:
             merkle_root=data['merkle_root']
         )
 
-# ***** NUOVA FUNZIONE AUSILIARIA *****
-# Questa piccola funzione magica risolve il nostro problema!
-# Scorre tutti i dati che vogliamo condividere e, se trova una data,
-# la converte in una stringa standard (formato ISO).
-# Funziona anche se le date sono "nascoste" dentro altre strutture dati.
 def _serialize_datetimes(obj: Any) -> Any:
+    """Serializza ricorsivamente tutti gli oggetti datetime in stringhe ISO."""
     if isinstance(obj, datetime.datetime):
         return obj.isoformat()
-    if isinstance(obj, dict):
+    elif isinstance(obj, datetime.date):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
         return {k: _serialize_datetimes(v) for k, v in obj.items()}
-    if isinstance(obj, list):
+    elif isinstance(obj, list):
         return [_serialize_datetimes(i) for i in obj]
-    return obj
-# ***** FINE NUOVA FUNZIONE *****
+    elif isinstance(obj, tuple):
+        return tuple(_serialize_datetimes(i) for i in obj)
+    elif hasattr(obj, '__dict__'):
+        try:
+            return _serialize_datetimes(obj.__dict__)
+        except:
+            return str(obj)
+    else:
+        return obj
 
 
 @dataclass
@@ -138,11 +143,7 @@ class SelectiveDisclosure:
         Converte questa "divulgazione" in un formato standard (dizionario),
         assicurandosi che le date siano pronte per essere trasformate in JSON.
         """
-        # ***** MODIFICA CHIAVE *****
-        # Applichiamo la nostra nuova funzione per "pulire" gli attributi
-        # da qualsiasi oggetto 'datetime' prima di procedere.
         serialized_attributes = _serialize_datetimes(self.disclosed_attributes)
-        # ***** FINE MODIFICA *****
 
         return {
             'credential_id': self.credential_id,
@@ -389,56 +390,50 @@ class SelectiveDisclosureManager:
                 for i, v in enumerate(obj):
                     new_path = f"{parent_path}[{i}]"
                     items.append((new_path, v))
-            elif is_primitive(obj) or isinstance(obj, (datetime.datetime, datetime.date)):
+            elif is_primitive(obj):
                 flat[parent_path] = obj
+            elif isinstance(obj, (datetime.datetime, datetime.date)):
+                # *** FIX: Converte immediatamente datetime in stringa ISO ***
+                flat[parent_path] = obj.isoformat()
+            else:
+                # Per altri tipi di oggetti, prova a convertire in stringa
+                flat[parent_path] = str(obj)
         
         return flat
     
     def create_selective_disclosure(self, 
-                              credential: AcademicCredential,
-                              attributes_to_disclose: List[str],
-                              disclosure_level: DisclosureLevel,
-                              purpose: str,
-                              recipient: Optional[str] = None,
-                              expires_hours: int = 24) -> SelectiveDisclosure:
+                            credential: AcademicCredential,
+                            attributes_to_disclose: List[str],
+                            disclosure_level: DisclosureLevel,
+                            purpose: str,
+                            recipient: Optional[str] = None,
+                            expires_hours: int = 24) -> SelectiveDisclosure:
         """
         Crea una divulgazione selettiva per una credenziale, generando Merkle proofs valide.
-        
-        Args:
-            credential: Credenziale accademica
-            attributes_to_disclose: Lista di percorsi attributi da divulgare
-            disclosure_level: Livello di divulgazione
-            purpose: Scopo della divulgazione
-            recipient: Destinatario opzionale
-            expires_hours: Ore prima della scadenza
-            
-        Returns:
-            Oggetto SelectiveDisclosure con attributi divulgati e proofs
         """
         try:
-            # Ordina tutti gli attributi della credenziale per consistenza
+            # 1. Appiattisce la credenziale (ora con datetime già serializzati)
             all_attributes = self._flatten_credential(credential)
             sorted_attributes = sorted(all_attributes.items(), key=lambda x: x[0])
 
-            # Estrae solo i valori nell'ordine corretto per costruire l'albero
+            # 2. Estrae solo i valori per costruire l'albero Merkle
             attribute_values_for_tree = [attr_value for attr_path, attr_value in sorted_attributes]
-
-            # Costruisce l'albero Merkle direttamente dai valori.
-            #    La classe MerkleTree gestirà l'hashing internamente in modo corretto.
             merkle_tree = MerkleTree(attribute_values_for_tree)
             merkle_root = merkle_tree.get_merkle_root()
 
-            # 3. Filtra gli attributi che l'utente vuole effettivamente divulgare
+            # 3. Filtra gli attributi da divulgare (ora già serializzati)
             disclosed_attributes = {
                 path: value
                 for path, value in sorted_attributes
                 if path in attributes_to_disclose
             }
 
-            # 4. Genera le Merkle Proof per ciascun attributo divulgato
+            # 4. Applica doppia serializzazione per sicurezza
+            disclosed_attributes = _serialize_datetimes(disclosed_attributes)
+
+            # 5. Genera le Merkle Proof
             merkle_proofs = []
             for attr_path, attr_value in disclosed_attributes.items():
-                # Trova l'indice dell'attributo nella lista
                 idx = next((i for i, (path, _) in enumerate(sorted_attributes) if path == attr_path), -1)
 
                 if idx != -1:
@@ -452,7 +447,7 @@ class SelectiveDisclosureManager:
                         )
                     )
 
-            # 5. Crea l'oggetto finale di divulgazione selettiva
+            # 6. Crea la divulgazione selettiva
             return SelectiveDisclosure(
                 credential_id=str(credential.metadata.credential_id),
                 disclosure_id=str(uuid.uuid4()),
@@ -471,8 +466,9 @@ class SelectiveDisclosureManager:
 
         except Exception as e:
             print(f"Errore creazione divulgazione selettiva: {e}")
+            import traceback
+            traceback.print_exc()
             raise
-
     
     def create_predefined_disclosure(self, 
                                    credential: AcademicCredential,

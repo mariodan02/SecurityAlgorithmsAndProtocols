@@ -20,6 +20,41 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+def ensure_json_serializable(obj):
+    """Garantisce che un oggetto sia serializzabile in JSON."""
+    import json
+    import datetime
+    
+    def convert_obj(o):
+        if isinstance(o, datetime.datetime):
+            return o.isoformat()
+        elif isinstance(o, datetime.date):
+            return o.isoformat()
+        elif isinstance(o, dict):
+            return {k: convert_obj(v) for k, v in o.items()}
+        elif isinstance(o, list):
+            return [convert_obj(i) for i in o]
+        elif isinstance(o, tuple):
+            return tuple(convert_obj(i) for i in o)
+        elif hasattr(o, '__dict__'):
+            try:
+                return convert_obj(o.__dict__)
+            except:
+                return str(o)
+        else:
+            return o
+    
+    converted = convert_obj(obj)
+    
+    # Test di serializzazione per verificare
+    try:
+        json.dumps(converted)
+        return converted
+    except (TypeError, ValueError) as e:
+        print(f"Errore serializzazione JSON: {e}")
+        # Se fallisce, forza tutto a stringa
+        return json.loads(json.dumps(converted, default=str))
+
 try:
     from crypto.foundations import DigitalSignature, CryptoUtils
     from credentials.models import AcademicCredential, CredentialFactory
@@ -94,10 +129,9 @@ class VerifiablePresentation:
     def get_data_for_signing(self) -> Dict[str, Any]:
         """
         Prepara i dati per la firma digitale.
-        È FONDAMENTALE che tutti i campi siano serializzabili in JSON.
-        Le date vengono convertite in stringhe in formato ISO 8601.
+        Garantisce che tutti i campi siano serializzabili in JSON.
         """
-        return {
+        data = {
             'presentation_id': self.presentation_id,
             'created_at': self.created_at.isoformat(),
             'created_by': self.created_by,
@@ -105,18 +139,12 @@ class VerifiablePresentation:
             'recipient': self.recipient,
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
             'status': self.status.value,
-            # ***** MODIFICA CHIAVE *****
-            # Qui sta la magia. Invece di passare gli oggetti direttamente,
-            # chiamiamo il loro metodo .to_dict(). Questo metodo, come vedrai
-            # nel file selective_disclosure.py, si occupa di convertire
-            # tutte le date (come inizio/fine percorso studi) in stringhe.
-            # Problema risolto!
             'selective_disclosures': [sd.to_dict() for sd in self.selective_disclosures],
-            # ***** FINE MODIFICA *****
             'additional_documents': self.additional_documents,
             'format': self.format.value,
             'verification_url': self.verification_url,
         }
+        return ensure_json_serializable(data)
 
     def to_dict(self) -> Dict[str, Any]:
         """Converte l'intera presentazione in un dizionario per l'esportazione."""
@@ -287,7 +315,7 @@ class PresentationManager:
             raise
 
     def sign_presentation(self, presentation_id: str, 
-                        private_key: Optional[rsa.RSAPrivateKey] = None) -> bool:
+                    private_key: Optional[rsa.RSAPrivateKey] = None) -> bool:
         """Applica la firma digitale dello studente alla presentazione."""
         try:
             presentation = self.presentations.get(presentation_id)
@@ -295,27 +323,31 @@ class PresentationManager:
                 print(f"⚠️  Presentazione {presentation_id} non trovata.")
                 return False
             
-            # Se è già firmata, non facciamo nulla.
             if presentation.signature:
                 return True
             
-            # Se non ci viene data una chiave, usiamo quella del wallet.
             if private_key is None:
                 if not self.wallet.wallet_private_key:
                     print("❌ Chiave privata non disponibile nel wallet per firmare.")
                     return False
                 private_key = self.wallet.wallet_private_key
             
-            # Aggiorniamo lo stato a "pronta" prima di firmare.
             presentation.status = PresentationStatus.READY
             
-            # Prendiamo i dati da firmare (già pronti e senza date problematiche!).
+            # *** FIX: Usa il metodo migliorato per ottenere dati serializzabili ***
             data_to_sign = presentation.get_data_for_signing()
             
-            # Eseguiamo la firma.
-            signed_data = self.digital_signature.sign_document(private_key, data_to_sign)
+            # Debug: Verifica che i dati siano serializzabili
+            try:
+                import json
+                json.dumps(data_to_sign)
+                print(f"✅ Dati della presentazione serializzabili correttamente")
+            except Exception as e:
+                print(f"❌ Errore serializzazione dati: {e}")
+                return False
             
-            # Aggiungiamo la firma alla nostra presentazione.
+            # Esegui la firma
+            signed_data = self.digital_signature.sign_document(private_key, data_to_sign)
             presentation.signature = signed_data.get('firma')
             
             print(f"✒️  Presentazione {presentation_id[:8]}... firmata con successo!")
@@ -323,6 +355,8 @@ class PresentationManager:
             
         except Exception as e:
             print(f"❌ Errore durante la firma della presentazione: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def export_presentation(self, presentation_id: str, 

@@ -1945,7 +1945,6 @@ class AcademicCredentialsDashboard:
                                 'student_name': summary['subject_pseudonym'],
                                 'issued_at': summary['issued_at'][:19],
                                 'issued_by': credential.issuer.name,
-                                'status': summary['status'].title(),
                                 'total_courses': summary['total_courses'],
                                 'total_ects': summary['total_ects'],
                                 'file_path': str(credential_file)
@@ -1961,7 +1960,6 @@ class AcademicCredentialsDashboard:
                                 'student_name': credential_data.get('subject', {}).get('pseudonym', 'Studente sconosciuto'),
                                 'issued_at': metadata.get('issued_at', '2024-01-01T00:00:00')[:19],
                                 'issued_by': issuer.get('name', 'Università sconosciuta'),
-                                'status': 'Active',
                                 'total_courses': len(courses),
                                 'total_ects': sum(course.get('ects_credits', 0) for course in courses),
                                 'file_path': str(credential_file)

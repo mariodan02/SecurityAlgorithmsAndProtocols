@@ -291,7 +291,7 @@ class AcademicStudentWallet:
         return True
     
     def sign_credential_with_university_key(self, credential: AcademicCredential) -> AcademicCredential:
-        """Firma una credenziale con la chiave privata dell'università (demo) - CORRETTO"""
+        """Firma una credenziale con la chiave privata dell'università"""
         try:
             # Usiamo il nome dell'issuer per determinare quale chiave usare
             issuer_name = credential.issuer.name.lower()
@@ -338,11 +338,11 @@ class AcademicStudentWallet:
                     backend=default_backend()
                 )
             
-            # Prepara i dati per la firma (COERENTI con l'issuer)
+            # Prepara i dati per la firma 
             data_to_sign = {
                 "credential_id": str(credential.metadata.credential_id),
                 "student_id": credential.subject.student_id_hash,
-                "issuer": credential.issuer.name,  # Ora sarà "Université de Rennes"
+                "issuer": credential.issuer.name,  
                 "issue_date": credential.metadata.issued_at.isoformat(),
                 "courses": [c.course_name for c in credential.courses]
             }

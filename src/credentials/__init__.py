@@ -195,17 +195,6 @@ def setup_credentials_logging(level: int = logging.INFO) -> logging.Logger:
     
     return logger
 
-
-def create_demo_credential() -> AcademicCredential:
-    """
-    Crea una credenziale demo per testing rapido.
-    
-    Returns:
-        Credenziale accademica di esempio
-    """
-    return CredentialFactory.create_sample_credential()
-
-
 def quick_validate(credential: AcademicCredential) -> bool:
     """
     Esegue una validazione rapida di una credenziale.

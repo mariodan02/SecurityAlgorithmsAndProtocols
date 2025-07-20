@@ -253,7 +253,7 @@ if __name__ == '__main__':
             access_log=False     # Disabilita access log per focus sui nostri messaggi
         )
     except KeyboardInterrupt:
-        print("\n🛑 Servizio interrotto dall'utente")
+        print("\n Servizio interrotto dall'utente")
     except Exception as e:
         print(f"\n❌ Errore avvio servizio: {e}")
     finally:
@@ -261,4 +261,3 @@ if __name__ == '__main__':
         print(f"   Credenziali ricevute: {stats['credentials_received']}")
         if stats['last_received']:
             print(f"   Ultima ricezione: {stats['last_received'].strftime('%d/%m/%Y %H:%M:%S')}")
-        print("👋 Arrivederci!")

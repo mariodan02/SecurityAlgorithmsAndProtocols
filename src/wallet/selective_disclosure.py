@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import uuid
 
-# Import moduli interni
+# Import dei nostri moduli interni del progetto
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -27,18 +27,21 @@ except ImportError as e:
     raise
 
 
-# 1. ENUMS E STRUTTURE DATI SELECTIVE DISCLOSURE
+# 1. ENUMS E STRUTTURE DATI PER LA DIVULGAZIONE SELETTIVA
 
 class DisclosureLevel(Enum):
-    """Livelli di divulgazione"""
-    MINIMAL = "minimal"           # Solo dati essenziali
-    STANDARD = "standard"         # Dati accademici base
-    DETAILED = "detailed"         # Dati completi
-    CUSTOM = "custom"             # Selezione personalizzata
+    """
+    Definisce quanto "generosamente" vogliamo condividere i nostri dati.
+    MINIMAL è molto restrittivo, DETAILED condivide quasi tutto.
+    """
+    MINIMAL = "minimal"
+    STANDARD = "standard"
+    DETAILED = "detailed"
+    CUSTOM = "custom"
 
 
 class AttributeType(Enum):
-    """Tipi di attributi divulgabili"""
+    """Categorizza i tipi di dati che possiamo condividere."""
     PERSONAL_INFO = "personal_info"
     STUDY_PERIOD = "study_period"
     UNIVERSITY_INFO = "university_info"
@@ -50,14 +53,15 @@ class AttributeType(Enum):
 
 @dataclass
 class AttributeSelector:
-    """Selettore per attributi specifici"""
+    """Un "selettore" che descrive un singolo dato che possiamo condividere."""
     attribute_type: AttributeType
-    field_path: str                    # Path JSON dell'attributo (es. "courses.0.course_name")
-    display_name: str                  # Nome visualizzabile
-    required: bool = False             # Se obbligatorio per divulgazione
-    sensitive: bool = False            # Se contiene dati sensibili
+    field_path: str
+    display_name: str
+    required: bool = False
+    sensitive: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
+        """Converte il selettore in un dizionario."""
         return {
             'attribute_type': self.attribute_type.value,
             'field_path': self.field_path,
@@ -66,16 +70,19 @@ class AttributeSelector:
             'sensitive': self.sensitive
         }
 
-
 @dataclass
 class MerkleProof:
-    """Proof di Merkle per un attributo"""
-    attribute_index: int               # Indice dell'attributo nella lista
-    attribute_value: Any               # Valore dell'attributo
-    proof_path: List[Dict[str, Any]]   # Path di hash siblings
-    merkle_root: str                   # Root dell'albero originale
+    """
+    La prova crittografica che un dato che stiamo condividendo
+    proviene davvero dalla credenziale originale e non è stato alterato.
+    """
+    attribute_index: int
+    attribute_value: Any
+    proof_path: List[Dict[str, Any]]
+    merkle_root: str
     
     def to_dict(self) -> Dict[str, Any]:
+        """Converte la prova in un dizionario."""
         return {
             'attribute_index': self.attribute_index,
             'attribute_value': self.attribute_value,
@@ -85,6 +92,7 @@ class MerkleProof:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'MerkleProof':
+        """Crea una prova partendo da un dizionario."""
         return cls(
             attribute_index=data['attribute_index'],
             attribute_value=data['attribute_value'],
@@ -92,8 +100,11 @@ class MerkleProof:
             merkle_root=data['merkle_root']
         )
 
-# ***** NEW HELPER FUNCTION *****
-# Function to recursively serialize datetime objects
+# ***** NUOVA FUNZIONE AUSILIARIA *****
+# Questa piccola funzione magica risolve il nostro problema!
+# Scorre tutti i dati che vogliamo condividere e, se trova una data,
+# la converte in una stringa standard (formato ISO).
+# Funziona anche se le date sono "nascoste" dentro altre strutture dati.
 def _serialize_datetimes(obj: Any) -> Any:
     if isinstance(obj, datetime.datetime):
         return obj.isoformat()
@@ -102,37 +113,41 @@ def _serialize_datetimes(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_serialize_datetimes(i) for i in obj]
     return obj
-# ***** END NEW FUNCTION *****
+# ***** FINE NUOVA FUNZIONE *****
 
 
 @dataclass
 class SelectiveDisclosure:
-    """Divulgazione selettiva di una credenziale"""
+    """
+    Rappresenta l'insieme di dati che hai scelto di condividere
+    da una singola credenziale, insieme alle loro prove crittografiche.
+    """
     credential_id: str
     disclosure_id: str
-    disclosed_attributes: Dict[str, Any]    # Attributi divulgati
-    merkle_proofs: List[MerkleProof]       # Prove per ogni attributo
+    disclosed_attributes: Dict[str, Any]
+    merkle_proofs: List[MerkleProof]
     disclosure_level: DisclosureLevel
     created_at: datetime.datetime
-    created_by: str                        # Pseudonimo studente
-    purpose: Optional[str] = None          # Scopo della divulgazione
-    recipient: Optional[str] = None        # Destinatario
+    created_by: str
+    purpose: Optional[str] = None
+    recipient: Optional[str] = None
     expires_at: Optional[datetime.datetime] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """
-        Converts to a dictionary, handling datetime serialization.
+        Converte questa "divulgazione" in un formato standard (dizionario),
+        assicurandosi che le date siano pronte per essere trasformate in JSON.
         """
-        # ***** MAIN CHANGE *****
-        # Ensure all datetime objects in disclosed attributes
-        # are converted to ISO format strings.
+        # ***** MODIFICA CHIAVE *****
+        # Applichiamo la nostra nuova funzione per "pulire" gli attributi
+        # da qualsiasi oggetto 'datetime' prima di procedere.
         serialized_attributes = _serialize_datetimes(self.disclosed_attributes)
-        # ***** END CHANGE *****
+        # ***** FINE MODIFICA *****
 
         return {
             'credential_id': self.credential_id,
             'disclosure_id': self.disclosure_id,
-            'disclosed_attributes': serialized_attributes, # Use serialized attributes
+            'disclosed_attributes': serialized_attributes, # Usiamo i dati "puliti"
             'merkle_proofs': [proof.to_dict() for proof in self.merkle_proofs],
             'disclosure_level': self.disclosure_level.value,
             'created_at': self.created_at.isoformat(),
@@ -144,6 +159,7 @@ class SelectiveDisclosure:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SelectiveDisclosure':
+        """Crea una "divulgazione" partendo da un dizionario."""
         return cls(
             credential_id=data['credential_id'],
             disclosure_id=data['disclosure_id'],
@@ -160,7 +176,6 @@ class SelectiveDisclosure:
             )
         )
 
-# The rest of the file remains unchanged
 # 2. SELECTIVE DISCLOSURE MANAGER
 
 class SelectiveDisclosureManager:
@@ -499,7 +514,7 @@ class SelectiveDisclosureManager:
             print(f"Verificando divulgazione selettiva: {disclosure.disclosure_id[:8]}...")
             
             # 1. Verifica scadenza
-            if disclosure.expires_at and datetime.datetime.utcnow() > disclosure.expires_at:
+            if disclosure.expires_at and datetime.datetime.now(datetime.timezone.utc).isoformat() > disclosure.expires_at:
                 errors.append("Divulgazione scaduta")
             
             # 2. Verifica merkle proofs
@@ -569,7 +584,7 @@ class SelectiveDisclosureManager:
             
             presentation = {
                 'presentation_id': presentation_id,
-                'created_at': datetime.datetime.utcnow().isoformat(),
+                'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat().isoformat(),
                 'purpose': presentation_purpose,
                 'disclosures': [disclosure.to_dict() for disclosure in disclosures],
                 'summary': {
@@ -813,32 +828,3 @@ class SelectiveDisclosureManager:
         self.merkle_trees_cache.clear()
         self.attribute_schemas_cache.clear()
         print("🗑️  Cache Selective Disclosure pulita")
-
-
-# 3. MAIN - PUNTO DI INGRESSO
-if __name__ == "__main__":
-    print("🔒" * 50)
-    print("SELECTIVE DISCLOSURE")
-    print("Divulgazione Selettiva Credenziali Accademiche")
-    print("🔒" * 50)
-    
-    # Esegui demo
-    manager, disclosures = demo_selective_disclosure()
-    
-    if manager:
-        print("\nSelective Disclosure pronto!")
-        print("\nFunzionalità disponibili:")
-        print("Analisi attributi divulgabili")
-        print("Template divulgazione predefiniti")
-        print("Divulgazione personalizzata")
-        print("Generazione Merkle proofs")
-        print("Verifica divulgazioni")
-        print("Creazione presentazioni")
-        print("Gestione scadenze")
-        print("Export/Import divulgazioni")
-        print("Cache ottimizzazioni")
-        
-        print(f"\nPronto per Presentation Manager!")
-        print(f"Divulgazioni demo create: {len(disclosures)}")
-    else:
-        print("\nErrore inizializzazione Selective Disclosure")

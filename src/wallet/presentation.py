@@ -13,10 +13,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 import uuid
 
-# Cryptography imports
+# Import per la crittografia
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-# Import moduli interni
+# Import dei nostri moduli interni del progetto
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -28,16 +28,18 @@ try:
         SelectiveDisclosureManager, SelectiveDisclosure, DisclosureLevel
     )
 except ImportError as e:
-    print(f"Errore import moduli interni: {e}")
+    print(f"Errore nell'importare i moduli necessari: {e}")
     raise
 
 class PresentationFormat(Enum):
+    """Formati in cui possiamo esportare una presentazione."""
     JSON = "json"
     SIGNED_JSON = "signed_json" 
     VERIFIABLE_CREDENTIAL = "verifiable_credential"
     PDF_REPORT = "pdf_report"
 
 class PresentationStatus(Enum):
+    """Lo stato di una presentazione, dalla bozza alla verifica."""
     DRAFT = "draft"
     READY = "ready"
     SENT = "sent"
@@ -47,6 +49,7 @@ class PresentationStatus(Enum):
 
 @dataclass
 class PresentationTemplate:
+    """Un modello per creare velocemente presentazioni per scopi comuni."""
     template_id: str
     name: str
     description: str
@@ -57,6 +60,7 @@ class PresentationTemplate:
     validity_hours: int = 24
     
     def to_dict(self) -> Dict[str, Any]:
+        """Converte il template in un dizionario per salvarlo o inviarlo."""
         return {
             'template_id': self.template_id,
             'name': self.name,
@@ -70,6 +74,10 @@ class PresentationTemplate:
 
 @dataclass
 class VerifiablePresentation:
+    """
+    La presentazione vera e propria. Contiene i dati scelti, le prove crittografiche
+    e la firma dello studente.
+    """
     presentation_id: str
     created_at: datetime.datetime
     created_by: str
@@ -84,7 +92,11 @@ class VerifiablePresentation:
     verification_url: Optional[str] = None
     
     def get_data_for_signing(self) -> Dict[str, Any]:
-        """Restituisce solo i dati essenziali da firmare, escludendo campi dinamici."""
+        """
+        Prepara i dati per la firma digitale.
+        È FONDAMENTALE che tutti i campi siano serializzabili in JSON.
+        Le date vengono convertite in stringhe in formato ISO 8601.
+        """
         return {
             'presentation_id': self.presentation_id,
             'created_at': self.created_at.isoformat(),
@@ -93,14 +105,21 @@ class VerifiablePresentation:
             'recipient': self.recipient,
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
             'status': self.status.value,
+            # ***** MODIFICA CHIAVE *****
+            # Qui sta la magia. Invece di passare gli oggetti direttamente,
+            # chiamiamo il loro metodo .to_dict(). Questo metodo, come vedrai
+            # nel file selective_disclosure.py, si occupa di convertire
+            # tutte le date (come inizio/fine percorso studi) in stringhe.
+            # Problema risolto!
             'selective_disclosures': [sd.to_dict() for sd in self.selective_disclosures],
+            # ***** FINE MODIFICA *****
             'additional_documents': self.additional_documents,
             'format': self.format.value,
             'verification_url': self.verification_url,
         }
 
     def to_dict(self) -> Dict[str, Any]:
-        """Converte l'intera presentazione in dizionario, includendo il sommario."""
+        """Converte l'intera presentazione in un dizionario per l'esportazione."""
         data = self.get_data_for_signing()
         data['signature'] = self.signature
         data['summary'] = self.get_summary()
@@ -108,6 +127,7 @@ class VerifiablePresentation:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'VerifiablePresentation':
+        """Crea una presentazione partendo da un dizionario."""
         return cls(
             presentation_id=data['presentation_id'],
             created_at=datetime.datetime.fromisoformat(data['created_at']),
@@ -129,6 +149,7 @@ class VerifiablePresentation:
         )
     
     def get_summary(self) -> Dict[str, Any]:
+        """Fornisce un riassunto veloce del contenuto della presentazione."""
         credential_ids = set()
         total_attributes = 0
         universities = set()
@@ -153,7 +174,10 @@ class VerifiablePresentation:
         }
 
 class PresentationManager:
-    """Manager per la creazione e gestione delle presentazioni"""
+    """
+    Il "regista" delle presentazioni. Si occupa di crearle, firmarle,
+    verificarle e gestirle nel tempo.
+    """
     
     def __init__(self, wallet: AcademicStudentWallet):
         self.wallet = wallet
@@ -163,8 +187,8 @@ class PresentationManager:
         self.presentations: Dict[str, VerifiablePresentation] = {}
         self.templates: Dict[str, PresentationTemplate] = {}
         self._initialize_default_templates()
-        print(f"Presentation Manager inizializzato")
-        print(f"Template disponibili: {len(self.templates)}")
+        print(f"✅ Presentation Manager inizializzato, pronto a creare presentazioni!")
+        print(f"   ↪ Caricati {len(self.templates)} modelli predefiniti.")
     
     def create_presentation(self, 
                           purpose: str,
@@ -175,7 +199,7 @@ class PresentationManager:
         presentation_ids = []
         try:
             if self.wallet.status.value != "unlocked":
-                raise RuntimeError("Wallet deve essere sbloccato")
+                raise RuntimeError("Il wallet deve essere sbloccato per creare una presentazione.")
             
             for selection in credential_selections:
                 presentation_id = str(uuid.uuid4())
@@ -188,6 +212,7 @@ class PresentationManager:
                     continue
                 credential = wallet_credential.credential
                 
+                # Crea la "divulgazione selettiva" (i dati da mostrare)
                 if custom_attributes:
                     disclosure = self.disclosure_manager.create_selective_disclosure(
                         credential, custom_attributes, DisclosureLevel.CUSTOM,
@@ -202,6 +227,7 @@ class PresentationManager:
                 expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=expires_hours)
                 student_pseudonym = disclosure.created_by
                 
+                # Assembla la presentazione finale
                 presentation = VerifiablePresentation(
                     presentation_id=presentation_id,
                     created_at=datetime.datetime.now(datetime.timezone.utc),
@@ -228,10 +254,9 @@ class PresentationManager:
                                         purpose: str,
                                         recipient: Optional[str] = None,
                                         **kwargs) -> str:
-        # (Questo metodo rimane invariato)
         try:
             if template_id not in self.templates:
-                raise ValueError(f"Template non trovato: {template_id}")
+                raise ValueError(f"Modello non trovato: {template_id}")
             
             template = self.templates[template_id]
             credential_selections = []
@@ -263,47 +288,51 @@ class PresentationManager:
 
     def sign_presentation(self, presentation_id: str, 
                         private_key: Optional[rsa.RSAPrivateKey] = None) -> bool:
-        """Firma digitalmente una presentazione usando solo i dati essenziali."""
+        """Applica la firma digitale dello studente alla presentazione."""
         try:
-            if presentation_id not in self.presentations:
+            presentation = self.presentations.get(presentation_id)
+            if not presentation:
+                print(f"⚠️  Presentazione {presentation_id} non trovata.")
                 return False
             
-            presentation = self.presentations[presentation_id]
+            # Se è già firmata, non facciamo nulla.
             if presentation.signature:
                 return True
             
+            # Se non ci viene data una chiave, usiamo quella del wallet.
             if private_key is None:
                 if not self.wallet.wallet_private_key:
+                    print("❌ Chiave privata non disponibile nel wallet per firmare.")
                     return False
                 private_key = self.wallet.wallet_private_key
             
-            #Imposta lo stato su READY PRIMA di firmare
+            # Aggiorniamo lo stato a "pronta" prima di firmare.
             presentation.status = PresentationStatus.READY
             
-            #Raccoglie i dati (che includeranno status="ready")
-            presentation_data_to_sign = presentation.get_data_for_signing()
+            # Prendiamo i dati da firmare (già pronti e senza date problematiche!).
+            data_to_sign = presentation.get_data_for_signing()
             
-            #Firma il documento
-            signed_data = self.digital_signature.sign_document(private_key, presentation_data_to_sign)
+            # Eseguiamo la firma.
+            signed_data = self.digital_signature.sign_document(private_key, data_to_sign)
             
-            #Aggiorna la presentazione con la firma
+            # Aggiungiamo la firma alla nostra presentazione.
             presentation.signature = signed_data.get('firma')
             
-            print(f"Presentazione firmata con successo")
+            print(f"✒️  Presentazione {presentation_id[:8]}... firmata con successo!")
             return True
             
         except Exception as e:
-            print(f"Errore firma presentazione: {e}")
+            print(f"❌ Errore durante la firma della presentazione: {e}")
             return False
     
     def export_presentation(self, presentation_id: str, 
                           output_path: str,
                           format: PresentationFormat = PresentationFormat.SIGNED_JSON) -> bool:
+        """Salva la presentazione in un file (es. JSON)."""
         try:
-            if presentation_id not in self.presentations:
+            presentation = self.presentations.get(presentation_id)
+            if not presentation:
                 return False
-            
-            presentation = self.presentations[presentation_id]
             
             if format == PresentationFormat.JSON:
                 export_data = presentation.to_dict()
@@ -321,20 +350,20 @@ class PresentationManager:
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False, default=str)
             
+            print(f"📄 Esportata presentazione in: {output_path}")
             return True
         except Exception as e:
-            # Aggiungiamo una stampa dettagliata dell'errore nel terminale
-            print(f"ERRORE CRITICO in export_presentation: {e}")
+            print(f"❌ ERRORE CRITICO in export_presentation: {e}")
             import traceback
             traceback.print_exc()
             return False
 
-
-# ... (Il resto del file `presentation.py` rimane invariato) ...
     def verify_presentation(self, presentation_data: Dict[str, Any], 
                           public_key: Optional[rsa.RSAPublicKey] = None) -> Tuple[bool, List[str]]:
+        """Verifica l'autenticità e l'integrità di una presentazione ricevuta."""
         errors = []
         try:
+            # Controlli di base
             required_fields = ['presentation_id', 'created_at', 'purpose', 'selective_disclosures']
             for field in required_fields:
                 if field not in presentation_data:
@@ -342,31 +371,28 @@ class PresentationManager:
             if errors:
                 return False, errors
             
+            # Controllo scadenza
             expires_at = presentation_data.get('expires_at')
             if expires_at:
                 expiry_date = datetime.datetime.fromisoformat(expires_at)
                 if datetime.datetime.utcnow() > expiry_date:
                     errors.append("Presentazione scaduta")
             
+            # Controllo firma digitale (se presente)
             signature = presentation_data.get('signature')
             if signature and public_key:
                 try:
-                    # Ricostruiamo i dati per la verifica 
                     data_for_verification = presentation_data.copy()
                     data_for_verification.pop('signature', None)
-                    data_for_verification.pop('summary', None) 
-                    
+                    data_for_verification.pop('summary', None)
                     data_for_verification['firma'] = signature
                     
-                    is_signature_valid = self.digital_signature.verify_document_signature(
-                        public_key, data_for_verification
-                    )
-                    
-                    if not is_signature_valid:
+                    if not self.digital_signature.verify_document_signature(public_key, data_for_verification):
                         errors.append("Firma digitale non valida")
                 except Exception as e:
-                    errors.append(f"Errore verifica firma: {e}")
+                    errors.append(f"Errore durante la verifica della firma: {e}")
 
+            # Controllo di ogni "pezzo" di credenziale condiviso
             disclosures = presentation_data.get('selective_disclosures', [])
             for i, disclosure_data in enumerate(disclosures):
                 try:
@@ -376,19 +402,20 @@ class PresentationManager:
                         disclosure, merkle_root
                     )
                     if not is_valid:
-                        errors.extend([f"Disclosure {i}: {err}" for err in disclosure_errors])
+                        errors.extend([f"Dati condivisi {i}: {err}" for err in disclosure_errors])
                 except Exception as e:
-                    errors.append(f"Errore verifica disclosure {i}: {e}")
+                    errors.append(f"Errore nella verifica dei dati condivisi {i}: {e}")
             
-            if len(disclosures) == 0:
-                errors.append("Nessuna divulgazione selettiva presente")
+            if not disclosures:
+                errors.append("Nessun dato di credenziale è stato condiviso.")
             
-            return len(errors) == 0, errors
+            return not errors, errors
         except Exception as e:
-            errors.append(f"Errore durante verifica: {e}")
+            errors.append(f"Errore generale durante la verifica: {e}")
             return False, errors
 
     def list_presentations(self, filter_status: Optional[PresentationStatus] = None) -> List[Dict[str, Any]]:
+        """Elenca tutte le presentazioni create."""
         results = []
         for presentation in self.presentations.values():
             if filter_status and presentation.status != filter_status:
@@ -407,30 +434,35 @@ class PresentationManager:
         return results
     
     def get_presentation(self, presentation_id: str) -> Optional[VerifiablePresentation]:
+        """Recupera una singola presentazione dal suo ID."""
         return self.presentations.get(presentation_id)
     
     def delete_presentation(self, presentation_id: str) -> bool:
+        """Elimina una presentazione."""
         if presentation_id in self.presentations:
             del self.presentations[presentation_id]
             return True
         return False
     
     def get_templates(self) -> Dict[str, PresentationTemplate]:
+        """Restituisce i modelli di presentazione disponibili."""
         return self.templates.copy()
     
     def add_template(self, template: PresentationTemplate):
+        """Aggiunge un nuovo modello di presentazione."""
         self.templates[template.template_id] = template
     
     def _initialize_default_templates(self):
+        """Carica i modelli di presentazione predefiniti."""
         templates = [
             PresentationTemplate(
                 template_id="university_enrollment",
                 name="Verifica Iscrizione Università",
-                description="Presentazione per verificare iscrizione presso università",
+                description="Presentazione per verificare l'iscrizione presso un'altra università.",
                 disclosure_levels={"default": DisclosureLevel.MINIMAL},
                 required_attributes=["metadata.credential_id", "subject.pseudonym", "issuer.name", "total_ects_credits"],
                 optional_attributes=["study_period.academic_year"],
-                typical_recipients=["Uffici Università"],
+                typical_recipients=["Uffici Segreteria Studenti"],
                 validity_hours=24
             ),
         ]
@@ -438,6 +470,7 @@ class PresentationManager:
             self.templates[template.template_id] = template
 
     def _convert_to_vc_format(self, presentation: VerifiablePresentation) -> Dict[str, Any]:
+        """Converte la presentazione in un formato standard W3C Verifiable Credential."""
         return {
             "@context": ["https://www.w3.org/2018/credentials/v1"],
             "type": ["VerifiablePresentation"],
@@ -460,22 +493,31 @@ class PresentationManager:
         }
     
     def _export_pdf_report(self, presentation: VerifiablePresentation, output_path: str) -> bool:
+        """(Funzione non implementata) Esporta la presentazione in PDF."""
         try:
+            # Qui andrebbe il codice per generare un PDF, per ora salviamo un HTML.
             html_content = self._generate_html_report(presentation)
             html_path = output_path.replace('.pdf', '.html')
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
+            print(f"ℹ️  Generazione PDF non implementata. Creato report HTML: {html_path}")
             return True
         except Exception as e:
             return False
     
     def _generate_html_report(self, presentation: VerifiablePresentation) -> str:
-        # Funzione helper per generare un semplice report HTML
-        # (L'implementazione non è cambiata)
+        """Genera un semplice report HTML della presentazione."""
         html = f"""
-        <!DOCTYPE html><html><head><title>Presentation</title></head><body>
-        <h1>Presentation: {presentation.presentation_id}</h1>
-        <p>Purpose: {presentation.purpose}</p>
-        </body></html>
+        <!DOCTYPE html><html><head><title>Riepilogo Presentazione</title></head><body>
+        <h1>Riepilogo Presentazione: {presentation.presentation_id}</h1>
+        <p><strong>Scopo:</strong> {presentation.purpose}</p>
+        <hr>
+        <h3>Dati Condivisi:</h3>
         """
+        for disclosure in presentation.selective_disclosures:
+            html += f"<h4>Dalla credenziale: {disclosure.credential_id[:12]}...</h4><ul>"
+            for key, value in disclosure.disclosed_attributes.items():
+                html += f"<li><strong>{key}:</strong> {value}</li>"
+            html += "</ul>"
+        html += "</body></html>"
         return html

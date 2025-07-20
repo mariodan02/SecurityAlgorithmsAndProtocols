@@ -1118,19 +1118,6 @@ class AcademicCredentialsDashboard:
                 student_common_name="Mario Rossi",  # Preimpostato per l'utente demo
                 student_id=student_id
             )
-
-            if wallet.unlock_wallet("Unisa2025"):
-                self.logger.info("Aggiunta di una credenziale di esempio al nuovo portafoglio...")
-                if MODULES_AVAILABLE:
-                    try:
-                        sample_credential = CredentialFactory.create_sample_credential()
-                        signed_credential = wallet.sign_credential_with_university_key(sample_credential)
-                        signed_credential.status = CredentialStatus.ACTIVE
-                        wallet.add_credential(signed_credential, tags=["esempio", "auto-generata"])
-                        self.logger.info(" Credenziale di esempio aggiunta con successo.")
-                    except Exception as e:
-                        self.logger.error(f"Errore durante l'aggiunta della credenziale di esempio: {e}")
-
         if wallet.status == WalletStatus.LOCKED:
             wallet.unlock_wallet("Unisa2025")
 

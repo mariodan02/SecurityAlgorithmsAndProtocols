@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Script di test per verificare l'integrazione blockchain
 Da eseguire nella directory src/blockchain/

@@ -11,7 +11,7 @@ PROVIDER_URL = "http://127.0.0.1:8545"
 GANACHE_PRIVATE_KEY = "0x40b18ebc23bf6dc9401457511ee0ecd5f86ad80032f74c51073ff40077e91b4a"
 
 # CHIAVE DEL "BANKER" - Account Ganache con fondi per finanziare altri account
-GANACHE_BANKER_KEY = "0x2b9c70d343acdc4f5fd8f36ce7a1259e1b694daf39d96ae27cad2443b746b717"  # Account #1 di Ganache
+GANACHE_BANKER_KEY = "0xf9c75bd9cef85571538e11262d68a1ea41ee9fc7c64ef36ee0c28f295e86ed6e"  # Account #1 di Ganache
 
 def derive_ethereum_key_from_rsa(pem_file_path: str, password: bytes):
     """
@@ -102,7 +102,7 @@ class BlockchainService:
         # Verifica e auto-finanzia l'account se necessario
         self._ensure_account_funded()
 
-    def _ensure_account_funded(self, min_balance_eth: float = 500.0):
+    def _ensure_account_funded(self, min_balance_eth: float = 9000000.0):
         """
         Assicura che l'account abbia almeno min_balance_eth ETH.
         Se non ne ha abbastanza, trasferisce fondi dal banker account.

@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h4 mb-0">Verifica blockchain</h1>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Verifica stato credenziale su blockchain</h6>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info small">
+                    <strong>Informazioni:</strong> Questa verifica controlla solo lo stato della credenziale sulla blockchain 
+                    per verificare se è attiva o è stata revocata dall'università emittente.
+                </div>
+                
+                <form id="blockchain-verify-form">
+                    <div class="mb-3">
+                        <label class="form-label">ID credenziale *</label>
+                        <input type="text" class="form-control font-monospace" id="credentialId" required 
+                               placeholder="es. cred_1234567890abcdef">
+                        <div class="form-text">Inserisci l'ID della credenziale da verificare</div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary" id="verifyBtn">
+                        <span id="verifyText">Verifica su blockchain</span>
+                        <span id="verifySpinner" class="spinner-border spinner-border-sm d-none"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4" id="verificationResults" style="display: none;">
+            <div class="card-header">
+                <h6 class="mb-0">Risultato verifica</h6>
+            </div>
+            <div class="card-body">
+                <div id="resultContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Guida verifica</h6>
+            </div>
+            <div class="card-body">
+                <h6 class="text-primary">Come funziona</h6>
+                <div class="small text-muted">
+                    <p><strong>1. Inserisci l'ID:</strong> L'ID della credenziale che vuoi verificare</p>
+                    <p><strong>2. Verifica blockchain:</strong> Il sistema controlla lo stato sulla blockchain</p>
+                    <p><strong>3. Risultato:</strong> Ricevi informazioni su validità e stato di revoca</p>
+                </div>
+                
+                <hr>
+                
+                <h6 class="text-primary">Stati possibili</h6>
+                <div class="small">
+                    <p><span class="badge bg-success">ATTIVA</span> Credenziale valida e non revocata</p>
+                    <p><span class="badge bg-danger">REVOCATA</span> Credenziale revocata dall'università</p>
+                    <p><span class="badge bg-warning">NON TROVATA</span> Credenziale non registrata</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="mb-0">Le tue credenziali</h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Puoi verificare anche le credenziali nel tuo wallet andando alla sezione "Il mio wallet".</p>
+                <a href="/wallet" class="btn btn-sm btn-outline-primary">Vai al wallet</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('blockchain-verify-form');
+    const verifyBtn = document.getElementById('verifyBtn');
+    const verifyText = document.getElementById('verifyText');
+    const verifySpinner = document.getElementById('verifySpinner');
+    const resultsCard = document.getElementById('verificationResults');
+    const resultContent = document.getElementById('resultContent');
+
+    form.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        
+        const credentialId = document.getElementById('credentialId').value.trim();
+        if (!credentialId) {
+            alert('Inserisci un ID credenziale');
+            return;
+        }
+
+        setLoadingState(true);
+
+        try {
+            const response = await fetch('/verification/student/blockchain', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential_id: credentialId })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                displayBlockchainResult(credentialId, result.blockchain_status);
+            } else {
+                throw new Error(result.message || 'Errore durante la verifica');
+            }
+
+        } catch (error) {
+            console.error('Errore verifica:', error);
+            displayError(error.message);
+        } finally {
+            setLoadingState(false);
+        }
+    });
+
+    function setLoadingState(loading) {
+        verifyBtn.disabled = loading;
+        if (loading) {
+            verifyText.style.display = 'none';
+            verifySpinner.classList.remove('d-none');
+        } else {
+            verifyText.style.display = 'inline';
+            verifySpinner.classList.add('d-none');
+        }
+    }
+
+    function displayBlockchainResult(credentialId, blockchainStatus) {
+        let html = '';
+        let statusBadge = '';
+        let statusHtml = '';
+
+        if (blockchainStatus.status === 'VALID') {
+            statusBadge = '<span class="badge bg-success fs-6">ATTIVA</span>';
+            statusHtml = `
+                <div class="alert alert-success">
+                    <h6><strong>Credenziale attiva</strong></h6>
+                    <p><strong>Emittente:</strong> ${blockchainStatus.issuer}</p>
+                    <p><strong>Data emissione:</strong> ${new Date(blockchainStatus.issueTimestamp * 1000).toLocaleString()}</p>
+                    <p class="mb-0">La credenziale è valida e non è stata revocata.</p>
+                </div>
+            `;
+        } else if (blockchainStatus.status === 'REVOKED') {
+            statusBadge = '<span class="badge bg-danger fs-6">REVOCATA</span>';
+            statusHtml = `
+                <div class="alert alert-danger">
+                    <h6><strong>Credenziale revocata</strong></h6>
+                    <p><strong>Emittente:</strong> ${blockchainStatus.issuer}</p>
+                    <p><strong>Data emissione:</strong> ${new Date(blockchainStatus.issueTimestamp * 1000).toLocaleString()}</p>
+                    <p class="mb-0">Questa credenziale è stata revocata e non è più valida.</p>
+                </div>
+            `;
+        } else if (blockchainStatus.status === 'NOT_FOUND') {
+            statusBadge = '<span class="badge bg-warning fs-6">NON TROVATA</span>';
+            statusHtml = `
+                <div class="alert alert-warning">
+                    <h6><strong>Credenziale non trovata</strong></h6>
+                    <p class="mb-0">Questa credenziale non è stata trovata sulla blockchain. 
+                    Potrebbe non essere stata ancora registrata oppure l'ID inserito non è corretto.</p>
+                </div>
+            `;
+        }
+
+        html = `
+            <div class="text-center mb-4">
+                <h4>Stato: ${statusBadge}</h4>
+                <small class="text-muted">ID: ${credentialId}</small>
+            </div>
+            ${statusHtml}
+        `;
+
+        resultContent.innerHTML = html;
+        resultsCard.style.display = 'block';
+        resultsCard.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function displayError(message) {
+        const html = `
+            <div class="alert alert-danger">
+                <h6><strong>Errore verifica</strong></h6>
+                <p class="mb-0">${message}</p>
+            </div>
+        `;
+        resultContent.innerHTML = html;
+        resultsCard.style.display = 'block';
+        resultsCard.scrollIntoView({ behavior: 'smooth' });
+    }
+});
+</script>
+{% endblock %}

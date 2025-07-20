@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from httpx import request
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.status import HTTP_302_FOUND, HTTP_403_FORBIDDEN
@@ -960,7 +961,7 @@ class AcademicCredentialsDashboard:
         self.app.mount("/static", StaticFiles(directory=str(self.static_dir)), name="static")
 
     def _create_auth_dependencies(self):
-        """Crea le dipendenze di autenticazione."""
+        """Crea le dipendenze di autenticazione con controlli granulari."""
 
         def get_current_user_dep(request: Request) -> Optional[UserSession]:
             return get_current_user(request, self.session_manager)
@@ -971,36 +972,36 @@ class AcademicCredentialsDashboard:
                 raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Autenticazione richiesta")
             return user
 
-        def require_write_permission_dep(request: Request) -> UserSession:
+        def require_issuer_dep(request: Request) -> UserSession:
             user = get_current_user(request, self.session_manager)
             if not user:
                 raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Autenticazione richiesta")
-            if "write" not in user.permissions:
-                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Permesso di scrittura richiesto")
+            if user.role != "issuer":
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Accesso riservato alle università emittenti")
             return user
 
-        def require_verify_permission_dep(request: Request) -> UserSession:
+        def require_verifier_or_issuer_dep(request: Request) -> UserSession:
             user = get_current_user(request, self.session_manager)
             if not user:
                 raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Autenticazione richiesta")
-            if "verify" not in user.permissions:
-                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Permesso di verifica richiesto")
+            if user.role not in ["issuer", "verifier"]:
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Accesso riservato alle università")
             return user
 
-        def require_admin_permission_dep(request: Request) -> UserSession:
+        def require_student_dep(request: Request) -> UserSession:
             user = get_current_user(request, self.session_manager)
             if not user:
                 raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Autenticazione richiesta")
-            if "admin" not in user.permissions:
-                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Permesso di amministratore richiesto")
+            if user.role != "studente":
+                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Accesso riservato agli studenti")
             return user
 
         return {
             'get_current_user': get_current_user_dep,
             'require_auth': require_auth_dep,
-            'require_write': require_write_permission_dep,
-            'require_verify': require_verify_permission_dep,
-            'require_admin': require_admin_permission_dep
+            'require_issuer': require_issuer_dep,
+            'require_verifier_or_issuer': require_verifier_or_issuer_dep,
+            'require_student': require_student_dep
         }
 
     def _initialize_system_components(self) -> None:
@@ -1140,28 +1141,510 @@ class AcademicCredentialsDashboard:
             wallet.unlock_wallet("Unisa2025")
 
         return wallet
+    
+    def _get_wallet_credentials_with_ids(self, wallet) -> List[Dict]:
+        """Ottiene le credenziali del wallet con i loro ID reali."""
+        credentials = []
+        wallet_creds = wallet.list_credentials()
+        
+        for cred_info in wallet_creds:
+            try:
+                # Ottieni la credenziale completa per estrarre l'ID reale
+                storage_id = cred_info['storage_id']
+                full_cred = wallet.get_credential(storage_id)
+                
+                if full_cred and full_cred.credential:
+                    # Estrai l'ID reale dalla credenziale
+                    real_credential_id = str(full_cred.credential.metadata.credential_id)
+                    
+                    credentials.append({
+                        'storage_id': storage_id,
+                        'credential_id': real_credential_id,  # ID reale della credenziale
+                        'issuer': cred_info['issuer'],
+                        'issue_date': cred_info['issued_at'],
+                        'total_courses': cred_info['total_courses'],
+                        'status': cred_info['status']
+                    })
+                else:
+                    # Fallback se non riusciamo a ottenere la credenziale completa
+                    credentials.append({
+                        'storage_id': storage_id,
+                        'credential_id': storage_id,  # Usa storage_id come fallback
+                        'issuer': cred_info['issuer'],
+                        'issue_date': cred_info['issued_at'],
+                        'total_courses': cred_info['total_courses'],
+                        'status': cred_info['status']
+                    })
+                    
+            except Exception as e:
+                self.logger.warning(f"Errore nell'ottenere l'ID della credenziale {cred_info.get('storage_id', 'unknown')}: {e}")
+                # Aggiungi comunque la credenziale con le info disponibili
+                credentials.append({
+                    'storage_id': cred_info.get('storage_id', 'unknown'),
+                    'credential_id': cred_info.get('storage_id', 'unknown'),
+                    'issuer': cred_info.get('issuer', 'Sconosciuto'),
+                    'issue_date': cred_info.get('issued_at', 'Sconosciuto'),
+                    'total_courses': cred_info.get('total_courses', 0),
+                    'status': cred_info.get('status', 'Sconosciuto')
+                })
+        
+        return credentials
 
     def _setup_routes(self) -> None:
         """Configura tutte le rotte dell'applicazione."""
 
-        @self.app.post("/request_credential")
-        async def handle_credential_request(
-            request: Request,
-            user: UserSession = Depends(self.auth_deps['require_auth'])
-        ):
-            """Gestisce la richiesta di una credenziale a un'università esterna."""
+        # Route principale con redirect appropriato
+        @self.app.get("/", response_class=HTMLResponse)
+        async def home(request: Request):
+            user = self.auth_deps['get_current_user'](request)
+            if user:
+                if user.role == 'studente':
+                    return RedirectResponse(url="/wallet", status_code=HTTP_302_FOUND)
+                else:
+                    return RedirectResponse(url="/dashboard", status_code=HTTP_302_FOUND)
+            return self.templates.TemplateResponse("home.html", {"request": request, "title": "Home"})
+
+        # Autenticazione
+        @self.app.get("/login", response_class=HTMLResponse)
+        async def login_page(request: Request):
+            """Pagina di login."""
+            return self.templates.TemplateResponse("login.html", {"request": request, "title": "Login"})
+
+        @self.app.post("/login")
+        async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+            """Gestisce il login dell'utente."""
             try:
-                if not user.is_student:
-                    return JSONResponse(
-                        {"success": False, "message": "Solo gli studenti possono richiedere credenziali"},
-                        status_code=403
+                user_info = AuthenticationService.authenticate_user(username, password)
+                if user_info:
+                    session_id = self.session_manager.create_session(user_info, username)
+                    request.session["session_id"] = session_id
+
+                    redirect_url = "/wallet" if user_info["role"] == "studente" else "/dashboard"
+                    self.logger.info(f"Login riuscito per {username} (ruolo: {user_info['role']})")
+                    return RedirectResponse(url=redirect_url, status_code=HTTP_302_FOUND)
+
+                return self.templates.TemplateResponse("login.html", {
+                    "request": request, "error": "Credenziali non valide", "title": "Login"
+                })
+            except Exception as e:
+                self.logger.error(f"Errore di login: {e}")
+                return self.templates.TemplateResponse("login.html", {
+                    "request": request, "error": "Errore di sistema. Riprova più tardi.", "title": "Login"
+                })
+
+        @self.app.get("/logout")
+        async def logout(request: Request):
+            """Esegue il logout dell'utente."""
+            session_id = request.session.get("session_id")
+            if session_id:
+                self.session_manager.destroy_session(session_id)
+            request.session.clear()
+            return RedirectResponse(url="/", status_code=HTTP_302_FOUND)
+
+        # Dashboard per università (issuer e verifier)
+        @self.app.get("/dashboard", response_class=HTMLResponse)
+        async def dashboard(request: Request):
+            user = self.auth_deps['require_verifier_or_issuer'](request)
+            
+            stats = {
+                "total_credentials_issued": self.issuer.stats.get('credentials_issued', 0) if self.issuer else 0,
+                "total_credentials_verified": 0,
+                "pending_verifications": 0,
+                "success_rate": 100.0,
+                "last_updated": datetime.datetime.now(datetime.timezone.utc)
+            }
+            message = request.query_params.get("message")
+
+            return self.templates.TemplateResponse("dashboard.html", {
+                "request": request, "user": user, "stats": stats, "title": "Dashboard", "message": message
+            })
+
+        # Gestione credenziali - solo per issuer
+        @self.app.get("/credentials", response_class=HTMLResponse)
+        async def credentials_page(request: Request):
+            user = self.auth_deps['require_issuer'](request)
+            credentials = self._load_credentials_for_display()
+            return self.templates.TemplateResponse("credentials.html", {
+                "request": request, "user": user, "title": "Gestisci credenziali", "credentials": credentials
+            })
+        
+        # Route di test per verificare l'autenticazione
+        @self.app.get("/test/auth")
+        async def test_auth(request: Request):
+            """Route di test per verificare l'autenticazione."""
+            try:
+                user = self.auth_deps['get_current_user'](request)
+                if user:
+                    return JSONResponse({
+                        "authenticated": True,
+                        "user_id": user.user_id,
+                        "role": user.role,
+                        "permissions": user.permissions,
+                        "university": user.university_name
+                    })
+                else:
+                    return JSONResponse({
+                        "authenticated": False,
+                        "message": "Nessuna sessione attiva"
+                    })
+            except Exception as e:
+                return JSONResponse({
+                    "error": str(e),
+                    "authenticated": False
+                })
+
+        # Emissione credenziali - solo per issuer
+        @self.app.get("/credentials/issue", response_class=HTMLResponse)
+        async def issue_credential_page(request: Request):
+            """Pagina per l'emissione di nuove credenziali - solo per issuer."""
+            try:
+                print(f"🔍 Accesso a /credentials/issue - IP: {request.client.host}")
+                
+                # Verifica autenticazione
+                user = self.auth_deps['require_issuer'](request)
+                print(f"✅ Utente autenticato: {user.user_id} (ruolo: {user.role})")
+                
+                # Verifica che sia un issuer
+                if user.role != "issuer":
+                    print(f"❌ Accesso negato - ruolo {user.role} non autorizzato")
+                    raise HTTPException(
+                        status_code=403, 
+                        detail="Accesso riservato alle università emittenti"
+                    )
+                
+                print(f"🎯 Rendering template issue_credential.html")
+                
+                # Verifica che il template esista
+                template_path = self.templates_dir / "issue_credential.html"
+                if not template_path.exists():
+                    print(f"❌ Template non trovato: {template_path}")
+                    return HTMLResponse(
+                        content=f"<h1>Errore: Template non trovato</h1><p>Path: {template_path}</p>",
+                        status_code=500
+                    )
+                
+                return self.templates.TemplateResponse("issue_credential.html", {
+                    "request": request, 
+                    "user": user, 
+                    "title": "Emetti nuova credenziale"
+                })
+                
+            except HTTPException as he:
+                print(f"❌ HTTPException: {he.status_code} - {he.detail}")
+                raise he
+            except Exception as e:
+                print(f"❌ Errore inaspettato in /credentials/issue: {e}")
+                import traceback
+                print(f"📍 Traceback: {traceback.format_exc()}")
+                raise HTTPException(status_code=500, detail=f"Errore interno: {str(e)}")
+
+        @self.app.post("/credentials/issue")
+        async def handle_issue_credential(
+            request: Request, 
+            student_name: str = Form(...), 
+            student_id: str = Form(...), 
+            credential_type: str = Form(...),
+            study_period_start: str = Form(...), 
+            study_period_end: str = Form(...),
+            callback_url: Optional[str] = Form(None), 
+            course_name: List[str] = Form([]),
+            course_cfu: List[str] = Form([]), 
+            course_grade: List[str] = Form([]),
+            course_date: List[str] = Form([])
+        ):
+            """Gestisce l'emissione di una nuova credenziale."""
+            user = self.auth_deps['require_issuer'](request)
+            
+            self.logger.info(f"Richiesta di emissione credenziale ricevuta per lo studente: {student_name}")
+
+            try:
+                if not self.issuer:
+                    self.logger.error("Servizio di emissione non inizializzato")
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Servizio di emissione non disponibile"
                     )
 
+                self.logger.info("Preparazione dati studente...")
+                crypto_utils = CryptoUtils()
+
+                name_parts = student_name.strip().split()
+                first_name = name_parts[0] if name_parts else "Sconosciuto"
+                last_name = name_parts[-1] if len(name_parts) > 1 else "Studente"
+
+                student_info = PersonalInfo(
+                    surname_hash=crypto_utils.sha256_hash_string(last_name),
+                    name_hash=crypto_utils.sha256_hash_string(first_name),
+                    birth_date_hash=crypto_utils.sha256_hash_string("1990-01-01"),
+                    student_id_hash=crypto_utils.sha256_hash_string(student_id),
+                    pseudonym=f"studente_{student_name.lower().replace(' ', '_')}"
+                )
+
+                # Preparazione periodo di studio
+                try:
+                    start_date = datetime.datetime.fromisoformat(study_period_start + "T00:00:00+00:00")
+                    end_date = datetime.datetime.fromisoformat(study_period_end + "T23:59:59+00:00")
+                    academic_year = f"{start_date.year}/{start_date.year + 1}"
+
+                    study_period = StudyPeriod(
+                        start_date=start_date,
+                        end_date=end_date,
+                        study_type=StudyType.ERASMUS,
+                        academic_year=academic_year
+                    )
+                except Exception as e:
+                    raise ValueError(f"Date non valide: {e}")
+
+                host_university = self.issuer.config.university_info
+                study_program = StudyProgram(
+                    name="Computer Science Exchange Program",
+                    isced_code="0613",
+                    eqf_level=EQFLevel.LEVEL_7,
+                    program_type="Master's Degree Exchange",
+                    field_of_study="Computer Science"
+                )
+
+                # Preparazione corsi
+                courses = []
+                for i in range(len(course_name)):
+                    if course_name[i] and course_cfu[i] and course_grade[i]:
+                        try:
+                            exam_grade = ExamGrade(
+                                score=course_grade[i],
+                                passed=True,
+                                grade_system=GradeSystem.ECTS_GRADE,
+                                ects_grade=course_grade[i]
+                            )
+
+                            if course_date[i]:
+                                exam_date = datetime.datetime.fromisoformat(course_date[i] + "T10:00:00+00:00")
+                            else:
+                                exam_date = study_period.end_date
+
+                            course = Course(
+                                course_name=course_name[i],
+                                course_code=f"CRS-{i+1:03d}",
+                                isced_code="0613",
+                                grade=exam_grade,
+                                exam_date=exam_date,
+                                ects_credits=int(course_cfu[i]),
+                                professor=f"Prof. {user.university_name}"
+                            )
+                            courses.append(course)
+                        except Exception as e:
+                            raise ValueError(f"Errore nel corso {course_name[i]}: {e}")
+
+                if not courses:
+                    raise ValueError("È necessario specificare almeno un corso")
+
+                # Creazione e elaborazione richiesta
+                request_id = self.issuer.create_issuance_request(
+                    student_info=student_info,
+                    study_period=study_period,
+                    host_university=host_university,
+                    study_program=study_program,
+                    courses=courses,
+                    requested_by=user.user_id,
+                    notes=f"Tipo di credenziale: {credential_type}"
+                )
+
+                issuance_result = self.issuer.process_issuance_request(request_id)
+
+                if not issuance_result.success:
+                    error_msg = "; ".join(issuance_result.errors)
+                    raise ValueError(f"Emissione fallita: {error_msg}")
+
+                credential = issuance_result.credential
+                credential_id_str = str(credential.metadata.credential_id)
+
+                # Gestione callback
+                callback_success_message = ""
+                if callback_url and callback_url.strip():
+                    try:
+                        credential_dict = credential.to_dict()
+                        
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            response = await client.post(
+                                callback_url,
+                                json=credential_dict,
+                                headers={
+                                    "Content-Type": "application/json",
+                                    "User-Agent": "AcademicCredentials-Dashboard/1.0"
+                                }
+                            )
+                            
+                            if response.is_success:
+                                callback_success_message = f" La credenziale è stata inviata con successo a {callback_url}"
+                            else:
+                                callback_success_message = f" ATTENZIONE: Errore nell'invio a {callback_url} (HTTP {response.status_code})"
+                                
+                    except Exception as callback_error:
+                        callback_success_message = f" ATTENZIONE: Errore durante l'invio a {callback_url}: {str(callback_error)}"
+
+                # Salva credenziale su file
+                import re
+                safe_student_name = re.sub(r'[^\w\s-]', '', student_name).strip().replace(' ', '_')
+                output_dir = Path(f"src/credentials/{user.user_id}/{safe_student_name}/")
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = output_dir / f"{credential_id_str}.json"
+
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(credential.to_json())
+
+                result_data = {
+                    "success": True,
+                    "message": f"Credenziale emessa con successo!{callback_success_message}",
+                    "credential_id": credential_id_str,
+                    "file_path": str(output_path),
+                    "issued_at": credential.metadata.issued_at.isoformat(),
+                    "total_courses": len(courses),
+                    "total_ects": sum(c.ects_credits for c in courses)
+                }
+
+                return JSONResponse(result_data)
+
+            except ValueError as e:
+                return JSONResponse(
+                    {"success": False, "message": f"Errore nei dati: {str(e)}"},
+                    status_code=400
+                )
+            except Exception as e:
+                self.logger.error(f"Errore critico durante l'emissione: {e}", exc_info=True)
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno del server: {str(e)}"},
+                    status_code=500
+                )
+
+        # Verifica credenziali - per issuer e verifier
+        @self.app.get("/verification", response_class=HTMLResponse)
+        async def verification_page(request: Request):
+            user = self.auth_deps['require_verifier_or_issuer'](request)
+            return self.templates.TemplateResponse("verification.html", {
+                "request": request, "user": user, "title": "Verifica credenziali"
+            })
+
+        @self.app.post("/verification/full-verify")
+        async def handle_full_verification(request: Request):
+            """Gestisce la verifica completa di una presentazione selettiva."""
+            user = self.auth_deps['require_verifier_or_issuer'](request)
+            
+            try:
+                self.logger.info(f"Richiesta di verifica completa da {user.user_id}")
+
+                body = await request.json()
+                presentation_data = body.get("presentation_data")
+                student_public_key = body.get("student_public_key")
+                purpose = body.get("purpose", "verification")
+                check_ocsp = body.get("check_ocsp", False)
+
+                if not presentation_data or not student_public_key:
+                    return JSONResponse(
+                        {"success": False, "message": "Dati della presentazione e chiave pubblica richiesti"},
+                        status_code=400
+                    )
+
+                verification_report = await self.verification_service.verify_presentation_complete(
+                    presentation_data, student_public_key, purpose, check_ocsp
+                )
+
+                return JSONResponse({
+                    "success": True,
+                    "message": "Verifica completata",
+                    "verification_report": verification_report
+                })
+
+            except json.JSONDecodeError:
+                return JSONResponse(
+                    {"success": False, "message": "Formato JSON non valido"},
+                    status_code=400
+                )
+            except Exception as e:
+                self.logger.error(f"Errore nella verifica completa: {e}")
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno: {str(e)}"},
+                    status_code=500
+                )
+
+        # Verifica blockchain per studenti
+        @self.app.get("/verification/student", response_class=HTMLResponse)
+        async def student_verification_page(request: Request):
+            user = self.auth_deps['require_student'](request)
+            
+            # Ottieni le credenziali dal wallet dello studente
+            wallet = self._get_student_wallet(user)
+            wallet_creds = wallet.list_credentials()
+
+            credentials = [
+                {
+                    'storage_id': cred['storage_id'],
+                    'credential_id': cred.get('credential_id', 'N/A'),  # ID reale della credenziale
+                    'issuer': cred['issuer'],
+                    'issue_date': cred['issued_at'],
+                    'total_courses': cred['total_courses'],
+                    'status': cred['status']
+                } for cred in wallet_creds
+            ]
+            
+            return self.templates.TemplateResponse("student_verification.html", {
+                "request": request, 
+                "user": user, 
+                "title": "Verifica blockchain",
+                "credentials": credentials  
+            })
+
+        @self.app.post("/verification/student/blockchain")
+        async def handle_student_blockchain_verify(request: Request):
+            user = self.auth_deps['require_student'](request)
+            body = await request.json()
+            credential_id = body.get("credential_id")
+            
+            if not credential_id:
+                return JSONResponse(
+                    {"success": False, "message": "ID credenziale richiesto"}, 
+                    status_code=400
+                )
+            
+            try:
+                async with httpx.AsyncClient(verify=False) as client:
+                    response = await client.post(
+                        f"{self.config.secure_server_url}/api/v1/blockchain/credentials/verify",
+                        headers={"Authorization": f"Bearer student_token"},
+                        json={"credential_id": credential_id},
+                        timeout=10.0
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return JSONResponse({"success": True, "blockchain_status": result.blockchain_status})
+                    else:
+                        return JSONResponse(
+                            {"success": False, "message": "Errore nella verifica blockchain"},
+                            status_code=502
+                        )
+            except Exception as e:
+                return JSONResponse(
+                    {"success": False, "message": f"Errore: {str(e)}"},
+                    status_code=500
+                )
+
+        # Richiesta credenziali per studenti
+        @self.app.get("/student/request", response_class=HTMLResponse)
+        async def student_request_page(request: Request):
+            user = self.auth_deps['require_student'](request)
+            return self.templates.TemplateResponse("student_request.html", {
+                "request": request, "user": user, "title": "Richiedi credenziale"
+            })
+
+        @self.app.post("/request_credential")
+        async def handle_credential_request(request: Request):
+            """Gestisce la richiesta di una credenziale a un'università esterna."""
+            user = self.auth_deps['require_student'](request)
+            
+            try:
                 data = await request.json()
                 university = data.get('university')
                 purpose = data.get('purpose', '')
 
-                # Configurazione per l'Università di Rennes (esempio)
                 university_config = {
                     "Université de Rennes": {
                         "url": "https://localhost:8443/api/v1/credentials/request",
@@ -1176,12 +1659,9 @@ class AcademicCredentialsDashboard:
                     )
 
                 config = university_config[university]
-
-                # Dati dello studente (dal portafoglio)
                 wallet = self._get_student_wallet(user)
-                student_id = "0622702628"  # Esempio, in realtà dovrebbe provenire dal portafoglio
+                student_id = "0622702628"
 
-                # Crea il payload per la richiesta TLS
                 payload = {
                     "student_name": "Mario Rossi",
                     "student_id": student_id,
@@ -1189,8 +1669,7 @@ class AcademicCredentialsDashboard:
                     "requested_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
                 }
 
-                # Invia la richiesta TLS al server universitario
-                async with httpx.AsyncClient(verify=False) as client:  # verify=False solo per test!
+                async with httpx.AsyncClient(verify=False) as client:
                     response = await client.post(
                         config['url'],
                         json=payload,
@@ -1221,211 +1700,361 @@ class AcademicCredentialsDashboard:
                     status_code=500
                 )
 
-        @self.app.post("/wallet/import-credential", response_class=JSONResponse)
-        async def import_credential(
-            request_body: 'CredentialImportRequest',
+        # Wallet studente
+        @self.app.get("/wallet", response_class=HTMLResponse)
+        async def wallet_page(request: Request):
+            user = self.auth_deps['require_student'](request)
+            wallet = self._get_student_wallet(user)
+            
+            # Metodo per ottenere le credenziali con ID reali
+            credentials = self._get_wallet_credentials_with_ids(wallet)
+
+            return self.templates.TemplateResponse("student_wallet.html", {
+                "request": request, "user": user, "title": "Il mio wallet", "credentials": credentials
+            })
+
+        @self.app.get("/credentials/{storage_id}", response_class=JSONResponse)
+        async def get_credential_details(
+            storage_id: str, 
             user: UserSession = Depends(self.auth_deps['require_auth'])
         ):
-            """
-            Endpoint per importare una credenziale da un file JSON nel portafoglio dello studente.
-            """
-            self.logger.info(f"Richiesta di importazione credenziale per l'utente: {user.user_id}")
+            """Ottiene i dettagli di una specifica credenziale."""
+            wallet = self._get_student_wallet(user)
+            cred = wallet.get_credential(storage_id)
 
-            # Verifica che l'utente sia uno studente
-            if not user.is_student:
-                self.logger.warning(f"Tentativo di importazione non autorizzato da {user.user_id} (ruolo: {user.role})")
-                return JSONResponse(
-                    {"success": False, "message": "Solo gli studenti possono importare credenziali."},
-                    status_code=403
-                )
+            if not cred:
+                raise HTTPException(status_code=404, detail="Credenziale non trovata")
 
+            return {
+                "storage_id": storage_id,
+                "credential_id": str(cred.credential.metadata.credential_id),
+                "issuer": cred.credential.issuer.name,
+                "issue_date": cred.credential.metadata.issued_at.strftime("%Y-%m-%d"),
+                "status": cred.credential.status.value,
+                "total_ects": cred.credential.total_ects_credits,
+                "courses": [
+                    {"name": course.course_name, "grade": course.grade.score}
+                    for course in cred.credential.courses
+                ]
+            }
+
+        @self.app.post("/presentations", response_class=JSONResponse)
+        async def create_presentation(request: Request):
+            """Crea una nuova presentazione da credenziali selezionate con divulgazione selettiva."""
+            user = self.auth_deps['require_student'](request)
+            
             try:
-                # Ottieni il portafoglio dello studente
+                body = await request.json()
+
+                if not body.get('purpose') or len(body.get('purpose', '').strip()) < 5:
+                    return JSONResponse(
+                        {"success": False, "message": "Lo scopo deve essere di almeno 5 caratteri"},
+                        status_code=400
+                    )
+
+                if not body.get('credentials') or len(body.get('credentials')) == 0:
+                    return JSONResponse(
+                        {"success": False, "message": "Selezionare almeno una credenziale"},
+                        status_code=400
+                    )
+
                 wallet = self._get_student_wallet(user)
                 if not wallet or wallet.status != WalletStatus.UNLOCKED:
-                    self.logger.error(f"Portafoglio non disponibile o bloccato per l'utente {user.user_id}")
                     return JSONResponse(
-                        {"success": False, "message": "Portafoglio non disponibile o bloccato."},
+                        {"success": False, "message": "Portafoglio non disponibile o bloccato"},
                         status_code=500
                     )
 
-                # Chiama la funzione del portafoglio per aggiungere la credenziale dal JSON
-                storage_id = wallet.add_credential_from_json(
-                    request_body.credential_json,
-                    tags=["importata"]
+                if not MODULES_AVAILABLE:
+                    return JSONResponse(
+                        {"success": False, "message": "Moduli del portafoglio non disponibili"},
+                        status_code=503
+                    )
+
+                from wallet.presentation import PresentationManager, PresentationFormat
+                from wallet.selective_disclosure import DisclosureLevel
+
+                presentation_manager = PresentationManager(wallet)
+
+                selected_attributes = body.get('selected_attributes', [])
+                if not selected_attributes:
+                    selected_attributes = [
+                        "metadata.credential_id", "subject.pseudonym",
+                        "issuer.name", "total_ects_credits"
+                    ]
+
+                credential_selections = []
+                for storage_id in body.get('credentials'):
+                    wallet_cred = wallet.get_credential(storage_id)
+                    if not wallet_cred:
+                        return JSONResponse(
+                            {"success": False, "message": f"Credenziale {storage_id} non trovata nel portafoglio"},
+                            status_code=400
+                        )
+
+                    selection = {
+                        'storage_id': storage_id,
+                        'disclosure_level': DisclosureLevel.CUSTOM,
+                        'custom_attributes': selected_attributes
+                    }
+                    credential_selections.append(selection)
+
+                presentation_ids = presentation_manager.create_presentation(
+                    purpose=body.get('purpose'),
+                    credential_selections=credential_selections,
+                    recipient=body.get('recipient'),
+                    expires_hours=72
                 )
 
-                if storage_id:
-                    self.logger.info(f"Credenziale importata con successo nel portafoglio di {user.user_id}. Storage ID: {storage_id}")
-                    return JSONResponse({
-                        "success": True,
-                        "message": "Credenziale importata con successo nel tuo portafoglio!",
-                        "storage_id": storage_id
+                presentations_details = []
+
+                for presentation_id in presentation_ids:
+                    sign_success = presentation_manager.sign_presentation(presentation_id)
+                    if not sign_success:
+                        return JSONResponse(
+                            {"success": False, "message": f"Errore durante la firma della presentazione {presentation_id}"},
+                            status_code=500
+                        )
+
+                    export_dir = wallet.wallet_dir / "presentations"
+                    export_dir.mkdir(exist_ok=True)
+                    output_path = export_dir / f"{presentation_id}.json"
+
+                    export_success = presentation_manager.export_presentation(
+                        presentation_id,
+                        str(output_path),
+                        PresentationFormat.SIGNED_JSON
+                    )
+
+                    if not export_success:
+                        return JSONResponse(
+                            {"success": False, "message": f"Errore durante l'esportazione della presentazione {presentation_id}"},
+                            status_code=500
+                        )
+
+                    presentation = presentation_manager.get_presentation(presentation_id)
+                    if not presentation:
+                        return JSONResponse(
+                            {"success": False, "message": f"Errore: presentazione {presentation_id} non trovata dopo la creazione"},
+                            status_code=500
+                        )
+
+                    summary = presentation.get_summary()
+                    presentations_details.append({
+                        "presentation_id": presentation_id,
+                        "download_url": f"/presentations/{presentation_id}/download",
+                        "details": {
+                            "total_disclosures": summary.get('total_disclosures', 0),
+                            "attributes_disclosed": summary.get('total_attributes_disclosed', 0),
+                            "signed": summary.get('is_signed', False),
+                            "expires_at": (
+                                presentation.expires_at.isoformat()
+                                if presentation.expires_at else None
+                            )
+                        }
                     })
-                else:
-                    # Questo caso copre errori come credenziali duplicate o fallimenti interni
-                    self.logger.warning(f"Importazione fallita per {user.user_id}. Possibile duplicato o errore interno.")
-                    return JSONResponse(
-                        {"success": False, "message": "Impossibile importare la credenziale. Potrebbe essere già presente o il file potrebbe essere corrotto."},
-                        status_code=400
-                    )
 
-            except Exception as e:
-                self.logger.error(f"Errore critico durante l'importazione della credenziale per {user.user_id}: {e}", exc_info=True)
-                return JSONResponse(
-                    {"success": False, "message": f"Errore interno del server: {str(e)}"},
-                    status_code=500
-                )
-
-        @self.app.post("/verification/full-verify")
-        async def handle_full_verification(
-            request: Request,
-            user: UserSession = Depends(self.auth_deps['require_verify'])
-        ):
-            """Gestisce la verifica completa di una presentazione selettiva."""
-            try:
-                self.logger.info(f"Richiesta di verifica completa da {user.user_id}")
-
-                body = await request.json()
-
-                presentation_data = body.get("presentation_data")
-                student_public_key = body.get("student_public_key")
-                purpose = body.get("purpose", "verification")
-                check_ocsp = body.get("check_ocsp", False)
-
-                if not presentation_data or not student_public_key:
-                    return JSONResponse(
-                        {"success": False, "message": "Dati della presentazione e chiave pubblica richiesti"},
-                        status_code=400
-                    )
-
-                verification_report = await self.verification_service.verify_presentation_complete(
-                    presentation_data, student_public_key, purpose, check_ocsp
-                )
-
-                self.logger.info(f"Verifica completata: {verification_report['overall_result']}")
-
-                return JSONResponse({
+                response_data = {
                     "success": True,
-                    "message": "Verifica completata",
-                    "verification_report": verification_report
-                })
+                    "message": "Presentazioni verificabili create con successo",
+                    "presentations": presentations_details
+                }
 
-            except json.JSONDecodeError:
+                return self._create_json_response(response_data)
+
+            except ImportError as e:
+                self.logger.error(f"Errore di importazione nella creazione della presentazione: {e}")
                 return JSONResponse(
-                    {"success": False, "message": "Formato JSON non valido"},
-                    status_code=400
+                    {"success": False, "message": "Moduli del portafoglio non disponibili"},
+                    status_code=503
                 )
             except Exception as e:
-                self.logger.error(f"Errore nella verifica completa: {e}")
+                self.logger.error(f"Errore nella creazione della presentazione: {e}", exc_info=True)
                 return JSONResponse(
                     {"success": False, "message": f"Errore interno: {str(e)}"},
                     status_code=500
                 )
 
-        @self.app.get("/", response_class=HTMLResponse)
-        async def home(request: Request):
-            """Pagina principale."""
-            user = self.auth_deps['get_current_user'](request)
-            if user:
-                redirect_url = "/wallet" if user.role == 'studente' else "/dashboard"
-                return RedirectResponse(url=redirect_url, status_code=HTTP_302_FOUND)
-
-            return self.templates.TemplateResponse("home.html", {"request": request, "title": "Home"})
-
-        @self.app.get("/login", response_class=HTMLResponse)
-        async def login_page(request: Request):
-            """Pagina di login."""
-            return self.templates.TemplateResponse("login.html", {"request": request, "title": "Login"})
-
-        @self.app.post("/login")
-        async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-            """Gestisce il login dell'utente."""
+        @self.app.post("/wallet/import-credential", response_class=JSONResponse)
+        async def import_credential(
+            request_body: CredentialImportRequest,
+            user: UserSession = Depends(self.auth_deps['require_student'])
+        ):
+            """Endpoint per importare una credenziale da un file JSON nel wallet dello studente."""
+            self.logger.info(f"Richiesta di importazione credenziale per l'utente: {user.user_id}")
+            
             try:
-                user_info = AuthenticationService.authenticate_user(username, password)
-                if user_info:
-                    session_id = self.session_manager.create_session(user_info, username)
-                    request.session["session_id"] = session_id
-
-                    redirect_url = "/wallet" if user_info["role"] == "studente" else "/dashboard"
-                    self.logger.info(f"Login riuscito per {username} (ruolo: {user_info['role']})")
-
-                    return RedirectResponse(url=redirect_url, status_code=HTTP_302_FOUND)
-
-                return self.templates.TemplateResponse("login.html", {
-                    "request": request, "error": "Credenziali non valide", "title": "Login"
-                })
-
+                wallet = self._get_student_wallet(user)
+                if not wallet or wallet.status != WalletStatus.UNLOCKED:
+                    return JSONResponse(
+                        {"success": False, "message": "Wallet non disponibile o bloccato."},
+                        status_code=500
+                    )
+                
+                storage_id = wallet.add_credential_from_json(
+                    request_body.credential_json,
+                    tags=["importata"]
+                )
+                
+                if storage_id:
+                    return JSONResponse({
+                        "success": True,
+                        "message": "Credenziale importata con successo nel tuo wallet!",
+                        "storage_id": storage_id
+                    })
+                else:
+                    return JSONResponse(
+                        {"success": False, "message": "Impossibile importare la credenziale. Potrebbe essere già presente."},
+                        status_code=400
+                    )
+            
             except Exception as e:
-                self.logger.error(f"Errore di login: {e}")
-                return self.templates.TemplateResponse("login.html", {
-                    "request": request, "error": "Errore di sistema. Riprova più tardi.", "title": "Login"
-                })
+                self.logger.error(f"Errore critico durante l'importazione: {e}", exc_info=True)
+                return JSONResponse(
+                    {"success": False, "message": f"Errore interno del server: {str(e)}"},
+                    status_code=500
+                )
 
-        @self.app.get("/logout")
-        async def logout(request: Request):
-            """Esegue il logout dell'utente."""
-            session_id = request.session.get("session_id")
-            if session_id:
-                self.session_manager.destroy_session(session_id)
-            request.session.clear()
-            return RedirectResponse(url="/", status_code=HTTP_302_FOUND)
+        @self.app.get("/presentations/{presentation_id}/download")
+        async def download_presentation(
+            presentation_id: str,
+            request: Request
+        ):        
+            """Permette di scaricare un file di presentazione."""
+            user = self.auth_deps['require_student'](request)
+            
+            try:
+                wallet = self._get_student_wallet(user)
+                file_path = wallet.wallet_dir / "presentations" / f"{presentation_id}.json"
 
-        @self.app.get("/wallet", response_class=HTMLResponse)
-        async def wallet_page(request: Request):
-            """Pagina del portafoglio dello studente."""
+                if not file_path.exists():
+                    raise HTTPException(status_code=404, detail="Presentazione non trovata")
+
+                return FileResponse(
+                    file_path,
+                    filename=f"presentation_{presentation_id[:8]}.json",
+                    media_type='application/json'
+                )
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Errore durante il download della presentazione: {e}")
+                raise HTTPException(status_code=500, detail="Errore durante il download")
+
+        # Endpoint di debug
+        @self.app.get("/debug/directories")
+        async def debug_directories(request: Request):
+            """Endpoint di debug per controllare le directory."""
             user = self.auth_deps['get_current_user'](request)
-            if not user or user.role != "studente":
-                return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
-
-            wallet = self._get_student_wallet(user)
-            wallet_creds = wallet.list_credentials()
-
-            credentials = [
-                {
-                    'storage_id': cred['storage_id'],
-                    'issuer': cred['issuer'],
-                    'issue_date': cred['issued_at'],
-                    'total_courses': cred['total_courses'],
-                    'status': cred['status']
-                } for cred in wallet_creds
-            ]
-
-            return self.templates.TemplateResponse("student_wallet.html", {
-                "request": request, "user": user, "title": "Il Mio Portafoglio", "credentials": credentials
-            })
-
-        @self.app.get("/dashboard", response_class=HTMLResponse)
-        async def dashboard(request: Request):
-            """Pagina principale della dashboard."""
-            user = self.auth_deps['get_current_user'](request)
-            if not user or user.role == "studente":
-                return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
-
-            # Sostituito MockDataService con dati reali o placeholder
-            stats = {
-                "total_credentials_issued": self.issuer.stats.get('credentials_issued', 0) if self.issuer else 0,
-                "total_credentials_verified": 0,  # Placeholder
-                "pending_verifications": 0,      # Placeholder
-                "success_rate": 100.0,           # Placeholder
-                "last_updated": datetime.datetime.now(datetime.timezone.utc)
+            if not user or user.role not in ["issuer", "admin"]:
+                raise HTTPException(status_code=403, detail="Accesso negato")
+            
+            current_dir = Path.cwd()
+            debug_info = {
+                "current_directory": str(current_dir),
+                "credentials_paths": {
+                    "src/credentials": {
+                        "exists": (current_dir / "src" / "credentials").exists(),
+                        "path": str(current_dir / "src" / "credentials"),
+                        "files": []
+                    },
+                    "credentials": {
+                        "exists": (current_dir / "credentials").exists(), 
+                        "path": str(current_dir / "credentials"),
+                        "files": []
+                    }
+                }
             }
-            message = request.query_params.get("message")
+            
+            for base_name, info in debug_info["credentials_paths"].items():
+                base_path = Path(info["path"])
+                if base_path.exists():
+                    info["files"] = [str(f) for f in base_path.rglob("*.json")]
+            
+            return self._create_json_response(debug_info)
+        
+    def _load_credentials_for_display(self):
+        """Carica le credenziali per la visualizzazione nella dashboard issuer."""
+        credentials = []
+        try:
+            current_dir = Path.cwd()
+            possible_base_dirs = [
+                current_dir / "src" / "credentials",
+                current_dir / "credentials", 
+                Path("./src/credentials"),
+                Path("./credentials")
+            ]
+            
+            credentials_base_dir = None
+            for base_dir in possible_base_dirs:
+                if base_dir.exists():
+                    credentials_base_dir = base_dir
+                    break
+            
+            if not credentials_base_dir:
+                credentials_base_dir = current_dir / "src" / "credentials"
+                credentials_base_dir.mkdir(parents=True, exist_ok=True)
 
-            return self.templates.TemplateResponse("dashboard.html", {
-                "request": request, "user": user, "stats": stats, "title": "Dashboard", "message": message
-            })
+            credential_files = []
+            if credentials_base_dir.exists():
+                for json_file in credentials_base_dir.rglob("*.json"):
+                    if json_file.is_file():
+                        credential_files.append(json_file)
+            
+            for credential_file in credential_files:
+                try:
+                    with open(credential_file, 'r', encoding='utf-8') as f:
+                        if MODULES_AVAILABLE:
+                            credential_data = json.load(f)
+                            credential = AcademicCredential.from_dict(credential_data)
+                            summary = credential.get_summary()
+                            credentials.append({
+                                'credential_id': summary['credential_id'],
+                                'student_name': summary['subject_pseudonym'],
+                                'issued_at': summary['issued_at'][:19],
+                                'issued_by': credential.issuer.name,
+                                'status': summary['status'].title(),
+                                'total_courses': summary['total_courses'],
+                                'total_ects': summary['total_ects'],
+                                'file_path': str(credential_file)
+                            })
+                        else:
+                            credential_data = json.load(f)
+                            metadata = credential_data.get('metadata', {})
+                            issuer = credential_data.get('issuer', {})
+                            courses = credential_data.get('courses', [])
+                            
+                            credentials.append({
+                                'credential_id': str(metadata.get('credential_id', credential_file.stem)),
+                                'student_name': credential_data.get('subject', {}).get('pseudonym', 'Studente sconosciuto'),
+                                'issued_at': metadata.get('issued_at', '2024-01-01T00:00:00')[:19],
+                                'issued_by': issuer.get('name', 'Università sconosciuta'),
+                                'status': 'Active',
+                                'total_courses': len(courses),
+                                'total_ects': sum(course.get('ects_credits', 0) for course in courses),
+                                'file_path': str(credential_file)
+                            })
+                            
+                except Exception as e:
+                    self.logger.warning(f"Errore nel caricamento della credenziale {credential_file}: {e}")
+                    continue
 
+            credentials.sort(key=lambda x: x['issued_at'], reverse=True)
+
+        except Exception as e:
+            self.logger.error(f"Errore nel caricamento delle credenziali: {e}")
+
+        return credentials
+
+        # Gestione credenziali - solo per issuer
         @self.app.get("/credentials", response_class=HTMLResponse)
         async def credentials_page(request: Request):
-            """Pagina di gestione delle credenziali."""
-            user = self.auth_deps['get_current_user'](request)
-            if not user or user.role == "studente":
-                return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
+            user = self.auth_deps['require_issuer'](request)
 
             credentials = []
             try:
-                # CORREZIONE: Percorsi assoluti e relativi migliorati
+                # Percorsi assoluti
                 current_dir = Path.cwd()
                 possible_base_dirs = [
                     current_dir / "src" / "credentials",
@@ -1508,36 +2137,32 @@ class AcademicCredentialsDashboard:
             except Exception as e:
                 self.logger.error(f"❌ Errore nel caricamento delle credenziali: {e}")
 
+            credentials = self._load_credentials_for_display()
             return self.templates.TemplateResponse("credentials.html", {
-                "request": request, "user": user, "title": "Gestisci Credenziali", "credentials": credentials
+                "request": request, "user": user, "title": "Gestisci credenziali", "credentials": credentials
             })
 
+        # Emissione credenziali - solo per issuer
         @self.app.get("/credentials/issue", response_class=HTMLResponse)
         async def issue_credential_page(request: Request):
-            """Pagina per l'emissione di nuove credenziali."""
-            user = self.auth_deps['require_write'](request)
-
+            user = self.auth_deps['require_issuer'](request)
             return self.templates.TemplateResponse("issue_credential.html", {
-                "request": request, "user": user, "title": "Emetti Nuova Credenziale"
+                "request": request, "user": user, "title": "Emetti nuova credenziale"
             })
 
         @self.app.post("/credentials/issue")
-        async def handle_issue_credential(
-            request: Request,
-            student_name: str = Form(...),
-            student_id: str = Form(...),
-            credential_type: str = Form(...),
-            study_period_start: str = Form(...),
-            study_period_end: str = Form(...),
-            callback_url: Optional[str] = Form(None),
-            course_name: List[str] = Form([]),
-            course_cfu: List[str] = Form([]),
-            course_grade: List[str] = Form([]),
-            course_date: List[str] = Form([])
-        ):
+        async def handle_issue_credential(request: Request, student_name: str = Form(...), 
+                                        student_id: str = Form(...), credential_type: str = Form(...),
+                                        study_period_start: str = Form(...), study_period_end: str = Form(...),
+                                        callback_url: Optional[str] = Form(None), course_name: List[str] = Form([]),
+                                        course_cfu: List[str] = Form([]), course_grade: List[str] = Form([]),
+                                        course_date: List[str] = Form([])):
             """
             Gestisce l'emissione di una nuova credenziale.
             """
+            
+            user = self.auth_deps['require_issuer'](request)
+
             self.logger.info(f"Richiesta di emissione credenziale ricevuta per lo studente: {student_name}")
 
             try:
@@ -1662,7 +2287,7 @@ class AcademicCredentialsDashboard:
                 credential_id_str = str(credential.metadata.credential_id)
 
                 # ============================================
-                # SEZIONE CALLBACK CORRETTA
+                # SEZIONE CALLBACK
                 # ============================================
                 if callback_url and callback_url.strip():
                     self.logger.info(f"🚀 Preparazione per l'invio della credenziale a {callback_url}")
@@ -1809,10 +2434,10 @@ class AcademicCredentialsDashboard:
 
         @self.app.get("/verification", response_class=HTMLResponse)
         async def verification_page(request: Request):
-            """Pagina di verifica delle credenziali."""
-            user = self.auth_deps['get_current_user'](request)
-            if not user or user.role == "studente":
-                return RedirectResponse(url="/login", status_code=HTTP_302_FOUND)
+            user = self.auth_deps['require_verifier_or_issuer'](request)
+            return self.templates.TemplateResponse("verification.html", {
+                "request": request, "user": user, "title": "Verifica credenziali"
+            })
 
             return self.templates.TemplateResponse("verification.html", {
                 "request": request, "user": user, "title": "Verifica Credenziali"
@@ -1842,12 +2467,11 @@ class AcademicCredentialsDashboard:
                 ]
             }
 
+        # Route esistenti del wallet (con controlli studente)
         @self.app.post("/presentations", response_class=JSONResponse)
-        async def create_presentation(
-            request: Request,
-            user: UserSession = Depends(self.auth_deps['require_auth'])
-        ):
+        async def create_presentation(request: Request):
             """Crea una nuova presentazione da credenziali selezionate con divulgazione selettiva."""
+            user = self.auth_deps['require_student'](request)
             try:
                 body = await request.json()
 
@@ -2004,10 +2628,8 @@ class AcademicCredentialsDashboard:
             credential_json: str    
         
         @self.app.post("/wallet/import-credential", response_class=JSONResponse)
-        async def import_credential(
-            request_body: CredentialImportRequest,
-            user: UserSession = Depends(self.auth_deps['require_auth'])
-        ):
+        async def import_credential(request_body: CredentialImportRequest):
+            user = self.auth_deps['require_student'](request)
             """
             Endpoint per importare una credenziale da un file JSON nel wallet dello studente.
             """
@@ -2060,11 +2682,9 @@ class AcademicCredentialsDashboard:
                 )
 
         @self.app.get("/presentations/{presentation_id}/download")
-        async def download_presentation(
-            presentation_id: str,
-            user: UserSession = Depends(self.auth_deps['require_auth'])
-        ):
+        async def download_presentation(presentation_id: str):        
             """Permette di scaricare un file di presentazione."""
+            user = self.auth_deps['require_student'](request)
             try:
                 # Il percorso del file ora dipende dal portafoglio dello studente
                 if not user.is_student:

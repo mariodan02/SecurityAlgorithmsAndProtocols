@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h4 mb-0">Richiedi credenziale universitaria</h1>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Nuova richiesta credenziale</h6>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info small">
+                    <strong>Processo:</strong> La richiesta verrà inviata direttamente all'università selezionata 
+                    tramite connessione sicura TLS. Riceverai una notifica quando la credenziale sarà pronta.
+                </div>
+                
+                <form id="credential-request-form">
+                    <div class="mb-3">
+                        <label class="form-label">Università di destinazione *</label>
+                        <select class="form-select" id="university" required>
+                            <option value="">Seleziona università...</option>
+                            <option value="Université de Rennes">Université de Rennes (Francia)</option>
+                            <option value="Università di Salerno">Università di Salerno (Italia)</option>
+                        </select>
+                        <div class="form-text">Seleziona l'università a cui richiedere la credenziale</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Tipo di credenziale *</label>
+                        <select class="form-select" id="credentialType" required>
+                            <option value="">Seleziona tipo...</option>
+                            <option value="transcript">Transcript of Records (Lista esami)</option>
+                            <option value="diploma_supplement">Diploma Supplement</option>
+                            <option value="degree_certificate">Certificato di laurea</option>
+                            <option value="erasmus_certificate">Certificato Erasmus+</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Motivo della richiesta *</label>
+                        <textarea class="form-control" id="purpose" rows="3" required 
+                                  placeholder="es. Richiesta per riconoscimento crediti CFU presso università italiana"></textarea>
+                        <div class="form-text">Specifica il motivo per cui richiedi questa credenziale</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Periodo di studio (opzionale)</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label small">Data inizio</label>
+                                <input type="date" class="form-control" id="periodStart">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small">Data fine</label>
+                                <input type="date" class="form-control" id="periodEnd">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Note aggiuntive (opzionale)</label>
+                        <textarea class="form-control" id="notes" rows="2" 
+                                  placeholder="Eventuali informazioni aggiuntive per l'università"></textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary" id="submitBtn">
+                        <span id="submitText">Invia richiesta</span>
+                        <span id="submitSpinner" class="spinner-border spinner-border-sm d-none"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4" id="requestResult" style="display: none;">
+            <div class="card-header">
+                <h6 class="mb-0">Risultato richiesta</h6>
+            </div>
+            <div class="card-body">
+                <div id="resultContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Come funziona</h6>
+            </div>
+            <div class="card-body">
+                <h6 class="text-primary">Processo richiesta</h6>
+                <div class="small text-muted">
+                    <p><strong>1. Compila il modulo:</strong> Inserisci tutti i dati richiesti</p>
+                    <p><strong>2. Invio sicuro:</strong> La richiesta viene inviata via TLS</p>
+                    <p><strong>3. Elaborazione:</strong> L'università elabora la richiesta</p>
+                    <p><strong>4. Ricezione:</strong> La credenziale arriva nel tuo wallet</p>
+                </div>
+                
+                <hr>
+                
+                <h6 class="text-primary">Tempi di elaborazione</h6>
+                <div class="small">
+                    <p><strong>Transcript of Records:</strong> 2-3 giorni lavorativi</p>
+                    <p><strong>Diploma Supplement:</strong> 3-5 giorni lavorativi</p>
+                    <p><strong>Certificati:</strong> 1-2 giorni lavorativi</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="mb-0">Richieste precedenti</h6>
+            </div>
+            <div class="card-body">
+                <div id="previousRequests">
+                    <p class="small text-muted">Nessuna richiesta precedente.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="mb-0">Supporto</h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">
+                    Per problemi con le richieste, contatta il supporto tecnico dell'università di destinazione.
+                </p>
+                <div class="small">
+                    <p><strong>Rennes:</strong> support@univ-rennes1.fr</p>
+                    <p><strong>Salerno:</strong> support@unisa.it</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('credential-request-form');
+    const submitBtn = document.getElementById('submitBtn');
+    const submitText = document.getElementById('submitText');
+    const submitSpinner = document.getElementById('submitSpinner');
+    const resultCard = document.getElementById('requestResult');
+    const resultContent = document.getElementById('resultContent');
+
+    // Carica richieste precedenti
+    loadPreviousRequests();
+
+    form.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        
+        if (!validateForm()) return;
+
+        setLoadingState(true);
+
+        try {
+            const formData = {
+                university: document.getElementById('university').value,
+                credential_type: document.getElementById('credentialType').value,
+                purpose: document.getElementById('purpose').value,
+                period_start: document.getElementById('periodStart').value,
+                period_end: document.getElementById('periodEnd').value,
+                notes: document.getElementById('notes').value
+            };
+
+            const response = await fetch('/request_credential', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                displaySuccess(result);
+                form.reset();
+                loadPreviousRequests();
+            } else {
+                throw new Error(result.message || 'Errore durante l\'invio della richiesta');
+            }
+
+        } catch (error) {
+            console.error('Errore richiesta:', error);
+            displayError(error.message);
+        } finally {
+            setLoadingState(false);
+        }
+    });
+
+    function validateForm() {
+        const university = document.getElementById('university').value;
+        const credentialType = document.getElementById('credentialType').value;
+        const purpose = document.getElementById('purpose').value;
+
+        if (!university) {
+            alert('Seleziona un\'università');
+            document.getElementById('university').focus();
+            return false;
+        }
+
+        if (!credentialType) {
+            alert('Seleziona il tipo di credenziale');
+            document.getElementById('credentialType').focus();
+            return false;
+        }
+
+        if (!purpose.trim() || purpose.trim().length < 10) {
+            alert('Il motivo della richiesta deve essere di almeno 10 caratteri');
+            document.getElementById('purpose').focus();
+            return false;
+        }
+
+        return true;
+    }
+
+    function setLoadingState(loading) {
+        submitBtn.disabled = loading;
+        if (loading) {
+            submitText.style.display = 'none';
+            submitSpinner.classList.remove('d-none');
+        } else {
+            submitText.style.display = 'inline';
+            submitSpinner.classList.add('d-none');
+        }
+    }
+
+    function displaySuccess(result) {
+        const html = `
+            <div class="alert alert-success">
+                <h6><strong>Richiesta inviata con successo</strong></h6>
+                <p><strong>ID richiesta:</strong> ${result.request_id}</p>
+                <p><strong>Università:</strong> ${result.university}</p>
+                <p class="mb-0">La tua richiesta è stata inviata all'università. 
+                Riceverai una notifica quando la credenziale sarà pronta.</p>
+            </div>
+        `;
+        resultContent.innerHTML = html;
+        resultCard.style.display = 'block';
+        resultCard.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function displayError(message) {
+        const html = `
+            <div class="alert alert-danger">
+                <h6><strong>Errore nell'invio</strong></h6>
+                <p class="mb-0">${message}</p>
+            </div>
+        `;
+        resultContent.innerHTML = html;
+        resultCard.style.display = 'block';
+        resultCard.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function loadPreviousRequests() {
+        // Qui potresti implementare il caricamento delle richieste precedenti
+        // Per ora mostra un placeholder
+        const previousRequestsDiv = document.getElementById('previousRequests');
+        
+        // Simula alcune richieste precedenti (in un'implementazione reale, 
+        // questi dati verrebbero caricati dal server)
+        const mockRequests = [
+            {
+                id: 'req_001',
+                university: 'Université de Rennes',
+                type: 'Transcript of Records',
+                date: '2024-01-15',
+                status: 'Completata'
+            }
+        ];
+
+        if (mockRequests.length > 0) {
+            let html = '';
+            mockRequests.forEach(req => {
+                html += `
+                    <div class="small border-bottom pb-2 mb-2">
+                        <div class="d-flex justify-content-between">
+                            <strong>${req.type}</strong>
+                            <span class="badge bg-success">${req.status}</span>
+                        </div>
+                        <div class="text-muted">${req.university}</div>
+                        <div class="text-muted">${req.date}</div>
+                    </div>
+                `;
+            });
+            previousRequestsDiv.innerHTML = html;
+        }
+    }
+});
+</script>
+{% endblock %}

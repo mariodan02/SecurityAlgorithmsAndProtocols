@@ -4,13 +4,13 @@
     <h1 class="h4 mb-0">Wallet credenziali</h1>
     <div>
         <button id="importCredentialBtn" type="button" class="btn btn-sm btn-outline-secondary">
-            Importa Credenziale (.json)
+            📥 Importa Credenziale (.json)
         </button>
         <button id="createPresentationBtn" type="button" class="btn btn-sm btn-primary disabled">
-            Crea presentazione verificabile
+            🔐 Crea presentazione verificabile
         </button>
         <button id="requestCredentialBtn" type="button" class="btn btn-sm btn-success">
-        Richiedi Credenziale Universitaria
+            📨 Richiedi Credenziale Universitaria
         </button>
     </div>
 </div>
@@ -41,10 +41,16 @@
                 <td>{{ cred.total_courses }}</td>
                 <td><span class="badge bg-success">{{ cred.status }}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary view-credential" 
-                        data-id="{{ cred.storage_id }}">
-                        Dettagli
-                    </button>
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-sm btn-outline-primary view-credential" 
+                            data-id="{{ cred.storage_id }}">
+                            📄 Dettagli
+                        </button>
+                        <button class="btn btn-sm btn-outline-info verify-blockchain" 
+                            data-id="{{ cred.credential_id }}" data-issuer="{{ cred.issuer }}">
+                            🔗 Verifica blockchain
+                        </button>
+                    </div>
                 </td>
             </tr>
             {% endfor %}
@@ -70,11 +76,12 @@
 </div>
 {% endif %}
 
+<!-- Modal Dettagli Credenziale -->
 <div class="modal fade" id="credentialModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Dettaglio Credenziale</h5>
+        <h5 class="modal-title">📄 Dettaglio Credenziale</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -89,6 +96,30 @@
   </div>
 </div>
 
+<!-- Modal Verifica Blockchain -->
+<div class="modal fade" id="blockchainVerifyModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🔗 Verifica Blockchain</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="blockchainVerifyContent">
+          <div class="text-center py-4">
+            <div class="spinner-border text-info"></div>
+            <p class="mt-2">Verifica su blockchain in corso...</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Chiudi</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Presentazione -->
 <div class="modal fade" id="presentationModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
@@ -183,6 +214,7 @@
   </div>
 </div>
 
+<!-- Modal Importa Credenziale -->
 <div class="modal fade" id="importCredentialModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -211,6 +243,7 @@
   </div>
 </div>
 
+<!-- Modal Risultato Presentazione -->
 <div class="modal fade" id="presentationResultModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -232,6 +265,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const createBtn = document.getElementById('createPresentationBtn');
     const checkboxes = document.querySelectorAll('.credential-check');
     const viewButtons = document.querySelectorAll('.view-credential');
+    const verifyButtons = document.querySelectorAll('.verify-blockchain'); // NUOVO
     const selectedList = document.getElementById('selectedCredentials');
     const generateBtn = document.getElementById('generatePresentationBtn');
     const selectAllCheckbox = document.getElementById('selectAll');
@@ -241,8 +275,124 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Wallet page loaded. Found checkboxes:', checkboxes.length);
 
     // =============================================
-    // NUOVO CODICE JAVASCRIPT PER L'IMPORTAZIONE
+    // NUOVO: VERIFICA BLOCKCHAIN INTEGRATA
     // =============================================
+    
+    // Handle blockchain verification
+    verifyButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const credentialId = this.dataset.id;
+            const issuerName = this.dataset.issuer;
+            
+            console.log('🔗 Verifica blockchain per:', credentialId, 'da', issuerName);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('blockchainVerifyModal'));
+            
+            // Reset content
+            document.getElementById('blockchainVerifyContent').innerHTML = `
+                <div class="text-center py-4">
+                    <div class="spinner-border text-info"></div>
+                    <p class="mt-2">Verifica su blockchain in corso...</p>
+                    <small class="text-muted">ID: ${credentialId}</small>
+                </div>
+            `;
+            
+            modal.show();
+            
+            // Perform verification
+            performBlockchainVerification(credentialId, issuerName);
+        });
+    });
+
+    async function performBlockchainVerification(credentialId, issuerName) {
+        try {
+            const response = await fetch('/verification/student/blockchain', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential_id: credentialId })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                displayBlockchainResult(credentialId, issuerName, result.blockchain_status);
+            } else {
+                throw new Error(result.message || 'Errore durante la verifica');
+            }
+
+        } catch (error) {
+            console.error('❌ Errore verifica blockchain:', error);
+            displayBlockchainError(credentialId, issuerName, error.message);
+        }
+    }
+
+    function displayBlockchainResult(credentialId, issuerName, blockchainStatus) {
+        let html = '';
+        let statusBadge = '';
+        let statusHtml = '';
+
+        // Header
+        html += `<div class="text-center mb-3">`;
+        html += `<h6>${issuerName}</h6>`;
+        html += `<small class="text-muted font-monospace">ID: ${credentialId}</small>`;
+        html += `</div>`;
+
+        if (blockchainStatus.status === 'VALID') {
+            statusBadge = '<span class="badge bg-success fs-6">✅ ATTIVA</span>';
+            statusHtml = `
+                <div class="alert alert-success">
+                    <h6><strong>✅ Credenziale attiva</strong></h6>
+                    <p><strong>Emittente:</strong> ${blockchainStatus.issuer}</p>
+                    <p><strong>Data emissione:</strong> ${new Date(blockchainStatus.issueTimestamp * 1000).toLocaleString()}</p>
+                    <p class="mb-0">La credenziale è valida e non è stata revocata.</p>
+                </div>
+            `;
+        } else if (blockchainStatus.status === 'REVOKED') {
+            statusBadge = '<span class="badge bg-danger fs-6">🚫 REVOCATA</span>';
+            statusHtml = `
+                <div class="alert alert-danger">
+                    <h6><strong>🚫 Credenziale revocata</strong></h6>
+                    <p><strong>Emittente:</strong> ${blockchainStatus.issuer}</p>
+                    <p><strong>Data emissione:</strong> ${new Date(blockchainStatus.issueTimestamp * 1000).toLocaleString()}</p>
+                    <p class="mb-0">⚠️ Questa credenziale è stata revocata e non è più valida.</p>
+                </div>
+            `;
+        } else if (blockchainStatus.status === 'NOT_FOUND') {
+            statusBadge = '<span class="badge bg-warning fs-6">⚠️ NON TROVATA</span>';
+            statusHtml = `
+                <div class="alert alert-warning">
+                    <h6><strong>⚠️ Credenziale non trovata</strong></h6>
+                    <p class="mb-0">Questa credenziale non è stata trovata sulla blockchain. 
+                    Potrebbe non essere stata ancora registrata oppure l'ID potrebbe essere incorreto.</p>
+                </div>
+            `;
+        }
+
+        html += `<div class="text-center mb-3">${statusBadge}</div>`;
+        html += statusHtml;
+
+        document.getElementById('blockchainVerifyContent').innerHTML = html;
+    }
+
+    function displayBlockchainError(credentialId, issuerName, errorMessage) {
+        const html = `
+            <div class="text-center mb-3">
+                <h6>${issuerName}</h6>
+                <small class="text-muted font-monospace">ID: ${credentialId}</small>
+            </div>
+            <div class="alert alert-danger">
+                <h6><strong>❌ Errore verifica</strong></h6>
+                <p class="mb-0">${errorMessage}</p>
+            </div>
+        `;
+        document.getElementById('blockchainVerifyContent').innerHTML = html;
+    }
+
+    // =============================================
+    // CODICE ESISTENTE (importazione, presentazioni, ecc.)
+    // =============================================
+    
     const importBtn = document.getElementById('importCredentialBtn');
     const importModal = new bootstrap.Modal(document.getElementById('importCredentialModal'));
     const submitImportBtn = document.getElementById('submitImportBtn');
@@ -250,7 +400,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const importResultDiv = document.getElementById('importResult');
 
     importBtn.addEventListener('click', function() {
-        // Resetta lo stato del modal prima di aprirlo
         credentialFileInput.value = '';
         importResultDiv.innerHTML = '';
         submitImportBtn.disabled = false;
@@ -271,13 +420,11 @@ document.addEventListener('DOMContentLoaded', function() {
         reader.onload = async function(event) {
             const jsonContent = event.target.result;
             
-            // Mostra lo spinner di caricamento
             document.getElementById('importText').style.display = 'none';
             document.getElementById('importSpinner').classList.remove('d-none');
             submitImportBtn.disabled = true;
 
             try {
-                // Invia il contenuto del JSON al backend
                 const response = await fetch('/wallet/import-credential', {
                     method: 'POST',
                     headers: {
@@ -290,7 +437,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 if (response.ok && result.success) {
                     importResultDiv.innerHTML = `<div class="alert alert-success">${result.message}</div>`;
-                    // Ricarica la pagina dopo un breve ritardo per mostrare la nuova credenziale
                     setTimeout(() => window.location.reload(), 1500);
                 } else {
                     throw new Error(result.message || 'Errore durante l\'importazione.');
@@ -298,7 +444,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
             } catch (error) {
                 importResultDiv.innerHTML = `<div class="alert alert-danger"><strong>Errore:</strong> ${error.message}</div>`;
-                // Riabilita il pulsante in caso di errore
                 document.getElementById('importText').style.display = 'inline';
                 document.getElementById('importSpinner').classList.add('d-none');
                 submitImportBtn.disabled = false;
@@ -307,8 +452,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         reader.readAsText(file);
     });
-    // =============================================
-
 
     // Handle "Select All" checkbox
     if (selectAllCheckbox) {
@@ -337,7 +480,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
             
-            // Update UI
             createBtn.disabled = selectedCredentials.length === 0;
             if (selectedCredentials.length === 0) {
                 createBtn.classList.add('disabled');
@@ -355,7 +497,6 @@ document.addEventListener('DOMContentLoaded', function() {
         button.addEventListener('click', function() {
             const id = this.dataset.id;
             
-            // Show loading
             document.getElementById('credentialDetails').innerHTML = `
                 <div class="text-center py-4">
                     <div class="spinner-border text-primary"></div>
@@ -422,7 +563,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Open presentation modal
+    // Rest of existing code for presentations...
     createBtn.addEventListener('click', function() {
         if (selectedCredentials.length === 0) {
             alert('Seleziona almeno una credenziale');
@@ -435,7 +576,6 @@ document.addEventListener('DOMContentLoaded', function() {
         modal.show();
     });
 
-    // Generate presentation
     generateBtn.addEventListener('click', async function() {
         const form = document.getElementById('presentationForm');
         const formData = new FormData(form);
@@ -446,7 +586,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Get selected attributes
         const selectedAttributes = [];
         document.querySelectorAll('.attribute-check').forEach(checkbox => {
             if (checkbox.checked) {
@@ -466,9 +605,6 @@ document.addEventListener('DOMContentLoaded', function() {
             selected_attributes: selectedAttributes
         };
 
-        console.log('Creating presentation with selective disclosure:', data);
-
-        // Show loading
         const generateText = document.getElementById('generateText');
         const generateSpinner = document.getElementById('generateSpinner');
         generateText.style.display = 'none';
@@ -487,12 +623,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const result = await response.json();
             
             if (response.ok && result.success) {
-                // Close modal and reset
                 const presentationModal = bootstrap.Modal.getInstance(document.getElementById('presentationModal'));
                 presentationModal.hide();
                 resetSelection();
                 
-                // Show result modal
                 const resultBody = document.getElementById('presentationResultBody');
                 let html = '<p>Le seguenti presentazioni sono state create con successo:</p><ul class="list-group">';
                 result.presentations.forEach(p => {
@@ -513,7 +647,6 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Error creating presentation:', error);
             alert(`❌ Errore: ${error.message}`);
         } finally {
-            // Reset button
             generateText.style.display = 'inline';
             generateSpinner.classList.add('d-none');
             generateBtn.disabled = false;
@@ -548,7 +681,6 @@ document.addEventListener('DOMContentLoaded', function() {
         courseContainer.innerHTML = '';
         
         if (selectedCredentials.length > 0) {
-            // Add some example course attributes (in real implementation, fetch from selected credentials)
             courseContainer.innerHTML = `
                 <div class="form-check">
                     <input class="form-check-input attribute-check" type="checkbox" value="courses.0.course_name" id="course_0_name">
@@ -581,20 +713,18 @@ document.addEventListener('DOMContentLoaded', function() {
         updateSelectedList();
     }
 
-    // Initialize
     updateSelectedList();
 });
+
+// Richiesta credenziale
 document.getElementById('requestCredentialBtn').addEventListener('click', async function() {
     try {
-        // Mostra indicator di caricamento
         const originalText = this.innerHTML;
         this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Richiesta in corso...';
         this.disabled = true;
         
-        // Università di destinazione (esempio)
         const university = "Université de Rennes";
         
-        // Invia richiesta al nostro backend
         const response = await fetch('/request_credential', {
             method: 'POST',
             headers: {
@@ -617,10 +747,33 @@ document.getElementById('requestCredentialBtn').addEventListener('click', async 
         console.error('Errore:', error);
         alert(`❌ Errore: ${error.message}`);
     } finally {
-        // Ripristina pulsante
         this.innerHTML = originalText;
         this.disabled = false;
     }
 });
 </script>
+
+<style>
+.btn-group .btn {
+    border-radius: 0;
+}
+
+.btn-group .btn:first-child {
+    border-top-left-radius: 0.25rem;
+    border-bottom-left-radius: 0.25rem;
+}
+
+.btn-group .btn:last-child {
+    border-top-right-radius: 0.25rem;
+    border-bottom-right-radius: 0.25rem;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.05);
+}
+
+.font-monospace {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+}
+</style>
 {% endblock %}

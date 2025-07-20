@@ -261,11 +261,34 @@
 </div>
 
 <script>
+// =============================================================================
+// CONFIGURAZIONE API BLOCKCHAIN (come per l'issuer)
+// =============================================================================
+
+// URL base dell'API consolidata 
+const API_BASE_URL = 'https://localhost:8443';  // Secure server
+const STUDENT_AUTH_TOKEN = 'student_token';  // API key per studenti
+
+// Headers per le richieste API studente
+const getStudentApiHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${STUDENT_AUTH_TOKEN}`
+});
+
+// Utility per gestire errori API
+const handleApiError = (error, defaultMessage = 'Errore sconosciuto') => {
+    console.error('API Error:', error);
+    if (error.detail) {
+        return Array.isArray(error.detail) ? error.detail[0].msg : error.detail;
+    }
+    return error.message || defaultMessage;
+};
+
 document.addEventListener('DOMContentLoaded', function() {
     const createBtn = document.getElementById('createPresentationBtn');
     const checkboxes = document.querySelectorAll('.credential-check');
     const viewButtons = document.querySelectorAll('.view-credential');
-    const verifyButtons = document.querySelectorAll('.verify-blockchain'); // NUOVO
+    const verifyButtons = document.querySelectorAll('.verify-blockchain');
     const selectedList = document.getElementById('selectedCredentials');
     const generateBtn = document.getElementById('generatePresentationBtn');
     const selectAllCheckbox = document.getElementById('selectAll');
@@ -275,16 +298,16 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Wallet page loaded. Found checkboxes:', checkboxes.length);
 
     // =============================================
-    // NUOVO: VERIFICA BLOCKCHAIN INTEGRATA
+    // VERIFICA BLOCKCHAIN DIRETTA (come issuer)
     // =============================================
     
-    // Handle blockchain verification
+    // Handle blockchain verification - VERSIONE AGGIORNATA
     verifyButtons.forEach(button => {
         button.addEventListener('click', function() {
             const credentialId = this.dataset.id;
             const issuerName = this.dataset.issuer;
             
-            console.log('🔗 Verifica blockchain per:', credentialId, 'da', issuerName);
+            console.log('🔗 Verifica blockchain diretta per:', credentialId, 'da', issuerName);
             
             // Show modal
             const modal = new bootstrap.Modal(document.getElementById('blockchainVerifyModal'));
@@ -300,29 +323,38 @@ document.addEventListener('DOMContentLoaded', function() {
             
             modal.show();
             
-            // Perform verification
-            performBlockchainVerification(credentialId, issuerName);
+            // Perform verification - USA API DIRETTA
+            performDirectBlockchainVerification(credentialId, issuerName);
         });
     });
 
-    async function performBlockchainVerification(credentialId, issuerName) {
+    // NUOVA FUNZIONE: Verifica blockchain diretta (come per l'issuer)
+    async function performDirectBlockchainVerification(credentialId, issuerName) {
         try {
-            const response = await fetch('/verification/student/blockchain', {
+            console.log('🔍 Chiamata diretta API blockchain per:', credentialId);
+            
+            const response = await fetch(`${API_BASE_URL}/api/v1/blockchain/credentials/verify`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getStudentApiHeaders(),
                 body: JSON.stringify({ credential_id: credentialId })
             });
 
-            const result = await response.json();
+            if (!response.ok) {
+                const errorResult = await response.json();
+                throw new Error(handleApiError(errorResult));
+            }
 
-            if (response.ok && result.success) {
+            const result = await response.json();
+            console.log('✅ Risposta API blockchain ricevuta:', result);
+
+            if (result.success && result.blockchain_status) {
                 displayBlockchainResult(credentialId, issuerName, result.blockchain_status);
             } else {
-                throw new Error(result.message || 'Errore durante la verifica');
+                throw new Error('Risposta API non valida');
             }
 
         } catch (error) {
-            console.error('❌ Errore verifica blockchain:', error);
+            console.error('❌ Errore verifica blockchain diretta:', error);
             displayBlockchainError(credentialId, issuerName, error.message);
         }
     }

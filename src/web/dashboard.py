@@ -1453,32 +1453,6 @@ class AcademicCredentialsDashboard:
 
         # Verifica blockchain per studenti
         @self.app.get("/verification/student", response_class=HTMLResponse)
-        async def student_verification_page(request: Request):
-            user = self.auth_deps['require_student'](request)
-            
-            # Ottieni le credenziali dal wallet dello studente
-            wallet = self._get_student_wallet(user)
-            wallet_creds = wallet.list_credentials()
-
-            credentials = [
-                {
-                    'storage_id': cred['storage_id'],
-                    'credential_id': cred.get('credential_id', 'N/A'),  # ID reale della credenziale
-                    'issuer': cred['issuer'],
-                    'issue_date': cred['issued_at'],
-                    'total_courses': cred['total_courses'],
-                    'status': cred['status']
-                } for cred in wallet_creds
-            ]
-            
-            return self.templates.TemplateResponse("student_verification.html", {
-                "request": request, 
-                "user": user, 
-                "title": "Verifica blockchain",
-                "credentials": credentials  
-            })
-
-        @self.app.post("/verification/student/blockchain")
         async def handle_student_blockchain_verify(request: Request):
             user = self.auth_deps['require_student'](request)
             body = await request.json()
@@ -1501,7 +1475,7 @@ class AcademicCredentialsDashboard:
                     
                     if response.status_code == 200:
                         result = response.json()
-                        return JSONResponse({"success": True, "blockchain_status": result.blockchain_status})
+                        return JSONResponse({"success": True, "blockchain_status": result["blockchain_status"]})
                     else:
                         return JSONResponse(
                             {"success": False, "message": "Errore nella verifica blockchain"},

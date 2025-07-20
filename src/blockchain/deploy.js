@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Connettiamo a Ganache
-const ganacheUrl = 'http://127.0.0.1:7545'; 
+const ganacheUrl = 'http://127.0.0.1:8545'; 
 const web3 = new Web3(ganacheUrl);
 
 const contractName = 'CredentialRegistry';

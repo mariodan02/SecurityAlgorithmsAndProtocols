@@ -50,7 +50,7 @@ def test_blockchain_connection():
     except Exception as e:
         print(f"\n❌ Errore durante il test: {e}")
         print("\n🔧 POSSIBILI SOLUZIONI:")
-        print("   • Verifica che Ganache sia in esecuzione su porta 8545")
+        print("   • Verifica che Ganache sia in esecuzione su porta 7545")
         print("   • Controlla che l'account abbia fondi su Ganache")
         print("   • Verifica che il contratto sia deployato correttamente")
         print("   • Esegui: node compile.js && node deploy.js")
@@ -65,32 +65,17 @@ def check_prerequisites():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     print(f"📂 Script directory: {script_dir}")
     
-    # File necessari nella directory corrente e relative
+    # File necessari nella directory corrente
     required_files = [
         "CredentialRegistryAbi.json",    # Stessa directory
         "contract-address.txt",          # Stessa directory
         "blockchain_service.py",         # Stessa directory
     ]
     
-    # File nella directory padre (src/)
-    parent_files = [
-        "../ganache_key.txt"             # Directory padre (src/)
-    ]
-    
     all_good = True
     
     # Controlla file nella directory corrente
     for file_path in required_files:
-        full_path = os.path.join(script_dir, file_path)
-        if os.path.exists(full_path):
-            print(f"   ✅ {file_path}")
-        else:
-            print(f"   ❌ {file_path} - MANCANTE!")
-            print(f"      Cercato in: {full_path}")
-            all_good = False
-    
-    # Controlla file nella directory padre
-    for file_path in parent_files:
         full_path = os.path.join(script_dir, file_path)
         if os.path.exists(full_path):
             print(f"   ✅ {file_path}")
@@ -108,7 +93,6 @@ def check_prerequisites():
         print("   # Compila e deploya il contratto:")
         print("   node compile.js")
         print("   node deploy.js")
-        print("   # Il file ganache_key.txt deve essere in src/ (non in src/blockchain/)")
         return False
         
     return True

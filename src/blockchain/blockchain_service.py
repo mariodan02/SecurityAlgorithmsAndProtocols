@@ -3,15 +3,11 @@ import os
 from web3 import Web3
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from eth_keys.datatypes import PrivateKey
 
 PROVIDER_URL = "http://127.0.0.1:8545"
 
-# CONFIGURAZIONE HARDCODED DELLA CHIAVE PRIVATA (fallback per test)
-GANACHE_PRIVATE_KEY = "0x40b18ebc23bf6dc9401457511ee0ecd5f86ad80032f74c51073ff40077e91b4a"
-
 # CHIAVE DEL "BANKER" - Account Ganache con fondi per finanziare altri account
-GANACHE_BANKER_KEY = "0xf9c75bd9cef85571538e11262d68a1ea41ee9fc7c64ef36ee0c28f295e86ed6e"  # Account #1 di Ganache
+GANACHE_BANKER_KEY = "0x62cf956df3396b4c7ea1a501d595e3323aab806e4d3f45dd42d2eda4801ae98a"  # Account #1 di Ganache
 
 def derive_ethereum_key_from_rsa(pem_file_path: str, password: bytes):
     """
@@ -63,31 +59,26 @@ def load_contract_data():
 
 
 class BlockchainService:
-    def __init__(self, raw_private_key: str = None):
+    def __init__(self):
         """
-        Se raw_private_key non viene fornita, prova a derivarla dalla chiave RSA,
-        altrimenti usa quella hardcoded. Finanzia automaticamente l'account se necessario.
+        Deriva SEMPRE la chiave dalla chiave RSA universitaria.
+        Eliminato qualsiasi fallback su chiavi hardcoded.
         """
         self.w3 = Web3(Web3.HTTPProvider(PROVIDER_URL))
         if not self.w3.is_connected():
             raise ConnectionError("Impossibile connettersi al provider Ethereum.")
 
-        # Strategia di fallback per la chiave privata
+        # Percorso assoluto alla chiave RSA universitaria
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        rsa_key_path = os.path.join(script_dir, "..", "..", "keys", "universite_rennes_private.pem")
+        
+        # Deriva la chiave Ethereum dalla RSA
+        raw_private_key = derive_ethereum_key_from_rsa(rsa_key_path, b"Unisa2025")
+        
         if raw_private_key is None:
-            # Prova prima a derivare dalla chiave RSA
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            rsa_key_path = os.path.join(script_dir, "..", "..", "keys", "universite_rennes_private.pem")
-            
-            if os.path.exists(rsa_key_path):
-                print(f"🔑 Derivazione chiave Ethereum da RSA: {rsa_key_path}")
-                raw_private_key = derive_ethereum_key_from_rsa(rsa_key_path, b"Unisa2025")
-                
-            if raw_private_key is None:
-                # Fallback alla chiave hardcoded
-                raw_private_key = GANACHE_PRIVATE_KEY
-                print(f"🔑 Usando chiave privata hardcoded per Ganache (fallback)")
-            else:
-                print(f"🔑 Chiave derivata con successo da RSA")
+            raise RuntimeError("❌ Impossibile derivare la chiave da RSA. Verifica percorso e password.")
+        
+        print(f"🔑 Wallet universitario derivato con successo da RSA")
 
         if not raw_private_key.startswith('0x'):
             raw_private_key = '0x' + raw_private_key
@@ -97,7 +88,7 @@ class BlockchainService:
 
         contract_abi, contract_address = load_contract_data()
         self.contract = self.w3.eth.contract(address=contract_address, abi=contract_abi)
-        print(f"💰 Account blockchain inizializzato: {self.account.address}")
+        print(f"💰 Account blockchain universitario: {self.account.address}")
         
         # Verifica e auto-finanzia l'account se necessario
         self._ensure_account_funded()
@@ -230,26 +221,144 @@ class BlockchainService:
         except Exception as e:
             raise ValueError(f"Errore durante la verifica: {e}")
 
-    def revoke_credential_directly(self, credential_uuid: str, reason: str):
+
+    def revoke_credential_directly(self, credential_id: str, reason: str):
         """
-        Metodo per revocare direttamente una credenziale (firma e invia la transazione)
+        Metodo migliorato per revocare una credenziale con gestione errori avanzata
         """
         try:
-            transaction = self.build_revocation_transaction(credential_uuid, reason)
-            signed_tx = self.account.sign_transaction(transaction)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            print(f"🚫 Avvio revoca credenziale: {credential_id}")
+            print(f"   Motivo: {reason}")
+            print(f"   Account: {self.account.address}")
             
-            print(f"🚀 Transazione di revoca inviata: {self.w3.to_hex(tx_hash)}")
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+            # 1. VERIFICA PREREQUISITI
+            print("1️⃣ Verifica prerequisiti...")
             
-            if receipt['status'] == 1:
-                print(f"✅ Credenziale {credential_uuid} revocata con successo!")
-                print(f"📋 Hash transazione: {self.w3.to_hex(receipt.transactionHash)}")
-                return True
-            else:
-                print(f"❌ Errore nella revoca di {credential_uuid}")
+            # Verifica saldo
+            balance = self.w3.eth.get_balance(self.account.address)
+            balance_eth = self.w3.from_wei(balance, 'ether')
+            print(f"   Saldo account: {balance_eth} ETH")
+            
+            if balance_eth < 0.01:
+                print("❌ Saldo insufficiente per pagare il gas!")
+                return False
+                
+            # 2. VERIFICA STATO CORRENTE
+            print("2️⃣ Verifica stato corrente credenziale...")
+            
+            try:
+                current_status = self.verify_credential(credential_id)
+                print(f"   Stato corrente: {current_status}")
+                
+                if current_status['status'] == 'NOT_FOUND':
+                    print("❌ Credenziale non trovata sulla blockchain!")
+                    return False
+                    
+                if current_status['status'] == 'REVOKED':
+                    print("⚠️ Credenziale già revocata!")
+                    return True  # Considerala come successo
+                    
+                if current_status['status'] != 'VALID':
+                    print(f"❌ Stato credenziale non valido: {current_status['status']}")
+                    return False
+                    
+                # Verifica che l'issuer corrente sia autorizzato
+                if current_status['issuer'].lower() != self.account.address.lower():
+                    print(f"❌ Account non autorizzato!")
+                    print(f"   Emittente originale: {current_status['issuer']}")
+                    print(f"   Account corrente: {self.account.address}")
+                    return False
+                    
+            except Exception as e:
+                print(f"❌ Errore nella verifica dello stato: {e}")
+                return False
+                
+            # 3. COSTRUZIONE TRANSAZIONE
+            print("3️⃣ Costruzione transazione...")
+            
+            try:
+                transaction = self.build_revocation_transaction(credential_id, reason)
+                print(f"   Gas stimato: {transaction['gas']}")
+                print(f"   Gas price: {transaction['gasPrice']}")
+                print(f"   Nonce: {transaction['nonce']}")
+                
+            except Exception as e:
+                print(f"❌ Errore nella costruzione della transazione: {e}")
+                return False
+                
+            # 4. FIRMA E INVIO
+            print("4️⃣ Firma e invio transazione...")
+            
+            try:
+                signed_tx = self.account.sign_transaction(transaction)
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+                tx_hash_hex = self.w3.to_hex(tx_hash)
+                
+                print(f"🚀 Transazione inviata: {tx_hash_hex}")
+                
+            except Exception as e:
+                print(f"❌ Errore nell'invio della transazione: {e}")
+                return False
+                
+            # 5. ATTESA CONFERMA CON TIMEOUT
+            print("5️⃣ Attesa conferma transazione...")
+            
+            try:
+                # Attesa con timeout di 60 secondi
+                receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                
+                print(f"📋 Ricevuta transazione ricevuta:")
+                print(f"   Block number: {receipt.blockNumber}")
+                print(f"   Gas usato: {receipt.gasUsed}")
+                print(f"   Status: {receipt.status}")
+                
+                if receipt.status == 1:
+                    print("✅ Transazione CONFERMATA con successo!")
+                    
+                    # 6. VERIFICA FINALE
+                    print("6️⃣ Verifica finale dello stato...")
+                    
+                    try:
+                        final_status = self.verify_credential(credential_id)
+                        print(f"   Stato finale: {final_status}")
+                        
+                        if final_status['status'] == 'REVOKED':
+                            print(f"✅ Credenziale {credential_id} revocata con successo!")
+                            print(f"📋 Hash transazione: {tx_hash_hex}")
+                            return True
+                        else:
+                            print(f"⚠️ Stato inaspettato dopo la revoca: {final_status['status']}")
+                            return False
+                            
+                    except Exception as e:
+                        print(f"⚠️ Errore nella verifica finale: {e}")
+                        # Assumiamo che la revoca sia riuscita se la transazione è confermata
+                        return True
+                        
+                else:
+                    print("❌ Transazione FALLITA!")
+                    print("   Possibili cause:")
+                    print("   • Condizioni 'require' del contratto non soddisfatte")
+                    print("   • Gas insufficiente")
+                    print("   • Credenziale già revocata da un'altra transazione")
+                    
+                    # Prova a ottenere più dettagli dall'errore
+                    try:
+                        transaction_details = self.w3.eth.get_transaction(tx_hash)
+                        print(f"   Dettagli transazione: {transaction_details}")
+                    except:
+                        pass
+                        
+                    return False
+                    
+            except Exception as e:
+                print(f"❌ Errore durante l'attesa della conferma: {e}")
+                print(f"   Transazione hash: {tx_hash_hex}")
+                print("   La transazione potrebbe essere ancora in pending...")
                 return False
                 
         except Exception as e:
-            print(f"❌ Errore durante la revoca: {e}")
+            print(f"❌ Errore critico durante la revoca: {e}")
+            import traceback
+            traceback.print_exc()
             return False

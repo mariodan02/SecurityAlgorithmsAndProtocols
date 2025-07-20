@@ -16,17 +16,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def main():
     """Avvia tutti i server del sistema con architettura consolidata."""
-    print("=" * 60)
     print("PROJECT WORK - SISTEMA CREDENZIALI ACCADEMICHE")
     print("GRUPPO 19")
-    print("VERSIONE CONSOLIDATA")
-    print("=" * 60)
 
     if not check_system_requirements():
         print("❌ Requisiti non soddisfatti. Verifica la struttura del progetto.")
         sys.exit(1)
-
-    print("\n🔧 Avvio sistema consolidato...")
 
     try:
         from src.pki.ocsp_responder import app as ocsp_app, HOST as OCSP_HOST, PORT as OCSP_PORT
@@ -41,7 +36,6 @@ def main():
     def run_secure_server_consolidated():
         """Avvia il server sicuro consolidato con API blockchain integrate."""
         try:
-            print("\n🔒 Inizializzazione Secure Server Consolidato...")
             config = ServerConfiguration(
                 host="localhost",
                 port=8443,
@@ -49,9 +43,6 @@ def main():
                 blockchain_rpc_url="http://127.0.0.1:8545"  # Ganache locale
             )
             server = AcademicCredentialsSecureServer(config)
-            print("🔒 Secure Server Consolidato pronto su: https://localhost:8443")
-            print("   📋 Include API standard + Blockchain integrate")
-            print("   🔗 Docs: https://localhost:8443/docs")
             server.run()
         except Exception as e:
             print(f"❌ Errore secure server consolidato: {e}")
@@ -78,8 +69,6 @@ def main():
     def run_ocsp_responder():
         """Avvia il servizio OCSP."""
         try:
-            print("\n🔐 Inizializzazione OCSP Responder...")
-            print(f"🔐 OCSP Responder pronto su: http://{OCSP_HOST}:{OCSP_PORT}")
             uvicorn.run(
                 ocsp_app,
                 host=OCSP_HOST,
@@ -92,30 +81,11 @@ def main():
     def show_startup_summary():
         """Mostra un riepilogo dei servizi avviati."""
         time.sleep(1)
-        print("\n" + "=" * 60)
-        print("🚀 SISTEMA AVVIATO CORRETTAMENTE")
-        print("=" * 60)
+        print("SISTEMA AVVIATO CORRETTAMENTE")
         print("📊 Servizi attivi:")
         print("   🌐 Dashboard Web:           http://localhost:8000")
         print("   🔒 API Sicure Consolidate:  https://localhost:8443")
         print("   🔐 OCSP Responder:          http://localhost:3000")
-        print()
-        print("📚 Documentazione API:")
-        print("   📖 Swagger UI:              https://localhost:8443/docs")
-        print("   📋 ReDoc:                   https://localhost:8443/redoc")
-        print()
-        print("🔧 Funzionalità disponibili:")
-        print("   ✅ Emissione credenziali")
-        print("   ✅ Verifica su blockchain") 
-        print("   ✅ Revoca credenziali")
-        print("   ✅ Portafoglio studente")
-        print("   ✅ Presentazioni selettive")
-        print("   ✅ Controllo OCSP")
-        print()
-        print("⚡ Note importanti:")
-        print("   • Assicurati che Ganache sia avviato su porta 8545")
-        print("   • I certificati SSL devono essere generati prima dell'uso")
-        print("   • Le API blockchain sono integrate nel server sicuro")
         print("=" * 60)
 
     # Definisce i thread per i servizi
@@ -128,7 +98,6 @@ def main():
 
     # Avvia tutti i thread
     for t in threads:
-        print(f"🔄 Avvio thread: {t.name}")
         t.start()
 
     try:

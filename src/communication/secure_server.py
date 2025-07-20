@@ -974,7 +974,7 @@ class AcademicCredentialsSecureServer:
                         keyfile=self.config.ssl_key_file,
                         password="Unisa2025"  # PASSWORD HARDCODED - CAMBIA SE NECESSARIO
                     )
-                    print(f"🔒 SSL configurato con certificati esistenti")
+                    print(f"🔒 SSL configurato correttamente")
                 else:
                     print(f"⚠️ Certificati SSL non trovati")
                     print(f"   Certificato: {self.config.ssl_cert_file}")

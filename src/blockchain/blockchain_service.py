@@ -10,6 +10,9 @@ PROVIDER_URL = "http://127.0.0.1:8545"
 # CONFIGURAZIONE HARDCODED DELLA CHIAVE PRIVATA (fallback per test)
 GANACHE_PRIVATE_KEY = "0x40b18ebc23bf6dc9401457511ee0ecd5f86ad80032f74c51073ff40077e91b4a"
 
+# CHIAVE DEL "BANKER" - Account Ganache con fondi per finanziare altri account
+GANACHE_BANKER_KEY = "0xf0f5e8b2e5074bca7925a5251561b0be6426ee596ed6a521235222af80dd64a7"  # Account #1 di Ganache
+
 def derive_ethereum_key_from_rsa(pem_file_path: str, password: bytes):
     """
     Deriva una chiave privata Ethereum da una chiave privata RSA
@@ -63,7 +66,7 @@ class BlockchainService:
     def __init__(self, raw_private_key: str = None):
         """
         Se raw_private_key non viene fornita, prova a derivarla dalla chiave RSA,
-        altrimenti usa quella hardcoded
+        altrimenti usa quella hardcoded. Finanzia automaticamente l'account se necessario.
         """
         self.w3 = Web3(Web3.HTTPProvider(PROVIDER_URL))
         if not self.w3.is_connected():
@@ -96,13 +99,66 @@ class BlockchainService:
         self.contract = self.w3.eth.contract(address=contract_address, abi=contract_abi)
         print(f"💰 Account blockchain inizializzato: {self.account.address}")
         
-        # Verifica che l'account abbia fondi
+        # Verifica e auto-finanzia l'account se necessario
+        self._ensure_account_funded()
+
+    def _ensure_account_funded(self, min_balance_eth: float = 500.0):
+        """
+        Assicura che l'account abbia almeno min_balance_eth ETH.
+        Se non ne ha abbastanza, trasferisce fondi dal banker account.
+        """
         balance = self.w3.eth.get_balance(self.account.address)
         balance_eth = self.w3.from_wei(balance, 'ether')
-        print(f"💵 Saldo dell'account: {balance_eth} ETH")
+        print(f"💵 Saldo attuale dell'account: {balance_eth} ETH")
         
-        if balance == 0:
-            print("⚠️  ATTENZIONE: L'account non ha fondi! Aggiungi ETH su Ganache.")
+        if balance_eth < min_balance_eth:
+            print(f"💸 Saldo insufficiente! Trasferimento automatico di fondi in corso...")
+            
+            try:
+                # Crea account banker per trasferire fondi
+                banker_account = self.w3.eth.account.from_key(GANACHE_BANKER_KEY)
+                banker_balance = self.w3.eth.get_balance(banker_account.address)
+                banker_balance_eth = self.w3.from_wei(banker_balance, 'ether')
+                
+                print(f"🏦 Banker account: {banker_account.address} (saldo: {banker_balance_eth} ETH)")
+                
+                if banker_balance_eth < min_balance_eth + 0.1:  # +0.1 per gas
+                    print(f"❌ Banker account non ha fondi sufficienti!")
+                    print(f"💡 Assicurati che Ganache sia avviato con account predefiniti finanziati")
+                    return
+                
+                # Costruisci transazione di trasferimento
+                amount_to_send = self.w3.to_wei(min_balance_eth, 'ether')
+                
+                transaction = {
+                    'to': self.account.address,
+                    'value': amount_to_send,
+                    'gas': 21000,
+                    'gasPrice': self.w3.eth.gas_price,
+                    'nonce': self.w3.eth.get_transaction_count(banker_account.address),
+                }
+                
+                # Firma e invia la transazione
+                signed_txn = banker_account.sign_transaction(transaction)
+                tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+                
+                print(f"🚀 Transazione di finanziamento inviata: {self.w3.to_hex(tx_hash)}")
+                
+                # Aspetta la conferma
+                receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+                
+                if receipt['status'] == 1:
+                    new_balance = self.w3.eth.get_balance(self.account.address)
+                    new_balance_eth = self.w3.from_wei(new_balance, 'ether')
+                    print(f"✅ Finanziamento completato! Nuovo saldo: {new_balance_eth} ETH")
+                else:
+                    print(f"❌ Errore nel finanziamento dell'account")
+                    
+            except Exception as e:
+                print(f"❌ Errore durante il finanziamento automatico: {e}")
+                print(f"💡 Aggiungi manualmente fondi all'account {self.account.address} su Ganache")
+        else:
+            print(f"✅ Account ha fondi sufficienti per le operazioni")
 
     def build_registration_transaction(self, credential_uuid: str, from_address: str = None):
         """

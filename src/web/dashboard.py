@@ -1005,7 +1005,7 @@ class AcademicCredentialsDashboard:
 
     def _initialize_system_components(self) -> None:
         """Inizializza i componenti principali del sistema."""
-        self.logger.info("🔧 Inizializzazione componenti di sistema...")
+        self.logger.info("Inizializzazione componenti di sistema...")
 
         if not MODULES_AVAILABLE:
             self.logger.warning("I moduli principali non sono disponibili - esecuzione in modalità demo")
@@ -1064,7 +1064,7 @@ class AcademicCredentialsDashboard:
                 backup_directory="./credentials/backups"
             )
 
-            self.logger.info("🏛️  Creazione di AcademicCredentialIssuer...")
+            self.logger.info("Creazione di AcademicCredentialIssuer...")
             self.issuer = AcademicCredentialIssuer(config=issuer_config)
             self.logger.info("Emittente inizializzato con successo")
 

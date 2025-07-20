@@ -94,6 +94,26 @@
             <div class="card-header">
                 <h6 class="mb-0">📖 Guida verifica</h6>
             </div>
+            <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="mb-0">🔗 Verifica blockchain diretta</h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Verifica rapidamente lo stato di una singola credenziale su blockchain</p>
+                
+                <div class="input-group">
+                    <input type="text" class="form-control form-control-sm font-monospace" 
+                        id="quickVerifyCredentialId" 
+                        placeholder="ID credenziale...">
+                    <button class="btn btn-sm btn-outline-primary" id="quickVerifyBtn">
+                        <span id="quickVerifyText">Verifica</span>
+                        <span id="quickVerifySpinner" class="spinner-border spinner-border-sm d-none"></span>
+                    </button>
+                </div>
+                
+                <div id="quickVerifyResult" class="mt-2"></div>
+            </div>
+        </div>
             <div class="card-body">
                 <h6 class="text-primary">Processo di verifica</h6>
                 <div class="small text-muted">
@@ -389,8 +409,17 @@ document.addEventListener('DOMContentLoaded', function() {
             case 'revoked':
                 icon = '🚫'; badgeClass = 'bg-danger'; displayStatus = 'REVOCATA';
                 break;
+            case 'not_found':  // ✅ AGGIUNTO NUOVO STATO
+                icon = '⚠️'; badgeClass = 'bg-warning'; displayStatus = 'NON TROVATA';
+                break;
+            case 'timeout':
+                icon = '⏰'; badgeClass = 'bg-warning'; displayStatus = 'TIMEOUT';
+                break;
             case 'error':
-                icon = '⚠️'; badgeClass = 'bg-warning'; displayStatus = 'ERRORE';
+                icon = '❌'; badgeClass = 'bg-danger'; displayStatus = 'ERRORE';
+                break;
+            case 'unknown':
+                icon = '❓'; badgeClass = 'bg-secondary'; displayStatus = 'SCONOSCIUTO';
                 break;
             default:
                 icon = '❓'; badgeClass = 'bg-secondary'; displayStatus = 'NON VERIFICATA';
@@ -446,5 +475,109 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
     }
 });
+// Configurazione API per verifier
+const VERIFIER_API_BASE_URL = 'https://localhost:8443';
+const VERIFIER_AUTH_TOKEN = 'verifier_token';
+
+const getVerifierApiHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${VERIFIER_AUTH_TOKEN}`
+});
+
+// Quick blockchain verification
+document.getElementById('quickVerifyBtn').addEventListener('click', async function() {
+    const credentialId = document.getElementById('quickVerifyCredentialId').value.trim();
+    const resultDiv = document.getElementById('quickVerifyResult');
+    const btn = this;
+    const btnText = document.getElementById('quickVerifyText');
+    const btnSpinner = document.getElementById('quickVerifySpinner');
+    
+    if (!credentialId) {
+        resultDiv.innerHTML = '<div class="alert alert-warning alert-sm">Inserisci un ID credenziale</div>';
+        return;
+    }
+    
+    // Set loading state
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    btnSpinner.classList.remove('d-none');
+    resultDiv.innerHTML = '';
+    
+    try {
+        const response = await fetch(`${VERIFIER_API_BASE_URL}/api/v1/blockchain/credentials/verify`, {
+            method: 'POST',
+            headers: getVerifierApiHeaders(),
+            body: JSON.stringify({ credential_id: credentialId })
+        });
+        
+        if (!response.ok) {
+            const errorResult = await response.json();
+            throw new Error(errorResult.detail || 'Errore nella verifica');
+        }
+        
+        const result = await response.json();
+        
+        if (result.success && result.blockchain_status) {
+            const status = result.blockchain_status.status;
+            let alertClass, icon, message;
+            
+            if (status === 'VALID') {
+                alertClass = 'alert-success';
+                icon = '✅';
+                message = 'Credenziale ATTIVA';
+            } else if (status === 'REVOKED') {
+                alertClass = 'alert-danger';
+                icon = '🚫';
+                message = 'Credenziale REVOCATA';
+            } else if (status === 'NOT_FOUND') {
+                alertClass = 'alert-warning';
+                icon = '⚠️';
+                message = 'Credenziale NON TROVATA';
+            } else {
+                alertClass = 'alert-secondary';
+                icon = '❓';
+                message = `Stato: ${status}`;
+            }
+            
+            resultDiv.innerHTML = `
+                <div class="alert ${alertClass} alert-sm">
+                    <strong>${icon} ${message}</strong><br>
+                    <small>ID: ${credentialId.substring(0, 16)}...</small>
+                </div>
+            `;
+        } else {
+            throw new Error('Risposta non valida dal server');
+        }
+        
+    } catch (error) {
+        console.error('Quick verify error:', error);
+        resultDiv.innerHTML = `
+            <div class="alert alert-danger alert-sm">
+                <strong>❌ Errore:</strong> ${error.message}
+            </div>
+        `;
+    } finally {
+        // Reset loading state
+        btn.disabled = false;
+        btnText.style.display = 'inline';
+        btnSpinner.classList.add('d-none');
+    }
+});
+
+// Clear result when typing
+document.getElementById('quickVerifyCredentialId').addEventListener('input', function() {
+    document.getElementById('quickVerifyResult').innerHTML = '';
+});
+
+// Add small alert CSS
+const style = document.createElement('style');
+style.textContent = `
+    .alert-sm {
+        padding: 0.375rem 0.75rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+`;
+document.head.appendChild(style);
 </script>
 {% endblock %}

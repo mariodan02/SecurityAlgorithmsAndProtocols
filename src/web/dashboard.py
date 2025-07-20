@@ -65,7 +65,7 @@ class AppConfig:
     session_timeout_minutes: int = 60
     max_file_size_mb: int = 10
     secure_server_url: str = "https://localhost:8443"
-    secure_server_api_key: str = "verifier_unisa"
+    secure_server_api_key: str = "verifier_token"
 
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
@@ -680,38 +680,50 @@ class PresentationVerifier:
             self.logger.error(f"Errore nel debug di Merkle: {e}")
 
     async def _verify_blockchain_status(self, credential_id: str) -> str:
-        """Verifica lo stato della credenziale su blockchain."""
+        """Verifica lo stato della credenziale su blockchain usando l'API corretta."""
         try:
-            # Timeout e gestione degli errori migliorata
+            self.logger.info(f"🔗 Verifica blockchain per credenziale: {credential_id}")
+            
+            # USA L'API BLOCKCHAIN CORRETTA (come per issuer e studente)
             async with httpx.AsyncClient(verify=False) as client:
                 response = await client.post(
-                    f"{self.dashboard.config.secure_server_url}/api/v1/credentials/verify",
-                    headers={"Authorization": f"Bearer {self.dashboard.config.secure_server_api_key}"},
-                    json={"credential_data": {"metadata": {"credential_id": credential_id}}},
+                    f"{self.dashboard.config.secure_server_url}/api/v1/blockchain/credentials/verify",  # ✅ ENDPOINT CORRETTO
+                    headers={"Authorization": f"Bearer verifier_token"},  # ✅ TOKEN CORRETTO PER VERIFIER
+                    json={"credential_id": credential_id},  # ✅ PAYLOAD CORRETTO
                     timeout=10.0
                 )
 
                 if response.status_code == 200:
                     result = response.json()
-                    if result.get("success"):
-                        blockchain_result = result.get("data", {}).get("blockchain_result", {})
-                        if blockchain_result.get("revoked"):
-                            return "revocato"
-                        elif blockchain_result.get("is_valid"):
-                            return "valido"
+                    if result.get("success") and result.get("blockchain_status"):
+                        blockchain_status = result["blockchain_status"]
+                        status = blockchain_status.get("status", "unknown")
+                        
+                        if status == "VALID":
+                            self.logger.info(f"✅ Credenziale {credential_id} verificata come VALIDA su blockchain")
+                            return "valid"
+                        elif status == "REVOKED":
+                            self.logger.warning(f"🚫 Credenziale {credential_id} risulta REVOCATA su blockchain")
+                            return "revoked"
+                        elif status == "NOT_FOUND":
+                            self.logger.warning(f"⚠️ Credenziale {credential_id} NON TROVATA su blockchain")
+                            return "not_found"
                         else:
-                            return "non valido"
+                            self.logger.warning(f"❓ Stato blockchain sconosciuto per {credential_id}: {status}")
+                            return "unknown"
                     else:
-                        return "errore"
+                        self.logger.error(f"❌ Risposta API non valida per {credential_id}: {result}")
+                        return "error"
                 else:
-                    return "irraggiungibile"
+                    self.logger.error(f"❌ Errore HTTP {response.status_code} per {credential_id}")
+                    return "error"
 
         except asyncio.TimeoutError:
-            self.logger.warning(f"Timeout durante la verifica blockchain per {credential_id}")
+            self.logger.warning(f"⏰ Timeout durante la verifica blockchain per {credential_id}")
             return "timeout"
         except Exception as e:
-            self.logger.error(f"Errore nella verifica blockchain: {e}")
-            return "errore"
+            self.logger.error(f"❌ Errore durante la verifica blockchain per {credential_id}: {e}")
+            return "error"
 
     def _verify_temporal_consistency(self, presentation_data: dict) -> bool:
         """Verifica la coerenza temporale della presentazione."""

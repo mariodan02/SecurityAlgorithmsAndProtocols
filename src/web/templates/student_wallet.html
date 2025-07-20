@@ -9,9 +9,6 @@
         <button id="createPresentationBtn" type="button" class="btn btn-sm btn-primary disabled">
             🔐 Crea presentazione verificabile
         </button>
-        <button id="requestCredentialBtn" type="button" class="btn btn-sm btn-success">
-            📨 Richiedi Credenziale Universitaria
-        </button>
     </div>
 </div>
 
@@ -746,42 +743,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     updateSelectedList();
-});
-
-// Richiesta credenziale
-document.getElementById('requestCredentialBtn').addEventListener('click', async function() {
-    try {
-        const originalText = this.innerHTML;
-        this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Richiesta in corso...';
-        this.disabled = true;
-        
-        const university = "Université de Rennes";
-        
-        const response = await fetch('/request_credential', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                university: university,
-                purpose: "Richiesta credenziale Erasmus+"
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            alert(`✅ Richiesta inviata con successo a ${university}!\nID Richiesta: ${result.request_id}`);
-        } else {
-            throw new Error(result.message || 'Errore nella richiesta');
-        }
-    } catch (error) {
-        console.error('Errore:', error);
-        alert(`❌ Errore: ${error.message}`);
-    } finally {
-        this.innerHTML = originalText;
-        this.disabled = false;
-    }
 });
 </script>
 

@@ -11,7 +11,7 @@ PROVIDER_URL = "http://127.0.0.1:8545"
 GANACHE_PRIVATE_KEY = "0x40b18ebc23bf6dc9401457511ee0ecd5f86ad80032f74c51073ff40077e91b4a"
 
 # CHIAVE DEL "BANKER" - Account Ganache con fondi per finanziare altri account
-GANACHE_BANKER_KEY = "0xf0f5e8b2e5074bca7925a5251561b0be6426ee596ed6a521235222af80dd64a7"  # Account #1 di Ganache
+GANACHE_BANKER_KEY = "0x2b9c70d343acdc4f5fd8f36ce7a1259e1b694daf39d96ae27cad2443b746b717"  # Account #1 di Ganache
 
 def derive_ethereum_key_from_rsa(pem_file_path: str, password: bytes):
     """

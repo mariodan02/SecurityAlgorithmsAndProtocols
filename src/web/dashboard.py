@@ -1425,47 +1425,88 @@ class AcademicCredentialsDashboard:
 
             credentials = []
             try:
-                credentials_base_dir = Path("./src/credentials")
-                if credentials_base_dir.exists():
-                    for user_dir in credentials_base_dir.iterdir():
-                        if user_dir.is_dir():
-                            for credential_file in user_dir.glob("*.json"):
-                                try:
-                                    with open(credential_file, 'r', encoding='utf-8') as f:
-                                        if MODULES_AVAILABLE:
-                                            credential_data = json.load(f)
-                                            credential = AcademicCredential.from_dict(credential_data)
-                                            summary = credential.get_summary()
-                                            credentials.append({
-                                                'credential_id': summary['credential_id'],
-                                                'student_name': summary['subject_pseudonym'],
-                                                'issued_at': summary['issued_at'][:19],
-                                                'issued_by': credential.issuer.name,
-                                                'status': summary['status'].title(),
-                                                'total_courses': summary['total_courses'],
-                                                'total_ects': summary['total_ects'],
-                                                'file_path': str(credential_file)
-                                            })
-                                        else:
-                                            # Dati fittizi se i moduli non sono disponibili
-                                            credentials.append({
-                                                'credential_id': f"mock_{credential_file.stem}",
-                                                'student_name': "Mario Rossi",
-                                                'issued_at': "2024-01-15 10:30:00",
-                                                'issued_by': "Université de Rennes",
-                                                'status': "Active",
-                                                'total_courses': 5,
-                                                'total_ects': 30,
-                                                'file_path': str(credential_file)
-                                            })
-                                except Exception as e:
-                                    self.logger.warning(f"Errore nel caricamento della credenziale {credential_file}: {e}")
-                                    continue
+                # CORREZIONE: Percorsi assoluti e relativi migliorati
+                current_dir = Path.cwd()
+                possible_base_dirs = [
+                    current_dir / "src" / "credentials",
+                    current_dir / "credentials", 
+                    Path("./src/credentials"),
+                    Path("./credentials"),
+                    Path("src/credentials"),
+                    Path("credentials")
+                ]
+                
+                credentials_base_dir = None
+                for base_dir in possible_base_dirs:
+                    if base_dir.exists():
+                        credentials_base_dir = base_dir
+                        self.logger.info(f"📁 Directory credenziali trovata: {credentials_base_dir}")
+                        break
+                
+                if not credentials_base_dir:
+                    self.logger.warning("📁 Directory credenziali non trovata, provo a crearla...")
+                    credentials_base_dir = current_dir / "src" / "credentials"
+                    credentials_base_dir.mkdir(parents=True, exist_ok=True)
+                    self.logger.info(f"📁 Directory credenziali creata: {credentials_base_dir}")
 
+                # Cerca ricorsivamente in tutte le sottodirectory
+                self.logger.info(f"🔍 Ricerca credenziali in: {credentials_base_dir}")
+                
+                credential_files = []
+                if credentials_base_dir.exists():
+                    # Cerca file .json ricorsivamente
+                    for json_file in credentials_base_dir.rglob("*.json"):
+                        if json_file.is_file():
+                            credential_files.append(json_file)
+                            self.logger.debug(f"   Trovato: {json_file}")
+                
+                self.logger.info(f"📋 Trovati {len(credential_files)} file di credenziali")
+                
+                for credential_file in credential_files:
+                    try:
+                        with open(credential_file, 'r', encoding='utf-8') as f:
+                            if MODULES_AVAILABLE:
+                                credential_data = json.load(f)
+                                credential = AcademicCredential.from_dict(credential_data)
+                                summary = credential.get_summary()
+                                credentials.append({
+                                    'credential_id': summary['credential_id'],
+                                    'student_name': summary['subject_pseudonym'],
+                                    'issued_at': summary['issued_at'][:19],
+                                    'issued_by': credential.issuer.name,
+                                    'status': summary['status'].title(),
+                                    'total_courses': summary['total_courses'],
+                                    'total_ects': summary['total_ects'],
+                                    'file_path': str(credential_file)
+                                })
+                            else:
+                                # Fallback: leggi direttamente il JSON per estrarre info base
+                                credential_data = json.load(f)
+                                metadata = credential_data.get('metadata', {})
+                                issuer = credential_data.get('issuer', {})
+                                courses = credential_data.get('courses', [])
+                                
+                                credentials.append({
+                                    'credential_id': str(metadata.get('credential_id', credential_file.stem)),
+                                    'student_name': credential_data.get('subject', {}).get('pseudonym', 'Studente Sconosciuto'),
+                                    'issued_at': metadata.get('issued_at', '2024-01-01T00:00:00')[:19],
+                                    'issued_by': issuer.get('name', 'Università Sconosciuta'),
+                                    'status': 'Active',
+                                    'total_courses': len(courses),
+                                    'total_ects': sum(course.get('ects_credits', 0) for course in courses),
+                                    'file_path': str(credential_file)
+                                })
+                                
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Errore nel caricamento della credenziale {credential_file}: {e}")
+                        continue
+
+                # Ordina per data di emissione (più recenti prima)
                 credentials.sort(key=lambda x: x['issued_at'], reverse=True)
+                self.logger.info(f"✅ Caricate {len(credentials)} credenziali per la visualizzazione")
 
             except Exception as e:
-                self.logger.error(f"Errore nel caricamento delle credenziali: {e}")
+                self.logger.error(f"❌ Errore nel caricamento delle credenziali: {e}")
 
             return self.templates.TemplateResponse("credentials.html", {
                 "request": request, "user": user, "title": "Gestisci Credenziali", "credentials": credentials
@@ -1696,7 +1737,43 @@ class AcademicCredentialsDashboard:
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(credential.to_json())
 
-                self.logger.info(f" Credenziale salvata in: {output_path}")
+                self.logger.info(f"📁 Directory corrente: {Path.cwd()}")
+                self.logger.info(f"📄  File creato: {output_path.exists()}")
+                self.logger.info(f"📊 Dimensione file: {output_path.stat().st_size if output_path.exists() else 'N/A'} bytes")
+
+                # Aggiungi anche un endpoint per debug delle directory
+                @self.app.get("/debug/directories")
+                async def debug_directories(request: Request):
+                    """Endpoint di debug per controllare le directory."""
+                    user = self.auth_deps['get_current_user'](request)
+                    if not user or user.role not in ["issuer", "admin"]:
+                        raise HTTPException(status_code=403, detail="Accesso negato")
+                    
+                    current_dir = Path.cwd()
+                    debug_info = {
+                        "current_directory": str(current_dir),
+                        "credentials_paths": {
+                            "src/credentials": {
+                                "exists": (current_dir / "src" / "credentials").exists(),
+                                "path": str(current_dir / "src" / "credentials"),
+                                "files": []
+                            },
+                            "credentials": {
+                                "exists": (current_dir / "credentials").exists(), 
+                                "path": str(current_dir / "credentials"),
+                                "files": []
+                            }
+                        }
+                    }
+                    
+                    for base_name, info in debug_info["credentials_paths"].items():
+                        base_path = Path(info["path"])
+                        if base_path.exists():
+                            info["files"] = [str(f) for f in base_path.rglob("*.json")]
+                    
+                    return self._create_json_response(debug_info)
+
+
 
                 # Prepara la risposta finale
                 result_data = {

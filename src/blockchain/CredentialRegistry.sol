@@ -29,12 +29,12 @@ contract CredentialRegistry {
 
     /**
      * @dev Registra una nuova credenziale sulla blockchain.
-     * Solo l'emittente (issuer) può chiamare questa funzione.
+     * Solo l'emittente (issuer) puo' chiamare questa funzione.
      * @param _credentialUUID L'identificativo univoco della credenziale.
      */
     function registerCredential(string memory _credentialUUID) public {
         // Verifica che la credenziale non sia già registrata
-        require(credentials[_credentialUUID].issuer == address(0), "Credenziale già registrata.");
+        require(credentials[_credentialUUID].issuer == address(0), "Credenziale gia' registrata.");
 
         credentials[_credentialUUID] = Credential({
             credentialUUID: _credentialUUID,
@@ -49,15 +49,15 @@ contract CredentialRegistry {
 
     /**
      * @dev Revoca una credenziale esistente.
-     * Solo l'emittente originale della credenziale può revocarla.
+     * Solo l'emittente originale della credenziale puo' revocarla.
      * @param _credentialUUID L'ID della credenziale da revocare.
      * @param _reason Il motivo della revoca.
      */
     function revokeCredential(string memory _credentialUUID, string memory _reason) public {
         // Verifica che chi chiama la funzione sia l'emittente originale
-        require(credentials[_credentialUUID].issuer == msg.sender, "Solo l'università emittente può revocare questa credenziale.");
+        require(credentials[_credentialUUID].issuer == msg.sender, "Solo l'universita' emittente puo' revocare questa credenziale.");
         // Verifica che la credenziale non sia già stata revocata
-        require(!credentials[_credentialUUID].isRevoked, "La credenziale è stata già revocata.");
+        require(!credentials[_credentialUUID].isRevoked, "La credenziale e' stata gia' revocata.");
 
         credentials[_credentialUUID].isRevoked = true;
         credentials[_credentialUUID].reasonForRevocation = _reason;
@@ -69,7 +69,7 @@ contract CredentialRegistry {
      * @dev Verifica lo stato di una credenziale. È una funzione di lettura (view)
      * e non consuma gas se chiamata esternamente.
      * @param _credentialUUID L'ID della credenziale da verificare.
-     * @return Un booleano che indica se la credenziale è revocata, l'indirizzo
+     * @return Un booleano che indica se la credenziale e' revocata, l'indirizzo
      * dell'emittente e il timestamp di emissione.
      */
     function verifyCredential(string memory _credentialUUID) public view returns (address, uint256, bool) {

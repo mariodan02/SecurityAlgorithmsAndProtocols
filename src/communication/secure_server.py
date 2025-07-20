@@ -1,7 +1,8 @@
 # =============================================================================
-# FASE 5: COMUNICAZIONE SICURA - SECURE SERVER
+# FASE 5: COMUNICAZIONE SICURA - SECURE SERVER CONSOLIDATO
 # File: communication/secure_server.py
 # Sistema Credenziali Accademiche Decentralizzate
+# INCLUDE: API Blockchain integrate
 # =============================================================================
 
 import os
@@ -15,6 +16,7 @@ from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import uuid
+import logging
 
 # FastAPI imports
 from fastapi import FastAPI, HTTPException, Depends, Request, status
@@ -31,7 +33,13 @@ from pydantic import BaseModel, Field
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 1. MODELLI DATI API
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# 1. MODELLI DATI API (Consolidati)
+# =============================================================================
 
 class APIResponse(BaseModel):
     """Risposta API standardizzata"""
@@ -41,7 +49,6 @@ class APIResponse(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
     request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
-
 class CredentialSubmissionRequest(BaseModel):
     """Richiesta sottomissione credenziale"""
     credential_data: Dict[str, Any]
@@ -50,7 +57,6 @@ class CredentialSubmissionRequest(BaseModel):
     recipient_id: str
     expires_hours: int = Field(default=24, ge=1, le=168)
 
-
 class CredentialValidationRequest(BaseModel):
     """Richiesta validazione credenziale"""
     credential_data: Dict[str, Any]
@@ -58,18 +64,52 @@ class CredentialValidationRequest(BaseModel):
     include_merkle_verification: bool = True
     check_revocation: bool = True
 
-
 class CredentialVerificationRequest(BaseModel):
     """Richiesta verifica credenziale (blockchain)"""
     credential_data: Dict[str, Any]
     blockchain_network: str = "mainnet"
 
+# NUOVI MODELLI BLOCKCHAIN
+class VerifyCredentialRequest(BaseModel):
+    credential_id: str = Field(..., description="ID della credenziale da verificare")
+
+class VerifyCredentialResponse(BaseModel):
+    success: bool
+    credential_id: str
+    blockchain_status: Dict[str, Any]
+    verified_at: str
+
+class RevokeCredentialRequest(BaseModel):
+    credential_id: str = Field(..., description="ID della credenziale da revocare")
+    reason: str = Field(..., description="Motivo della revoca")
+
+class RevokeCredentialResponse(BaseModel):
+    success: bool
+    message: str
+    credential_id: str
+    reason: str
+    revoked_at: str
+    blockchain_status: Optional[Dict[str, Any]] = None
+    transaction_hash: Optional[str] = None
+
+class BlockchainStatusResponse(BaseModel):
+    success: bool
+    credential_id: str
+    blockchain_status: Dict[str, Any]
+    verified_at: str
+
+class HealthCheckResponse(BaseModel):
+    healthy: bool
+    account_address: Optional[str] = None
+    balance_eth: Optional[float] = None
+    blockchain_connected: Optional[bool] = None
+    checked_at: str
+    message: Optional[str] = None
 
 class PresentationRequest(BaseModel):
     """Richiesta presentazione credenziale"""
     presentation_data: Dict[str, Any]
     verification_requirements: Optional[Dict[str, Any]] = None
-
 
 class UniversityRegistrationRequest(BaseModel):
     """Richiesta registrazione università"""
@@ -80,12 +120,19 @@ class UniversityRegistrationRequest(BaseModel):
     public_key_pem: str
     certificate_request: Dict[str, Any]
 
+class CredentialRequest(BaseModel):
+    student_name: str
+    student_id: str
+    purpose: str
+    requested_at: str
 
-# 2. CONFIGURAZIONE SERVER
+# =============================================================================
+# 2. CONFIGURAZIONE SERVER CONSOLIDATA
+# =============================================================================
 
 @dataclass
 class ServerConfiguration:
-    """Configurazione server sicuro"""
+    """Configurazione server sicuro consolidato"""
     host: str = "localhost"
     port: int = 8443
     ssl_enabled: bool = True
@@ -109,12 +156,25 @@ class ServerConfiguration:
     max_request_size: int = 10 * 1024 * 1024  # 10MB
     
     # Configurazione blockchain
-    blockchain_rpc_url: str = "https://blockchain-rpc.example.com"
+    blockchain_rpc_url: str = "http://127.0.0.1:8545"  # Ganache locale
     blockchain_api_key: str = "blockchain-api-key-12345"
     blockchain_network: str = "testnet"
 
+# =============================================================================
+# 3. DEPENDENCY INJECTION E SECURITY
+# =============================================================================
 
-# 3. MIDDLEWARE E SECURITY
+def get_blockchain_service():
+    """Dependency per ottenere il servizio blockchain"""
+    try:
+        from src.blockchain.blockchain_service import BlockchainService
+        return BlockchainService()
+    except Exception as e:
+        logger.error(f"Errore inizializzazione blockchain service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servizio blockchain non disponibile"
+        )
 
 class RateLimiter:
     """Rate limiter semplice"""
@@ -145,7 +205,6 @@ class RateLimiter:
         self.clients[client_ip].append(now)
         return True
 
-
 class APIKeyManager:
     """Gestione API keys per i 3 utenti specifici"""
     
@@ -155,14 +214,14 @@ class APIKeyManager:
                 "username": "issuer_rennes",
                 "role": "issuer",
                 "university": "Université de Rennes",
-                "permissions": ["submit_credential", "validate_credential"],
+                "permissions": ["submit_credential", "validate_credential", "revoke_credential"],
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             },
             "verifier_unisa": {
                 "username": "verifier_unisa",
                 "role": "verifier",
                 "university": "Università di Salerno",
-                "permissions": ["validate_credential", "submit_presentation"],
+                "permissions": ["validate_credential", "submit_presentation", "verify_credential"],
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             },
             "studente_mariorossi": {
@@ -170,6 +229,28 @@ class APIKeyManager:
                 "role": "studente",
                 "university": "Studente",
                 "permissions": ["verify_credential", "submit_presentation"],
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            },
+            # Token aggiuntivi per testing blockchain
+            "issuer_token": {
+                "username": "issuer_rennes",
+                "role": "issuer",
+                "university": "Université de Rennes",
+                "permissions": ["submit_credential", "validate_credential", "revoke_credential"],
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            },
+            "verifier_token": {
+                "username": "verifier_unisa",
+                "role": "verifier", 
+                "university": "Università di Salerno",
+                "permissions": ["validate_credential", "verify_credential"],
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            },
+            "student_token": {
+                "username": "studente_mariorossi",
+                "role": "student",
+                "university": "Studente",
+                "permissions": ["verify_credential"],
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
         }
@@ -186,30 +267,55 @@ class APIKeyManager:
         
         permissions = key_info.get("permissions", [])
         return permission in permissions
-    
-class CredentialRequest(BaseModel):
-    student_name: str
-    student_id: str
-    purpose: str
-    requested_at: str
 
-# 4. SECURE SERVER PRINCIPALE
+def verify_auth_token(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
+    """Verifica il token di autenticazione"""
+    if not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token di autenticazione richiesto"
+        )
+    
+    # Usa APIKeyManager per validazione
+    api_key_manager = APIKeyManager()
+    user_info = api_key_manager.validate_api_key(credentials.credentials)
+    
+    if not user_info:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token non valido"
+        )
+    
+    return user_info
+
+def verify_issuer_role(user_info: dict = Depends(verify_auth_token)):
+    """Verifica che l'utente sia un issuer"""
+    if user_info.get("role") != "issuer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo gli emittenti possono eseguire questa operazione"
+        )
+    return user_info
+
+# =============================================================================
+# 4. SECURE SERVER PRINCIPALE CONSOLIDATO
+# =============================================================================
 
 class AcademicCredentialsSecureServer:
-    """Server sicuro per il sistema di credenziali accademiche"""
+    """Server sicuro consolidato per il sistema di credenziali accademiche"""
     
     def __init__(self, config: ServerConfiguration):
         """
-        Inizializza il server sicuro
+        Inizializza il server sicuro consolidato
         
         Args:
             config: Configurazione server
         """
         self.config = config
         self.app = FastAPI(
-            title="Academic Credentials Secure API",
-            description="API sicura per il sistema di credenziali accademiche",
-            version="1.0.0",
+            title="Academic Credentials Secure API - Consolidated",
+            description="API sicura consolidata per il sistema di credenziali accademiche con funzionalità blockchain",
+            version="2.0.0",
             docs_url="/docs" if not config.api_key_required else None
         )
         
@@ -231,6 +337,7 @@ class AcademicCredentialsSecureServer:
             'credentials_submitted': 0,
             'validations_performed': 0,
             'verifications_performed': 0,
+            'revocations_performed': 0,
             'authentication_failures': 0,
             'rate_limit_hits': 0
         }
@@ -239,10 +346,11 @@ class AcademicCredentialsSecureServer:
         self._setup_middleware()
         self._setup_routes()
         
-        print(f"   Secure Server inizializzato")
+        print(f"🔧 Secure Server Consolidato inizializzato")
         print(f"   Host: {config.host}:{config.port}")
         print(f"   SSL: {'Abilitato' if config.ssl_enabled else 'Disabilitato'}")
         print(f"   API Key: {'Richiesta' if config.api_key_required else 'Opzionale'}")
+        print(f"   Blockchain: {config.blockchain_rpc_url}")
     
     def _setup_middleware(self):
         """Configura middleware di sicurezza"""
@@ -294,8 +402,12 @@ class AcademicCredentialsSecureServer:
                 return response
     
     def _setup_routes(self):
-        """Configura routes API"""
-                
+        """Configura routes API consolidate"""
+        
+        # =============================================================================
+        # ROUTES ORIGINALI
+        # =============================================================================
+        
         # Submit credential
         @self.app.post("/api/v1/credentials/submit")
         async def submit_credential(
@@ -418,7 +530,162 @@ class AcademicCredentialsSecureServer:
                     status_code=500
                 )
 
-        # Statistics endpoint
+        # =============================================================================
+        # NUOVE ROUTES BLOCKCHAIN CONSOLIDATE
+        # =============================================================================
+
+        @self.app.post("/api/v1/blockchain/credentials/verify", response_model=VerifyCredentialResponse)
+        async def verify_credential_blockchain(
+            request: VerifyCredentialRequest,
+            blockchain_service = Depends(get_blockchain_service),
+            user_info: dict = Depends(verify_auth_token)
+        ):
+            """Verifica lo stato di una credenziale sulla blockchain"""
+            try:
+                logger.info(f"🔍 Verifica credenziale blockchain {request.credential_id} richiesta da {user_info['username']}")
+                
+                # Verifica sulla blockchain
+                blockchain_status = blockchain_service.verify_credential(request.credential_id)
+                
+                self.stats['verifications_performed'] += 1
+                
+                return VerifyCredentialResponse(
+                    success=True,
+                    credential_id=request.credential_id,
+                    blockchain_status=blockchain_status,
+                    verified_at=datetime.datetime.now().isoformat()
+                )
+                
+            except Exception as e:
+                logger.error(f"❌ Errore durante la verifica della credenziale: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Errore durante la verifica: {str(e)}"
+                )
+
+        @self.app.post("/api/v1/blockchain/credentials/revoke", response_model=RevokeCredentialResponse)
+        async def revoke_credential_blockchain(
+            request: RevokeCredentialRequest,
+            blockchain_service = Depends(get_blockchain_service),
+            user_info: dict = Depends(verify_issuer_role)
+        ):
+            """Revoca una credenziale sulla blockchain"""
+            try:
+                logger.info(f"🚫 Revoca credenziale blockchain {request.credential_id} richiesta da {user_info['username']}")
+                
+                # Prima verifica se la credenziale esiste e non è già revocata
+                current_status = blockchain_service.verify_credential(request.credential_id)
+                
+                if current_status['status'] == 'NOT_FOUND':
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Credenziale non trovata sulla blockchain"
+                    )
+                
+                if current_status['status'] == 'REVOKED':
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="La credenziale è già stata revocata"
+                    )
+
+                # Effettua la revoca
+                success = blockchain_service.revoke_credential_directly(
+                    request.credential_id, 
+                    request.reason
+                )
+
+                if not success:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Errore durante la revoca sulla blockchain"
+                    )
+
+                # Log dell'operazione
+                revoke_log = {
+                    'credential_id': request.credential_id,
+                    'reason': request.reason,
+                    'revoked_by': user_info['username'],
+                    'revoked_at': datetime.datetime.now().isoformat(),
+                    'issuer_address': blockchain_service.account.address
+                }
+                
+                logger.info(f"✅ Credenziale {request.credential_id} revocata con successo: {revoke_log}")
+
+                # Verifica la revoca
+                updated_status = blockchain_service.verify_credential(request.credential_id)
+                
+                self.stats['revocations_performed'] += 1
+                
+                return RevokeCredentialResponse(
+                    success=True,
+                    message="Credenziale revocata con successo",
+                    credential_id=request.credential_id,
+                    reason=request.reason,
+                    revoked_at=revoke_log['revoked_at'],
+                    blockchain_status=updated_status,
+                    transaction_hash="Vedere log console per hash transazione"
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"❌ Errore durante la revoca della credenziale: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Errore durante la revoca: {str(e)}"
+                )
+
+        @self.app.get("/api/v1/blockchain/credentials/{credential_id}/status", response_model=BlockchainStatusResponse)
+        async def get_credential_blockchain_status(
+            credential_id: str,
+            blockchain_service = Depends(get_blockchain_service),
+            user_info: dict = Depends(verify_auth_token)
+        ):
+            """Ottiene lo stato di una credenziale sulla blockchain (endpoint GET)"""
+            try:
+                blockchain_status = blockchain_service.verify_credential(credential_id)
+                
+                return BlockchainStatusResponse(
+                    success=True,
+                    credential_id=credential_id,
+                    blockchain_status=blockchain_status,
+                    verified_at=datetime.datetime.now().isoformat()
+                )
+                
+            except Exception as e:
+                logger.error(f"❌ Errore durante il recupero dello stato: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Errore: {str(e)}"
+                )
+
+        @self.app.get("/api/v1/blockchain/health", response_model=HealthCheckResponse)
+        async def blockchain_health_check():
+            """Endpoint per verificare lo stato del servizio blockchain"""
+            try:
+                blockchain_service = get_blockchain_service()
+                
+                # Test connessione
+                account_address = blockchain_service.account.address
+                balance = blockchain_service.w3.eth.get_balance(account_address)
+                balance_eth = blockchain_service.w3.from_wei(balance, 'ether')
+
+                return HealthCheckResponse(
+                    healthy=True,
+                    account_address=account_address,
+                    balance_eth=float(balance_eth),
+                    blockchain_connected=blockchain_service.w3.is_connected(),
+                    checked_at=datetime.datetime.now().isoformat()
+                )
+
+            except Exception as e:
+                return HealthCheckResponse(
+                    healthy=False,
+                    checked_at=datetime.datetime.now().isoformat(),
+                    message=f"Errore health check: {str(e)}"
+                )
+
+        # Statistics endpoint (aggiornato)
         @self.app.get("/api/v1/stats")
         async def get_statistics(
             auth: HTTPAuthorizationCredentials = Depends(self.security) if self.security else None
@@ -430,9 +697,24 @@ class AcademicCredentialsSecureServer:
             
             return APIResponse(
                 success=True,
-                message="Statistiche server",
+                message="Statistiche server consolidato",
                 data=self.stats
             )
+
+        # Route per documentazione automatica
+        @self.app.get("/")
+        async def root():
+            return {
+                "message": "Academic Credentials Secure API - Consolidated",
+                "version": "2.0.0",
+                "features": ["Standard API", "Blockchain Integration"],
+                "docs": "/docs",
+                "redoc": "/redoc"
+            }
+    
+    # =============================================================================
+    # METODI HANDLER ORIGINALI (invariati)
+    # =============================================================================
     
     async def _authenticate_request(self, auth: Optional[HTTPAuthorizationCredentials]) -> Optional[Dict[str, Any]]:
         """Autentica richiesta"""
@@ -470,7 +752,7 @@ class AcademicCredentialsSecureServer:
             if auth_info["role"] != "issuer":
                 raise HTTPException(status_code=403, detail="Solo l'issuer può sottomettere credenziali")
             
-            print(f"Ricevuta sottomissione della credenziale da {auth_info['username']}")
+            print(f"📩 Ricevuta sottomissione della credenziale da {auth_info['username']}")
             
             # Genera ID sottomissione
             submission_id = str(uuid.uuid4())
@@ -503,7 +785,7 @@ class AcademicCredentialsSecureServer:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"Errore sottomissione credenziale: {e}")
+            print(f"❌ Errore sottomissione credenziale: {e}")
             return APIResponse(
                 success=False,
                 message=f"Errore interno: {e}"
@@ -521,7 +803,7 @@ class AcademicCredentialsSecureServer:
             if auth_info["role"] not in ["issuer", "verifier"]:
                 raise HTTPException(status_code=403, detail="Non autorizzato a validare credenziali")
             
-            print(f"🔍Ricevuta richiesta di validazione da {auth_info['username']}")
+            print(f"🔍 Ricevuta richiesta di validazione da {auth_info['username']}")
             
             # Genera ID validazione
             validation_id = str(uuid.uuid4())
@@ -556,7 +838,7 @@ class AcademicCredentialsSecureServer:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"Errore validazione credenziale: {e}")
+            print(f"❌ Errore validazione credenziale: {e}")
             return APIResponse(
                 success=False,
                 message=f"Errore interno: {e}"
@@ -570,7 +852,7 @@ class AcademicCredentialsSecureServer:
             # Autentica
             auth_info = await self._authenticate_request(auth)
             
-            print(f"Ricevuta richiesta verifica da {auth_info['username']}")
+            print(f"🔍 Ricevuta richiesta verifica da {auth_info['username']}")
             
             # Genera ID verifica
             verification_id = str(uuid.uuid4())
@@ -599,7 +881,7 @@ class AcademicCredentialsSecureServer:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"Errore verifica credenziale: {e}")
+            print(f"❌ Errore verifica credenziale: {e}")
             return APIResponse(
                 success=False,
                 message=f"Errore interno: {e}"
@@ -643,7 +925,7 @@ class AcademicCredentialsSecureServer:
         try:
             auth_info = await self._authenticate_request(auth)
             
-            print(f"Richiesta status credenziale: {credential_id[:8]}...")
+            print(f"🔍 Richiesta status credenziale: {credential_id[:8]}...")
             
             # Cerca nelle sottomissioni
             for submission_id, submission in self.submitted_credentials.items():
@@ -676,12 +958,11 @@ class AcademicCredentialsSecureServer:
                 success=False,
                 message=f"Errore interno: {e}"
             )
-    
 
     def run(self):
-        """Avvia il server"""
+        """Avvia il server consolidato"""
         try:
-            print(f"🚀 Avvio server su {self.config.host}:{self.config.port}")
+            print(f"🚀 Avvio server consolidato su {self.config.host}:{self.config.port}")
             
             ssl_context = None
             if self.config.ssl_enabled:
@@ -693,12 +974,12 @@ class AcademicCredentialsSecureServer:
                         keyfile=self.config.ssl_key_file,
                         password="Unisa2025"  # PASSWORD HARDCODED - CAMBIA SE NECESSARIO
                     )
-                    print(f"SSL configurato con certificati esistenti")
+                    print(f"🔒 SSL configurato con certificati esistenti")
                 else:
-                    print(f"Certificati SSL non trovati")
-                    print(f"Certificato: {self.config.ssl_cert_file}")
-                    print(f"Chiave: {self.config.ssl_key_file}")
-                    print(f"Genera prima i certificati con certificate_authority.py")
+                    print(f"⚠️ Certificati SSL non trovati")
+                    print(f"   Certificato: {self.config.ssl_cert_file}")
+                    print(f"   Chiave: {self.config.ssl_key_file}")
+                    print(f"   Genera prima i certificati con certificate_authority.py")
                     return
                     
             # Configura i parametri per uvicorn
@@ -720,5 +1001,53 @@ class AcademicCredentialsSecureServer:
             uvicorn.run(**uvicorn_config)
             
         except Exception as e:
-            print(f"Errore avvio server: {e}")
+            print(f"❌ Errore avvio server: {e}")
             raise
+
+# =============================================================================
+# UTILITY FUNCTIONS CONSOLIDATE
+# =============================================================================
+
+def format_blockchain_status(status_result: Dict[str, Any]) -> Dict[str, str]:
+    """Formatta il risultato dello stato blockchain per la visualizzazione"""
+    if status_result['status'] == 'VALID':
+        return {
+            'status': 'Attiva',
+            'status_class': 'success',
+            'icon': '✅',
+            'details': f"Emessa da {status_result['issuer']}"
+        }
+    elif status_result['status'] == 'REVOKED':
+        return {
+            'status': 'Revocata',
+            'status_class': 'danger',
+            'icon': '🚫',
+            'details': 'Credenziale revocata'
+        }
+    elif status_result['status'] == 'NOT_FOUND':
+        return {
+            'status': 'Non trovata',
+            'status_class': 'warning',
+            'icon': '⚠️',
+            'details': 'Non registrata su blockchain'
+        }
+    else:
+        return {
+            'status': 'Sconosciuto',
+            'status_class': 'secondary',
+            'icon': '❓',
+            'details': 'Stato non determinabile'
+        }
+
+def log_credential_action(action: str, credential_id: str, user: str, details: Optional[Dict] = None):
+    """Registra le azioni sulle credenziali per audit"""
+    log_entry = {
+        'timestamp': datetime.datetime.now().isoformat(),
+        'action': action,
+        'credential_id': credential_id,
+        'user': user,
+        'details': details
+    }
+    
+    logger.info(f"Credential Action: {json.dumps(log_entry)}")
+    return log_entry

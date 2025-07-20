@@ -152,6 +152,7 @@ class BlockchainService:
             
             if receipt['status'] == 1:
                 print(f"✅ Credenziale {credential_uuid} registrata con successo!")
+                print(f"📋 Hash transazione: {self.w3.to_hex(receipt.transactionHash)}")
                 return True
             else:
                 print(f"❌ Errore nella registrazione di {credential_uuid}")
@@ -172,3 +173,27 @@ class BlockchainService:
             return { "status": status, "issuer": issuer, "issueTimestamp": timestamp }
         except Exception as e:
             raise ValueError(f"Errore durante la verifica: {e}")
+
+    def revoke_credential_directly(self, credential_uuid: str, reason: str):
+        """
+        Metodo per revocare direttamente una credenziale (firma e invia la transazione)
+        """
+        try:
+            transaction = self.build_revocation_transaction(credential_uuid, reason)
+            signed_tx = self.account.sign_transaction(transaction)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            
+            print(f"🚀 Transazione di revoca inviata: {self.w3.to_hex(tx_hash)}")
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+            
+            if receipt['status'] == 1:
+                print(f"✅ Credenziale {credential_uuid} revocata con successo!")
+                print(f"📋 Hash transazione: {self.w3.to_hex(receipt.transactionHash)}")
+                return True
+            else:
+                print(f"❌ Errore nella revoca di {credential_uuid}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Errore durante la revoca: {e}")
+            return False

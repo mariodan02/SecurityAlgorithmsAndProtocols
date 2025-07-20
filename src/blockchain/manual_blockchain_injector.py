@@ -57,7 +57,7 @@ def register_credential_on_chain(private_key: str, credential_uuid: str):
             print("🎉 REGISTRAZIONE COMPLETATA CON SUCCESSO! 🎉")
             # --- LA CORREZIONE È QUI ---
             print(f"  - UUID Credenziale: {credential_uuid}")
-            print(f"  - Hash Transazione: {w3.to_hex(receipt.transactionHash)}") # Corretto da .transaction_hash
+            print(f"  - Hash Transazione: {w3.to_hex(receipt.transactionHash)}") 
             print(f"  - Numero Blocco: {receipt.blockNumber}")
             print("="*50)
         else:

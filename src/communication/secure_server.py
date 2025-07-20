@@ -579,7 +579,7 @@ class AcademicCredentialsSecureServer:
             blockchain_result = {
                 "on_chain": False,
                 "block_number": 123456,
-                "transaction_hash": "0x1234567890abcdef",
+                "transactionHash": "0x1234567890abcdef",
                 "timestamp": "2025-07-18T12:34:56Z",
                 "is_valid": False,
                 "revoked": False  

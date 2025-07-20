@@ -328,7 +328,7 @@ class AcademicCredentialIssuer:
                         credential_id, self.issuer_account.address
                     )
                     receipt = self._send_signed_transaction(unsigned_tx)
-                    logger.info(f"Registrazione Blockchain OK. Hash: {self.web3.to_hex(receipt.transaction_hash)}")
+                    logger.info(f"Registrazione Blockchain OK. Hash: {self.web3.to_hex(receipt.transactionHash)}")
                 except Exception as e:
                     logger.error(f"Errore registrazione blockchain: {e}")
                     return IssuanceResult(

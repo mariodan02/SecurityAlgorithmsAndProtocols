@@ -66,6 +66,18 @@ def main():
             dashboard.run()
         except Exception as e:
             print(f"Errore dashboard: {e}")
+    
+    def run_credential_api():
+        try:
+            from src.web.credential_blockchain_api import create_credential_blockchain_api
+            app = create_credential_blockchain_api()
+            import uvicorn
+            uvicorn.run(app, host="localhost", port=8001, log_level="warning")
+        except Exception as e:
+            print(f"Errore credential API: {e}")
+
+    # Aggiungi questo thread
+    threading.Thread(target=run_credential_api, daemon=True)
 
     def run_ocsp_responder():
         try:

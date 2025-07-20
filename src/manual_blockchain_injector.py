@@ -16,7 +16,7 @@ def register_credential_on_chain(private_key: str, credential_uuid: str):
         # 1. Connessione a Web3
         w3 = Web3(Web3.HTTPProvider(GANACHE_URL))
         if not w3.is_connected():
-            print("❌ ERRORE: Impossibile connettersi a Ganache. Assicurati che sia in esecuzione.")
+            print("ERRORE: Impossibile connettersi a Ganache. Assicurati che sia in esecuzione.")
             return
 
         # 2. Caricamento dati del contratto
@@ -31,7 +31,7 @@ def register_credential_on_chain(private_key: str, credential_uuid: str):
         
         account = w3.eth.account.from_key(private_key)
         contract = w3.eth.contract(address=contract_address, abi=contract_abi)
-        print(f"✅ Connesso con l'account: {account.address}")
+        print(f"Connesso con l'account: {account.address}")
 
         # 4. Costruzione della transazione
         nonce = w3.eth.get_transaction_count(account.address)
@@ -62,26 +62,26 @@ def register_credential_on_chain(private_key: str, credential_uuid: str):
             print("="*50)
         else:
             print("\n" + "!"*50)
-            print("❌ ERRORE: La transazione è fallita sulla blockchain (reverted).")
+            print("ERRORE: La transazione è fallita sulla blockchain (reverted).")
             print(f"   - Controlla che l'account {account.address} abbia fondi su Ganache.")
             print(f"   - Controlla l'output del terminale di Ganache per ulteriori dettagli.")
             print("!"*50)
 
     except FileNotFoundError:
-        print("❌ ERRORE: File del contratto non trovati. Hai eseguito 'node compile.js' e 'node deploy.js'?")
+        print("ERRORE: File del contratto non trovati. Hai eseguito 'node compile.js' e 'node deploy.js'?")
     except Exception as e:
-        print(f"❌ ERRORE DURANTE LA TRANSAZIONE: {e}")
+        print(f"ERRORE DURANTE LA TRANSAZIONE: {e}")
 
 if __name__ == "__main__":
     print("--- Strumento di Inserimento Manuale su Blockchain ---")
 
     # Inserisci la chiave privata dal file ganache_key.txt
-    issuer_private_key = input("🔑 Incolla la chiave privata dell'account issuer (da ganache_key.txt): ").strip()
+    issuer_private_key = input("Incolla la chiave privata dell'account issuer (da ganache_key.txt): ").strip()
 
     # Inserisci l'UUID della credenziale che vuoi registrare
-    credential_uuid_to_register = input("🆔 Incolla l'UUID della credenziale da registrare: ").strip()
+    credential_uuid_to_register = input("Incolla l'UUID della credenziale da registrare: ").strip()
 
     if issuer_private_key and credential_uuid_to_register:
         register_credential_on_chain(issuer_private_key, credential_uuid_to_register)
     else:
-        print("❌ Dati non validi. Riprova.")
+        print("Dati non validi. Riprova.")

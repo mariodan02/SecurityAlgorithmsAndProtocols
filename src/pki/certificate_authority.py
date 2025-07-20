@@ -46,12 +46,12 @@ class CertificateAuthority:
         (self.root_path / "private").mkdir(exist_ok=True)
 
         if self.key_path.exists() and self.cert_path.exists():
-            print("✅ CA esistente - caricamento in corso")
+            print("CA esistente - caricamento in corso")
             self.load_ca()
         else:
-            print("✨ Creazione nuova Root CA")
+            print("Creazione nuova Root CA")
             self.create_self_signed_ca()
-            print("✅ Root CA creata con successo")
+            print("Root CA creata con successo")
 
     def create_self_signed_ca(self, common_name: str = "Academic Credentials Root CA") -> None:
         """Crea una nuova CA autofirmata."""
@@ -99,15 +99,15 @@ class CertificateAuthority:
         )
         self.key_path.chmod(0o600)
         self.cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
-        print(f"🔑 Chiave CA salvata: {self.key_path}")
-        print(f"📜 Certificato CA salvato: {self.cert_path}")
+        print(f"Chiave CA salvata: {self.key_path}")
+        print(f"Certificato CA salvato: {self.cert_path}")
 
     def _initialize_db(self) -> None:
         """Inizializza i file di database della CA."""
         self.index_path.touch(exist_ok=True)
         if not self.serial_path.exists():
             self.serial_path.write_text("1000")
-        print("🗄️ Database CA inizializzato")
+        print("Database CA inizializzato")
 
     def load_ca(self) -> None:
         """Carica la CA esistente da disco."""
@@ -119,7 +119,7 @@ class CertificateAuthority:
             self.certificate = self.cert_manager.load_certificate_from_bytes(
                 self.cert_path.read_bytes()
             )
-            print(f"✅ CA caricata correttamente - SN: {self.certificate.serial_number}")
+            print(f"CA caricata correttamente - SN: {self.certificate.serial_number}")
         except Exception as e:
             raise RuntimeError(f"Errore caricamento CA: {e}")
 
@@ -156,7 +156,7 @@ class CertificateAuthority:
 
         certificate = builder.sign(self.private_key, hashes.SHA256())
         self._update_index(certificate)
-        print(f"📝 Firmato certificato SN: {serial_number} - Valido {days_valid} giorni")
+        print(f"Firmato certificato SN: {serial_number} - Valido {days_valid} giorni")
         return certificate
 
     def _update_index(self, certificate: x509.Certificate) -> None:
@@ -196,18 +196,18 @@ class CertificateAuthority:
         key_exists = key_path.exists()
         
         if cert_exists and key_exists:
-            print(f"⏩ Credenziali già esistenti per '{key_base_name}' - operazione saltata")
+            print(f"Credenziali già esistenti per '{key_base_name}' - operazione saltata")
             return cert_path, key_path
         elif cert_exists:
-            print(f"⚠️ Attenzione: certificato esistente ma chiave privata mancante per '{key_base_name}'")
+            print(f"Attenzione: certificato esistente ma chiave privata mancante per '{key_base_name}'")
         elif key_exists:
-            print(f"⚠️ Attenzione: chiave privata esistente ma certificato mancante per '{key_base_name}'")
+            print(f"Attenzione: chiave privata esistente ma certificato mancante per '{key_base_name}'")
 
         cert_path.parent.mkdir(parents=True, exist_ok=True)
         key_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Generazione chiavi
-        print(f"🔑 Generazione chiavi per: {key_base_name}")
+        print(f"Generazione chiavi per: {key_base_name}")
         key_mgr = RSAKeyManager(key_size=key_size)
         private_key, public_key = key_mgr.generate_key_pair()
         key_mgr.save_key_pair(
@@ -244,7 +244,7 @@ class CertificateAuthority:
         csr = csr_builder.sign(private_key, hashes.SHA256())
         cert = self.sign_certificate(csr, entity_info.get('validity_days', 365))
         self.cert_manager.save_certificate_to_file(cert, str(cert_path))
-        print(f"✅ Certificato emesso: {cert_path}")
+        print(f"Certificato emesso: {cert_path}")
         
         return cert_path, key_path
 
@@ -280,7 +280,7 @@ if __name__ == "__main__":
         }
     ]
 
-    print("\n🏫 Avvio emissione certificati:")
+    print("\n Avvio emissione certificati:")
     for i, entity in enumerate(entities, 1):
         entity_name = f"{entity['name']}_{entity['student_id']}" if entity['type'] == 'student' else entity['name']
         print(f"\n[{i}/{len(entities)}] Processo: {entity_name} ({entity['type']})")

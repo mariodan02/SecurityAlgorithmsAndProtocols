@@ -1,7 +1,7 @@
-# =============================================================================
-# FASE 1: Fondamenta Crittografiche
-# Sistema Credenziali Accademiche Decentralizzate
-# =============================================================================
+
+# Fondamenta Crittografiche
+# Sistema Credenziali Accademiche
+
 
 import os
 import json
@@ -16,9 +16,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 
 
-# =============================================================================
 # 1. GESTIONE CHIAVI RSA
-# =============================================================================
 
 class RSAKeyManager:
     """Gestisce la generazione, serializzazione e archiviazione delle chiavi RSA"""
@@ -190,10 +188,7 @@ class RSAKeyManager:
         print(f"✓ Chiavi caricate da {Path(private_path).parent}")
         return private_key, public_key
 
-
-# =============================================================================
 # 2. FIRMA DIGITALE RSA-SHA256
-# =============================================================================
 
 class DigitalSignature:
     """Gestisce la firma digitale e verifica con RSA-SHA256"""
@@ -217,7 +212,7 @@ class DigitalSignature:
                 mgf=padding.MGF1(hashes.SHA256()),
                 salt_length=padding.PSS.MAX_LENGTH
             )
-        else:  # PKCS1v15
+        else:  
             self.padding_scheme = padding.PKCS1v15()
         
         print(f"✓ Sistema firma digitale inizializzato (RSA-SHA256-{padding_type})")
@@ -339,9 +334,7 @@ class DigitalSignature:
             return False
 
 
-# =============================================================================
 # 3. IMPLEMENTAZIONE MERKLE TREE
-# =============================================================================
 
 class MerkleTree:
     """Implementazione di Merkle Tree per divulgazione selettiva"""
@@ -514,9 +507,7 @@ class MerkleTree:
         }
 
 
-# =============================================================================
 # 4. UTILITIES CRITTOGRAFICHE
-# =============================================================================
 
 class CryptoUtils:
     """Utilità crittografiche generali"""
@@ -565,7 +556,7 @@ class CryptoUtils:
         
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
-            length=32, # Lunghezza della chiave per AES-256 (usato da Fernet)
+            length=32, # Lunghezza della chiave per AES-256
             salt=salt,
             iterations=100000, # Numero di iterazioni raccomandato per la sicurezza
             backend=default_backend()
@@ -669,9 +660,7 @@ class CryptoUtils:
         return hmac.compare_digest(a, b)
 
 
-# =============================================================================
 # 5. CLASSE PRINCIPALE - CRYPTO MANAGER
-# =============================================================================
 
 class CryptoManager:
     """Manager principale per tutte le operazioni crittografiche"""
@@ -689,9 +678,9 @@ class CryptoManager:
         self.utils = CryptoUtils()
         
         print("=" * 60)
-        print("🔐 CRYPTO MANAGER INIZIALIZZATO")
-        print(f"   RSA Key Size: {key_size} bit")
-        print(f"   Padding Type: {padding_type}")
+        print("CRYPTO MANAGER INIZIALIZZATO")
+        print(f"RSA Key Size: {key_size} bit")
+        print(f"Padding Type: {padding_type}")
         print("=" * 60)
     
     def create_merkle_tree(self, data_list: List[Any]) -> MerkleTree:
@@ -709,15 +698,15 @@ class CryptoManager:
     def demo_full_workflow(self):
         """Dimostra un workflow completo del sistema crittografico"""
         print("\n" + "=" * 60)
-        print("🚀 DEMO WORKFLOW COMPLETO")
+        print("DEMO WORKFLOW COMPLETO")
         print("=" * 60)
         
         # 1. Generazione chiavi università
-        print("\n1️⃣ GENERAZIONE CHIAVI UNIVERSITÀ")
+        print("\n1. GENERAZIONE CHIAVI UNIVERSITÀ")
         univ_private, univ_public = self.key_manager.generate_key_pair()
         
         # 2. Creazione credenziale di esempio
-        print("\n2️⃣ CREAZIONE CREDENZIALE ACCADEMICA")
+        print("\n2. CREAZIONE CREDENZIALE ACCADEMICA")
         esami_studente = [
             {
                 "denominazioneEsame": "Algoritmi e Protocolli per la Sicurezza",
@@ -743,7 +732,7 @@ class CryptoManager:
         ]
         
         # 3. Costruzione Merkle Tree
-        print("\n3️⃣ COSTRUZIONE MERKLE TREE")
+        print("\n3. COSTRUZIONE MERKLE TREE")
         merkle_tree = self.create_merkle_tree(esami_studente)
         tree_info = merkle_tree.get_tree_info()
         print(f"   Root: {tree_info['merkle_root'][:16]}...")
@@ -771,15 +760,15 @@ class CryptoManager:
         }
         
         # 5. Firma della credenziale
-        print("\n4️⃣ FIRMA DIGITALE CREDENZIALE")
+        print("\n4. FIRMA DIGITALE CREDENZIALE")
         credenziale_firmata = self.signature.sign_document(univ_private, credenziale)
         
         # 6. Verifica firma
-        print("\n5️⃣ VERIFICA FIRMA CREDENZIALE")
+        print("\n5. VERIFICA FIRMA CREDENZIALE")
         is_valid = self.signature.verify_document_signature(univ_public, credenziale_firmata)
         
         # 7. Dimostrazione divulgazione selettiva
-        print("\n6️⃣ DIVULGAZIONE SELETTIVA")
+        print("\n6. DIVULGAZIONE SELETTIVA")
         # Lo studente vuole condividere solo il primo esame
         esame_selezionato = esami_studente[0]
         proof = merkle_tree.generate_proof(0)
@@ -788,12 +777,12 @@ class CryptoManager:
         print(f"   Proof steps: {len(proof)}")
         
         # 8. Verifica proof lato università ricevente
-        print("\n7️⃣ VERIFICA MERKLE PROOF")
+        print("\n7. VERIFICA MERKLE PROOF")
         original_root = credenziale_firmata["metadati"]["merkle_root"]
         proof_valid = merkle_tree.verify_proof(esame_selezionato, 0, proof, original_root)
         
         # 9. Salvataggio chiavi per test
-        print("\n8️⃣ SALVATAGGIO CHIAVI")
+        print("\n8. SALVATAGGIO CHIAVI")
         key_paths = self.key_manager.save_key_pair(
             univ_private, univ_public, 
             "./keys", "universite_rennes", 
@@ -802,7 +791,7 @@ class CryptoManager:
         
         # 10. Summary finale
         print("\n" + "=" * 60)
-        print("✅ DEMO COMPLETATA CON SUCCESSO")
+        print("DEMO COMPLETATA CON SUCCESSO")
         print("=" * 60)
         print(f"✓ Credenziale firmata: {is_valid}")
         print(f"✓ Merkle proof valida: {proof_valid}")
@@ -813,9 +802,7 @@ class CryptoManager:
         return credenziale_firmata
 
 
-# =============================================================================
 # 6. TESTING E VALIDAZIONE
-# =============================================================================
 
 def run_comprehensive_tests():
     """Esegue test completi di tutti i componenti"""
@@ -825,7 +812,7 @@ def run_comprehensive_tests():
     
     try:
         # Test 1: Key Manager
-        print("\n📋 Test 1: RSA Key Manager")
+        print("\nTest 1: RSA Key Manager")
         key_mgr = RSAKeyManager(2048)
         priv, pub = key_mgr.generate_key_pair()
         
@@ -841,7 +828,7 @@ def run_comprehensive_tests():
         print("   ✓ Serializzazione/Deserializzazione")
         
         # Test 2: Digital Signature
-        print("\n📋 Test 2: Digital Signature")
+        print("\nTest 2: Digital Signature")
         signer = DigitalSignature("PSS")
         
         test_data = b"Test message for signing"
@@ -856,7 +843,7 @@ def run_comprehensive_tests():
         print(f"   ✓ Firma documento: {doc_valid}")
         
         # Test 3: Merkle Tree
-        print("\n📋 Test 3: Merkle Tree")
+        print("\nTest 3: Merkle Tree")
         test_data = ["item1", "item2", "item3", "item4"]
         merkle = MerkleTree(test_data)
         
@@ -868,7 +855,7 @@ def run_comprehensive_tests():
         print(f"   ✓ Proof verification: {proof_valid}")
         
         # Test 4: Crypto Utils
-        print("\n📋 Test 4: Crypto Utils")
+        print("\nTest 4: Crypto Utils")
         utils = CryptoUtils()
         
         hash_test = utils.sha256_hash(b"test data")
@@ -887,13 +874,11 @@ def run_comprehensive_tests():
         return True
         
     except Exception as e:
-        print(f"\n❌ Test fallito: {e}")
+        print(f"\nTest fallito: {e}")
         return False
 
 
-# =============================================================================
 # 7. MAIN - PUNTO DI INGRESSO
-# =============================================================================
 
 if __name__ == "__main__":
     print("🔐" * 30)
@@ -911,14 +896,14 @@ if __name__ == "__main__":
         
         print("\n🎉 FASE 1 COMPLETATA CON SUCCESSO!")
         print("\nComponenti implementati:")
-        print("✅ RSA Key Manager (2048/4096 bit)")
-        print("✅ Digital Signature (RSA-SHA256-PSS/PKCS1v15)")
-        print("✅ Merkle Tree (costruzione, proof, verifica)")
-        print("✅ Crypto Utils (SHA-256, Base64, Timestamp)")
-        print("✅ Testing suite completa")
+        print("RSA Key Manager (2048/4096 bit)")
+        print("Digital Signature (RSA-SHA256-PSS/PKCS1v15)")
+        print("Merkle Tree (costruzione, proof, verifica)")
+        print("Crypto Utils (SHA-256, Base64, Timestamp)")
+        print("Testing suite completa")
         
-        print(f"\n📁 File chiavi salvati in: ./keys/")
-        print("🚀 Pronti per la Fase 2: Gestione Certificati X.509!")
+        print(f"\nFile chiavi salvati in: ./keys/")
+        print("Pronti per la Fase 2: Gestione Certificati X.509!")
     
     else:
-        print("\n❌ Test falliti - verificare l'implementazione")
+        print("\nTest falliti - verificare l'implementazione")

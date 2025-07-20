@@ -19,7 +19,7 @@ def main():
     print("GRUPPO 19")
 
     if not check_system_requirements():
-        print("❌ Requisiti non soddisfatti. Verifica la struttura del progetto.")
+        print("Requisiti non soddisfatti. Verifica la struttura del progetto.")
         sys.exit(1)
 
     print("\n🔧 Avvio sistema completo...")
@@ -28,14 +28,14 @@ def main():
         from src.pki.ocsp_responder import app as ocsp_app, HOST as OCSP_HOST, PORT as OCSP_PORT
         from src.web.dashboard import AcademicCredentialsDashboard
         from src.communication.secure_server import AcademicCredentialsSecureServer, ServerConfiguration
-        print("✅ Import moduli riuscito")
+        print("Import moduli riuscito")
     except ImportError as e:
-        print(f"❌ Errore import: {e}")
+        print(f"Errore import: {e}")
         sys.exit(1)
 
     def run_secure_server():
         try:
-            print("\n🔒 Inizializzazione Secure Server...")
+            print("\nInizializzazione Secure Server...")
             config = ServerConfiguration(
                 host="localhost",
                 port=8443,
@@ -45,26 +45,26 @@ def main():
             print("🔒 Secure Server pronto su: https://localhost:8443")
             server.run()
         except Exception as e:
-            print(f"❌ Errore secure server: {e}")
+            print(f"Errore secure server: {e}")
 
     def run_dashboard():
         try:
             time.sleep(2) # Attende l'avvio degli altri server
-            print("\n🌐 Inizializzazione Dashboard...")
+            print("\nInizializzazione Dashboard...")
             dashboard = AcademicCredentialsDashboard()
-            print("🌐 Dashboard pronto su: http://localhost:8000")
-            print("\n👤 Utenti demo:")
+            print("Dashboard pronto su: http://localhost:8000")
+            print("\nUtenti demo:")
             print("   - issuer_rennes (password: Unisa2025)")
             print("   - verifier_unisa (password: Unisa2025)")
             print("   - studente_mariorossi (password: Unisa2025)")
-            print("\n🔧 Premi Ctrl+C per fermare il sistema")
+            print("\nPremi Ctrl+C per fermare il sistema")
             dashboard.run()
         except Exception as e:
-            print(f"❌ Errore dashboard: {e}")
+            print(f"Errore dashboard: {e}")
 
     def run_ocsp_responder():
         try:
-            print("\n📡 Inizializzazione OCSP Responder (FastAPI)...")
+            print("\nInizializzazione OCSP Responder (FastAPI)...")
             uvicorn.run(
                 ocsp_app,
                 host=OCSP_HOST,
@@ -72,7 +72,7 @@ def main():
                 log_level="warning"
             )
         except Exception as e:
-            print(f"❌ Errore OCSP responder: {e}")
+            print(f"Errore OCSP responder: {e}")
 
     threads = [
         threading.Thread(target=run_secure_server, daemon=True),
@@ -88,7 +88,7 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n\n Fermando il sistema...")
-        print("✅ Sistema terminato")
+        print("Sistema terminato")
 
 def check_system_requirements():
     """Verifica i requisiti del sistema."""
@@ -103,7 +103,7 @@ def check_system_requirements():
     missing_dirs = [d for d in required_dirs if not Path(d).exists()]
 
     if missing_dirs:
-        print("❌ Directory mancanti:")
+        print("Directory mancanti:")
         for dir_path in missing_dirs:
             print(f"   - {dir_path}")
         return False

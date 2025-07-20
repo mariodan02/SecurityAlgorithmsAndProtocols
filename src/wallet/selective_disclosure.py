@@ -22,14 +22,12 @@ try:
     from credentials.models import AcademicCredential, Course, PersonalInfo
     from wallet.student_wallet import AcademicStudentWallet, WalletCredential
 except ImportError as e:
-    print(f"⚠️  Errore import moduli interni: {e}")
-    print("   Assicurati che tutti i moduli siano presenti nel progetto")
+    print(f"Errore import moduli interni: {e}")
+    print("Assicurati che tutti i moduli siano presenti nel progetto")
     raise
 
 
-# =============================================================================
 # 1. ENUMS E STRUTTURE DATI SELECTIVE DISCLOSURE
-# =============================================================================
 
 class DisclosureLevel(Enum):
     """Livelli di divulgazione"""
@@ -141,10 +139,7 @@ class SelectiveDisclosure:
             )
         )
 
-
-# =============================================================================
 # 2. SELECTIVE DISCLOSURE MANAGER
-# =============================================================================
 
 class SelectiveDisclosureManager:
     """Manager per la divulgazione selettiva delle credenziali"""
@@ -384,14 +379,14 @@ class SelectiveDisclosureManager:
             Oggetto SelectiveDisclosure con attributi divulgati e proofs
         """
         try:
-            # 1. Appiattisci e ordina tutti gli attributi della credenziale per consistenza
+            # Ordina tutti gli attributi della credenziale per consistenza
             all_attributes = self._flatten_credential(credential)
             sorted_attributes = sorted(all_attributes.items(), key=lambda x: x[0])
 
-            # Estrai solo i valori nell'ordine corretto per costruire l'albero
+            # Estrae solo i valori nell'ordine corretto per costruire l'albero
             attribute_values_for_tree = [attr_value for attr_path, attr_value in sorted_attributes]
 
-            # 2. Costruisci l'albero Merkle direttamente dai valori.
+            # Costruisce l'albero Merkle direttamente dai valori.
             #    La classe MerkleTree gestirà l'hashing internamente in modo corretto.
             merkle_tree = MerkleTree(attribute_values_for_tree)
             merkle_root = merkle_tree.get_merkle_root()
@@ -406,8 +401,7 @@ class SelectiveDisclosureManager:
             # 4. Genera le Merkle Proof per ciascun attributo divulgato
             merkle_proofs = []
             for attr_path, attr_value in disclosed_attributes.items():
-                # Trova l'indice dell'attributo nella lista *originale e ordinata*
-                # Questa è la riga corretta che usa 'sorted_attributes'
+                # Trova l'indice dell'attributo nella lista
                 idx = next((i for i, (path, _) in enumerate(sorted_attributes) if path == attr_path), -1)
 
                 if idx != -1:
@@ -439,7 +433,7 @@ class SelectiveDisclosureManager:
             )
 
         except Exception as e:
-            print(f"❌ Errore creazione divulgazione selettiva: {e}")
+            print(f"Errore creazione divulgazione selettiva: {e}")
             raise
 
     
@@ -480,7 +474,7 @@ class SelectiveDisclosureManager:
         errors = []
         
         try:
-            print(f"🔍 Verificando divulgazione selettiva: {disclosure.disclosure_id[:8]}...")
+            print(f"Verificando divulgazione selettiva: {disclosure.disclosure_id[:8]}...")
             
             # 1. Verifica scadenza
             if disclosure.expires_at and datetime.datetime.utcnow() > disclosure.expires_at:
@@ -520,9 +514,9 @@ class SelectiveDisclosureManager:
             is_valid = len(errors) == 0
             
             if is_valid:
-                print(f"✅ Divulgazione selettiva VALIDA")
+                print(f"Divulgazione selettiva VALIDA")
             else:
-                print(f"❌ Divulgazione selettiva NON VALIDA ({len(errors)} errori)")
+                print(f"Divulgazione selettiva NON VALIDA ({len(errors)} errori)")
                 for error in errors[:3]:  # Prime 3
                     print(f"   - {error}")
             
@@ -547,7 +541,7 @@ class SelectiveDisclosureManager:
             Presentazione strutturata
         """
         try:
-            print(f"📋 Creando presentazione: {len(disclosures)} divulgazioni")
+            print(f"Creando presentazione: {len(disclosures)} divulgazioni")
             
             presentation_id = str(uuid.uuid4())
             
@@ -573,15 +567,15 @@ class SelectiveDisclosureManager:
                         student_private_key, presentation
                     )
                     presentation = signed_presentation
-                    print("✍️  Presentazione firmata digitalmente")
+                    print(" Presentazione firmata digitalmente")
                 except Exception as e:
-                    print(f"⚠️  Errore firma presentazione: {e}")
+                    print(f"Errore firma presentazione: {e}")
             
-            print(f"✅ Presentazione creata: {presentation_id[:8]}...")
+            print(f"Presentazione creata: {presentation_id[:8]}...")
             return presentation
             
         except Exception as e:
-            print(f"❌ Errore creazione presentazione: {e}")
+            print(f"Errore creazione presentazione: {e}")
             raise
     
     def _extract_selected_attributes(self, credential: AcademicCredential,
@@ -595,9 +589,9 @@ class SelectiveDisclosureManager:
                 value = self._get_nested_value(credential_dict, path)
                 disclosed_attributes[path] = value
             except KeyError:
-                print(f"⚠️  Attributo non trovato: {path}")
+                print(f"Attributo non trovato: {path}")
             except Exception as e:
-                print(f"⚠️  Errore estrazione {path}: {e}")
+                print(f"Errore estrazione {path}: {e}")
         
         return disclosed_attributes
     
@@ -614,7 +608,7 @@ class SelectiveDisclosureManager:
                 merkle_tree = MerkleTree(course_data)
                 self.merkle_trees_cache[credential_id] = merkle_tree
             else:
-                print("⚠️  Nessun corso disponibile per Merkle Tree")
+                print("Nessun corso disponibile per Merkle Tree")
                 return []
         
         merkle_tree = self.merkle_trees_cache[credential_id]
@@ -652,7 +646,7 @@ class SelectiveDisclosureManager:
                 proofs.append(proof)
                 
             except Exception as e:
-                print(f"⚠️  Errore generazione proof per {path}: {e}")
+                print(f"Errore generazione proof per {path}: {e}")
         
         return proofs
     
@@ -799,10 +793,7 @@ class SelectiveDisclosureManager:
         print("🗑️  Cache Selective Disclosure pulita")
 
 
-# =============================================================================
 # 3. MAIN - PUNTO DI INGRESSO
-# =============================================================================
-
 if __name__ == "__main__":
     print("🔒" * 50)
     print("SELECTIVE DISCLOSURE")
@@ -813,19 +804,19 @@ if __name__ == "__main__":
     manager, disclosures = demo_selective_disclosure()
     
     if manager:
-        print("\n🎉 Selective Disclosure pronto!")
+        print("\nSelective Disclosure pronto!")
         print("\nFunzionalità disponibili:")
-        print("✅ Analisi attributi divulgabili")
-        print("✅ Template divulgazione predefiniti")
-        print("✅ Divulgazione personalizzata")
-        print("✅ Generazione Merkle proofs")
-        print("✅ Verifica divulgazioni")
-        print("✅ Creazione presentazioni")
-        print("✅ Gestione scadenze")
-        print("✅ Export/Import divulgazioni")
-        print("✅ Cache ottimizzazioni")
+        print("Analisi attributi divulgabili")
+        print("Template divulgazione predefiniti")
+        print("Divulgazione personalizzata")
+        print("Generazione Merkle proofs")
+        print("Verifica divulgazioni")
+        print("Creazione presentazioni")
+        print("Gestione scadenze")
+        print("Export/Import divulgazioni")
+        print("Cache ottimizzazioni")
         
-        print(f"\n🚀 Pronto per Presentation Manager!")
-        print(f"📋 Divulgazioni demo create: {len(disclosures)}")
+        print(f"\nPronto per Presentation Manager!")
+        print(f"Divulgazioni demo create: {len(disclosures)}")
     else:
-        print("\n❌ Errore inizializzazione Selective Disclosure")
+        print("\nErrore inizializzazione Selective Disclosure")

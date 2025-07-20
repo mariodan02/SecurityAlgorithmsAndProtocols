@@ -32,7 +32,7 @@ try:
     from credentials.validator import AcademicCredentialValidator, ValidationLevel
     from pki.certificate_authority import CertificateAuthority
 except ImportError as e:
-    print(f"⚠️ Errore import moduli interni: {e}")
+    print(f"Errore import moduli interni: {e}")
     raise
 
 class WalletStatus(Enum):
@@ -143,7 +143,7 @@ class AcademicStudentWallet:
         Crea un nuovo wallet caricando la chiave e il certificato pre-generati dalla CA.
         """
         if self.wallet_file.exists():
-            print("❌ Wallet già esistente.")
+            print("Wallet già esistente.")
             return False
         
         if not self._validate_password(password):
@@ -161,11 +161,11 @@ class AcademicStudentWallet:
             student_key_password = "StudentPassword123!" # Password hardcoded dalla CA
             
             if not key_path.exists() or not cert_path.exists():
-                print(f"❌ ERRORE: Chiave ({key_path}) o certificato ({cert_path}) non trovati.")
-                print("   Assicurati di aver eseguito prima 'python src/pki/certificate_authority.py'")
+                print(f"ERRORE: Chiave ({key_path}) o certificato ({cert_path}) non trovati.")
+                print("Assicurati di aver eseguito prima 'python src/pki/certificate_authority.py'")
                 return False
 
-            print(f"🔑 Caricamento chiave privata da: {key_path}")
+            print(f"Caricamento chiave privata da: {key_path}")
             private_key_pem = key_path.read_bytes()
             self.wallet_private_key = self.key_manager.deserialize_private_key(
                 private_key_pem,
@@ -173,7 +173,7 @@ class AcademicStudentWallet:
             )
             self.wallet_public_key = self.wallet_private_key.public_key()
             
-            print(f"📄 Caricamento certificato da: {cert_path}")
+            print(f"Caricamento certificato da: {cert_path}")
             self.student_certificate = cert_path.read_text()
             
             # Genera il salt per la password del wallet
@@ -194,11 +194,11 @@ class AcademicStudentWallet:
             self.credentials = {}
             self._save_wallet_data()
             
-            print("✅ Wallet creato con identità pre-generata e firmato con successo!")
+            print("Wallet creato con identità pre-generata e firmato con successo!")
             return True
             
         except Exception as e:
-            print(f"❌ Errore critico durante la creazione del wallet: {e}")
+            print(f"Errore critico durante la creazione del wallet: {e}")
             import traceback
             traceback.print_exc()
             if self.wallet_file.exists(): self.wallet_file.unlink()
@@ -225,15 +225,15 @@ class AcademicStudentWallet:
             self.status = WalletStatus.UNLOCKED
             self.last_activity = datetime.datetime.utcnow()
             
-            print(f"✅ Wallet sbloccato! Trovate {len(self.credentials)} credenziali.")
+            print(f"Wallet sbloccato! Trovate {len(self.credentials)} credenziali.")
             return True
 
         except InvalidToken:
-            print("❌ Password errata o wallet corrotto.")
+            print("Password errata o wallet corrotto.")
             self._cleanup_session()
             return False
         except Exception as e:
-            print(f"❌ Errore durante lo sblocco: {e}")
+            print(f"Errore durante lo sblocco: {e}")
             self._cleanup_session()
             return False
 
@@ -277,7 +277,7 @@ class AcademicStudentWallet:
         self._load_encrypted_keys() 
         verifier = DigitalSignature("PSS")
         if not verifier.verify_document_signature(self.wallet_public_key, signed_content):
-            print("❌ ATTENZIONE: Firma del wallet non valida! File potenzialmente corrotto.")
+            print("ATTENZIONE: Firma del wallet non valida! File potenzialmente corrotto.")
             self.status = WalletStatus.CORRUPTED
             return False
 
@@ -320,17 +320,17 @@ class AcademicStudentWallet:
                     break
             
             if not key_config:
-                print(f"❌ Configurazione chiave non trovata per: {credential.issuer.name}")
+                print(f"Configurazione chiave non trovata per: {credential.issuer.name}")
                 return credential
             
             key_path = key_config["key_path"]
             key_password = key_config["password"]
             
             if not Path(key_path).exists():
-                print(f"❌ Chiave università non trovata: {key_path}")
+                print(f"Chiave università non trovata: {key_path}")
                 return credential
             
-            print(f"🔑 Caricamento chiave universitaria da: {key_path}")
+            print(f"Caricamento chiave universitaria da: {key_path}")
             with open(key_path, "rb") as key_file:
                 private_key = serialization.load_pem_private_key(
                     key_file.read(),
@@ -361,11 +361,11 @@ class AcademicStudentWallet:
                 timestamp=datetime.datetime.now(datetime.timezone.utc)
             )
             
-            print(f"✅ Credenziale firmata con chiave di: {credential.issuer.name}")
+            print(f"Credenziale firmata con chiave di: {credential.issuer.name}")
             return credential
             
         except Exception as e:
-            print(f"❌ Errore durante la firma: {e}")
+            print(f"Errore durante la firma: {e}")
             import traceback
             traceback.print_exc()
             return credential
@@ -401,13 +401,13 @@ class AcademicStudentWallet:
         
         # CORREZIONE 3: Verifica che la credenziale sia firmata prima di aggiungere
         if not credential.signature:
-            print("⚠️ Credenziale non firmata, la sto firmando con la chiave dell'università...")
+            print("Credenziale non firmata, la sto firmando con la chiave dell'università...")
             credential = self.sign_credential_with_university_key(credential)
         
         if self.credential_validator:
             report = self.credential_validator.validate_credential(credential, ValidationLevel.BASIC)
             if not report.is_valid(): 
-                print(f"⚠️ Credenziale non valida: {report.errors}")
+                print(f"Credenziale non valida: {report.errors}")
         
         self.credentials[storage_id] = WalletCredential(
             credential=credential, storage_id=storage_id, added_date=datetime.datetime.utcnow(),
@@ -434,20 +434,20 @@ class AcademicStudentWallet:
             ha successo, altrimenti None.
         """
         if self.status != WalletStatus.UNLOCKED:
-            print("❌ Errore: Il wallet è bloccato. Sbloccalo prima di aggiungere credenziali.")
+            print("Errore: Il wallet è bloccato. Sbloccalo prima di aggiungere credenziali.")
             raise RuntimeError("Wallet bloccato")
 
-        print("📥 Tentativo di importare una credenziale da JSON...")
+        print("Tentativo di importare una credenziale da JSON...")
         try:
             # 1. Deserializza la stringa JSON in un oggetto AcademicCredential
             #    Questo passaggio valida anche la struttura del JSON secondo il modello Pydantic.
             credential = AcademicCredential.from_json(credential_json)
-            print(f"   ✅ JSON deserializzato con successo. ID credenziale: {credential.metadata.credential_id}")
+            print(f"JSON deserializzato con successo. ID credenziale: {credential.metadata.credential_id}")
 
             # 2. Controlla se una credenziale con lo stesso ID esiste già per evitare duplicati
             for existing_cred in self.credentials.values():
                 if existing_cred.credential.metadata.credential_id == credential.metadata.credential_id:
-                    print(f"   ⚠️ Attenzione: Una credenziale con ID {credential.metadata.credential_id} esiste già. Importazione annullata.")
+                    print(f"Attenzione: Una credenziale con ID {credential.metadata.credential_id} esiste già. Importazione annullata.")
                     return None
 
             # 3. Chiama la funzione 'add_credential' esistente che si occupa di:
@@ -455,22 +455,22 @@ class AcademicStudentWallet:
             #    - Eseguire la validazione di base
             #    - Salvare il wallet in modo cifrato
             #    - Creare un backup
-            print("   ⚙️  Avvio della procedura di aggiunta e validazione standard...")
+            print("Avvio della procedura di aggiunta e validazione standard...")
             storage_id = self.add_credential(credential, tags=tags)
             
             if storage_id:
-                print(f"🎉 Credenziale importata e aggiunta al wallet con successo! ID Storage: {storage_id}")
+                print(f"Credenziale importata e aggiunta al wallet con successo! ID Storage: {storage_id}")
             else:
-                print("   ❌ Si è verificato un errore durante l'aggiunta della credenziale al database del wallet.")
+                print("Si è verificato un errore durante l'aggiunta della credenziale al database del wallet.")
 
             return storage_id
 
         except json.JSONDecodeError:
-            print("   ❌ Errore critico: La stringa fornita non è un JSON valido.")
+            print("Errore: La stringa fornita non è un JSON valido.")
             return None
         except Exception as e:
             # Cattura altri errori di validazione di Pydantic o errori interni
-            print(f"   ❌ Errore critico durante l'importazione da JSON: {e}")
+            print(f"Errore critico durante l'importazione da JSON: {e}")
             import traceback
             traceback.print_exc()
             return None

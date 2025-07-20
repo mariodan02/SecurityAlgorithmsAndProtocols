@@ -1,6 +1,4 @@
 """
-Sistema di emissione credenziali accademiche.
-
 Questo modulo fornisce la funzionalità per:
 - Configurazione e inizializzazione dell'issuer
 - Gestione richieste di emissione

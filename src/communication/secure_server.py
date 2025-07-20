@@ -687,19 +687,18 @@ class AcademicCredentialsSecureServer:
             if self.config.ssl_enabled:
                 # Carica i certificati esistenti
                 if Path(self.config.ssl_cert_file).exists() and Path(self.config.ssl_key_file).exists():
-                    # Usa SSLContext per configurare la password HARDCODED
                     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                     ssl_context.load_cert_chain(
                         self.config.ssl_cert_file,
                         keyfile=self.config.ssl_key_file,
                         password="Unisa2025"  # PASSWORD HARDCODED - CAMBIA SE NECESSARIO
                     )
-                    print(f"✅ SSL configurato con certificati esistenti")
+                    print(f"SSL configurato con certificati esistenti")
                 else:
-                    print(f"❌ Certificati SSL non trovati")
-                    print(f"   Certificato: {self.config.ssl_cert_file}")
-                    print(f"   Chiave: {self.config.ssl_key_file}")
-                    print(f"⚠️  Genera prima i certificati con certificate_authority.py")
+                    print(f"Certificati SSL non trovati")
+                    print(f"Certificato: {self.config.ssl_cert_file}")
+                    print(f"Chiave: {self.config.ssl_key_file}")
+                    print(f"Genera prima i certificati con certificate_authority.py")
                     return
                     
             # Configura i parametri per uvicorn
@@ -721,5 +720,5 @@ class AcademicCredentialsSecureServer:
             uvicorn.run(**uvicorn_config)
             
         except Exception as e:
-            print(f"❌ Errore avvio server: {e}")
+            print(f"Errore avvio server: {e}")
             raise

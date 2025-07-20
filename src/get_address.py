@@ -25,10 +25,10 @@ try:
     private_key_bytes = private_key_int.to_bytes(32, byteorder='big')
     pk = PrivateKey(private_key_bytes)
 
-    print("\n✅ INDIRIZZO ETHEREUM DELL'ISSUER ✅")
+    print("\nINDIRIZZO ETHEREUM DELL'ISSUER ✅")
     print("Questo è l'indirizzo che ha bisogno di fondi su Ganache:\n")
     print(pk.public_key.to_checksum_address())
     print("\nCOPIA QUESTO INDIRIZZO.")
 
 except Exception as e:
-    print(f"\n❌ Si è verificato un errore: {e}")
+    print(f"\nSi è verificato un errore: {e}")

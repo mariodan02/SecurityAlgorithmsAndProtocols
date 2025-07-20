@@ -1,6 +1,5 @@
 """
-Modulo Credentials per la gestione delle credenziali accademiche
-del sistema decentralizzato.
+Modulo Credentials per la gestione delle credenziali accademiche.
 
 Questo modulo fornisce le componenti principali per:
 - Gestione strutture dati e validazione credenziali

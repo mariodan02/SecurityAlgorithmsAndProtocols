@@ -352,14 +352,14 @@ if os.environ.get('WALLET_DEBUG', '').lower() == 'true':
 
 def print_usage_examples():
     """Stampa esempi di utilizzo"""
-    print("\n📖 ESEMPI DI UTILIZZO WALLET:")
+    print("\nESEMPI DI UTILIZZO WALLET:")
     for title, code in USAGE_EXAMPLES.items():
         print(f"\n{title.upper()}:")
         print(code.strip())
 
 def list_disclosure_scenarios():
     """Lista scenari di divulgazione disponibili"""
-    print("\n🔒 SCENARI DI DIVULGAZIONE DISPONIBILI:")
+    print("\nSCENARI DI DIVULGAZIONE DISPONIBILI:")
     for scenario, info in DISCLOSURE_SCENARIOS.items():
         print(f"\n{scenario.upper()}:")
         print(f"   Livello: {info['level'].value}")

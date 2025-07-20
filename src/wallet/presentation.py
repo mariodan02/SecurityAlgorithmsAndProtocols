@@ -28,13 +28,8 @@ try:
         SelectiveDisclosureManager, SelectiveDisclosure, DisclosureLevel
     )
 except ImportError as e:
-    print(f"⚠️  Errore import moduli interni: {e}")
-    print("   Assicurati che tutti i moduli siano presenti nel progetto")
+    print(f"Errore import moduli interni: {e}")
     raise
-
-
-# ... (TUTTO IL CODICE PRECEDENTE FINO A sign_presentation RIMANE INVARIATO) ...
-# (Le classi PresentationFormat, PresentationStatus, PresentationTemplate, VerifiablePresentation rimangono le stesse)
 
 class PresentationFormat(Enum):
     JSON = "json"
@@ -168,8 +163,8 @@ class PresentationManager:
         self.presentations: Dict[str, VerifiablePresentation] = {}
         self.templates: Dict[str, PresentationTemplate] = {}
         self._initialize_default_templates()
-        print(f"📋 Presentation Manager inizializzato")
-        print(f"   Template disponibili: {len(self.templates)}")
+        print(f"Presentation Manager inizializzato")
+        print(f"Template disponibili: {len(self.templates)}")
     
     def create_presentation(self, 
                           purpose: str,
@@ -282,23 +277,23 @@ class PresentationManager:
                     return False
                 private_key = self.wallet.wallet_private_key
             
-            # 1. Imposta lo stato su READY PRIMA di firmare
+            #Imposta lo stato su READY PRIMA di firmare
             presentation.status = PresentationStatus.READY
             
-            # 2. Ora raccogli i dati (che includeranno status="ready")
+            #Raccoglie i dati (che includeranno status="ready")
             presentation_data_to_sign = presentation.get_data_for_signing()
             
-            # 3. Firma il documento
+            #Firma il documento
             signed_data = self.digital_signature.sign_document(private_key, presentation_data_to_sign)
             
-            # 4. Aggiorna la presentazione con la firma
+            #Aggiorna la presentazione con la firma
             presentation.signature = signed_data.get('firma')
             
-            print(f"✅ Presentazione firmata con successo")
+            print(f"Presentazione firmata con successo")
             return True
             
         except Exception as e:
-            print(f"❌ Errore firma presentazione: {e}")
+            print(f"Errore firma presentazione: {e}")
             return False
     
     def export_presentation(self, presentation_id: str, 
@@ -329,7 +324,7 @@ class PresentationManager:
             return True
         except Exception as e:
             # Aggiungiamo una stampa dettagliata dell'errore nel terminale
-            print(f"❌ ERRORE CRITICO in export_presentation: {e}")
+            print(f"ERRORE CRITICO in export_presentation: {e}")
             import traceback
             traceback.print_exc()
             return False

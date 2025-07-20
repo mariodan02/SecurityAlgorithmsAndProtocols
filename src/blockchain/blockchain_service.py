@@ -27,7 +27,7 @@ def derive_ethereum_key_from_rsa(pem_file_path: str, password: bytes):
         # Convertiamo in bytes (può essere più di 32 byte)
         private_key_bytes = private_key_int.to_bytes((private_key_int.bit_length() + 7) // 8, byteorder='big')
         
-        # Usa HKDF per derivare esattamente 32 byte per Ethereum
+        # Usiamo HKDF per derivare esattamente 32 byte per Ethereum
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=32,                            # 32 byte per Ethereum

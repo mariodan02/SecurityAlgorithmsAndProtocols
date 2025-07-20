@@ -5,7 +5,7 @@ const solc = require('solc');
 const contractName = 'CredentialRegistry';
 const fileName = `${contractName}.sol`;
 
-// 1. PERCORSO DEL FILE SOLIDITY (deve essere dichiarato qui)
+// 1. PERCORSO DEL FILE SOLIDITY 
 const contractPath = path.resolve(__dirname, fileName);
 const sourceCode = fs.readFileSync(contractPath, 'utf8');
 
@@ -33,7 +33,7 @@ if (compiledCode.errors) {
 }
 console.log('Contract compiled successfully!');
 
-// 2. PERCORSO DEL CONTRATTO COMPILATO (questo è diverso dal punto 1)
+// 2. PERCORSO DEL CONTRATTO COMPILATO 
 const compiledContractPath = Object.keys(compiledCode.contracts)[0];
 const contract = compiledCode.contracts[compiledContractPath][contractName];
 const abi = contract.abi;

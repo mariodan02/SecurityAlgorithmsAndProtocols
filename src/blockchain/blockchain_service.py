@@ -21,16 +21,16 @@ def derive_ethereum_key_from_rsa(pem_file_path: str, password: bytes):
                 password=password,
             )
 
-        # Ottieni il numero della chiave privata RSA
+        # Otteniamo il numero della chiave privata RSA
         private_key_int = private_key_obj.private_numbers().d 
         
-        # Converti in bytes (può essere più di 32 byte)
+        # Convertiamo in bytes (può essere più di 32 byte)
         private_key_bytes = private_key_int.to_bytes((private_key_int.bit_length() + 7) // 8, byteorder='big')
         
         # Usa HKDF per derivare esattamente 32 byte per Ethereum
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
-            length=32,  # Esattamente 32 byte per Ethereum
+            length=32,                            # 32 byte per Ethereum
             salt=b"ethereum_account_derivation",  # Salt fisso per consistenza
             info=b"academic_credential_issuer",   # Info specifica per il nostro use case
         )
@@ -57,7 +57,6 @@ def load_contract_data():
     except FileNotFoundError as e:
         raise RuntimeError(f"Errore: file ABI o indirizzo non trovato. Dettagli: {e}")
 
-
 class BlockchainService:
     def __init__(self):
         """
@@ -76,7 +75,7 @@ class BlockchainService:
         raw_private_key = derive_ethereum_key_from_rsa(rsa_key_path, b"Unisa2025")
         
         if raw_private_key is None:
-            raise RuntimeError("❌ Impossibile derivare la chiave da RSA. Verifica percorso e password.")
+            raise RuntimeError(" Impossibile derivare la chiave da RSA. Verifica percorso e password.")
         
         print(f"🔑 Wallet universitario derivato con successo da RSA")
 
@@ -153,7 +152,7 @@ class BlockchainService:
 
     def build_registration_transaction(self, credential_uuid: str, from_address: str = None):
         """
-        from_address ora è opzionale, usa l'account inizializzato se non specificato
+        from_address è opzionale, usa l'account inizializzato se non specificato
         """
         if from_address is None:
             from_address = self.account.address
@@ -170,7 +169,7 @@ class BlockchainService:
 
     def build_revocation_transaction(self, credential_uuid: str, reason: str, from_address: str = None):
         """
-        from_address ora è opzionale, usa l'account inizializzato se non specificato
+        from_address è opzionale, usa l'account inizializzato se non specificato
         """
         if from_address is None:
             from_address = self.account.address
@@ -184,30 +183,6 @@ class BlockchainService:
             'gasPrice': self.w3.eth.gas_price
         })
         return transaction
-
-    def register_credential_directly(self, credential_uuid: str):
-        """
-        Metodo per registrare direttamente una credenziale (firma e invia la transazione)
-        """
-        try:
-            transaction = self.build_registration_transaction(credential_uuid)
-            signed_tx = self.account.sign_transaction(transaction)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            
-            print(f"🚀 Transazione inviata: {self.w3.to_hex(tx_hash)}")
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            
-            if receipt['status'] == 1:
-                print(f"✅ Credenziale {credential_uuid} registrata con successo!")
-                print(f"📋 Hash transazione: {self.w3.to_hex(receipt.transactionHash)}")
-                return True
-            else:
-                print(f"❌ Errore nella registrazione di {credential_uuid}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ Errore durante la registrazione: {e}")
-            return False
 
     def verify_credential(self, credential_uuid: str):
         print(f"VERIFIER: Verifica di UUID: {credential_uuid}...")
@@ -224,7 +199,7 @@ class BlockchainService:
 
     def revoke_credential_directly(self, credential_id: str, reason: str):
         """
-        Metodo migliorato per revocare una credenziale con gestione errori avanzata
+        Metodo per revocare una credenziale con gestione errori
         """
         try:
             print(f"🚫 Avvio revoca credenziale: {credential_id}")

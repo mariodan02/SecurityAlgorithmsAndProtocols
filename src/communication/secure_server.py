@@ -531,7 +531,7 @@ class AcademicCredentialsSecureServer:
                 )
 
         # =============================================================================
-        # NUOVE ROUTES BLOCKCHAIN CONSOLIDATE
+        # ROUTES BLOCKCHAIN 
         # =============================================================================
 
         @self.app.post("/api/v1/blockchain/credentials/verify", response_model=VerifyCredentialResponse)
@@ -713,7 +713,7 @@ class AcademicCredentialsSecureServer:
             }
     
     # =============================================================================
-    # METODI HANDLER ORIGINALI (invariati)
+    # METODI HANDLER ORIGINALI 
     # =============================================================================
     
     async def _authenticate_request(self, auth: Optional[HTTPAuthorizationCredentials]) -> Optional[Dict[str, Any]]:
@@ -1003,51 +1003,3 @@ class AcademicCredentialsSecureServer:
         except Exception as e:
             print(f"❌ Errore avvio server: {e}")
             raise
-
-# =============================================================================
-# UTILITY FUNCTIONS CONSOLIDATE
-# =============================================================================
-
-def format_blockchain_status(status_result: Dict[str, Any]) -> Dict[str, str]:
-    """Formatta il risultato dello stato blockchain per la visualizzazione"""
-    if status_result['status'] == 'VALID':
-        return {
-            'status': 'Attiva',
-            'status_class': 'success',
-            'icon': '✅',
-            'details': f"Emessa da {status_result['issuer']}"
-        }
-    elif status_result['status'] == 'REVOKED':
-        return {
-            'status': 'Revocata',
-            'status_class': 'danger',
-            'icon': '🚫',
-            'details': 'Credenziale revocata'
-        }
-    elif status_result['status'] == 'NOT_FOUND':
-        return {
-            'status': 'Non trovata',
-            'status_class': 'warning',
-            'icon': '⚠️',
-            'details': 'Non registrata su blockchain'
-        }
-    else:
-        return {
-            'status': 'Sconosciuto',
-            'status_class': 'secondary',
-            'icon': '❓',
-            'details': 'Stato non determinabile'
-        }
-
-def log_credential_action(action: str, credential_id: str, user: str, details: Optional[Dict] = None):
-    """Registra le azioni sulle credenziali per audit"""
-    log_entry = {
-        'timestamp': datetime.datetime.now().isoformat(),
-        'action': action,
-        'credential_id': credential_id,
-        'user': user,
-        'details': details
-    }
-    
-    logger.info(f"Credential Action: {json.dumps(log_entry)}")
-    return log_entry

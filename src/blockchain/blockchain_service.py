@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 PROVIDER_URL = "http://127.0.0.1:8545"
 
 # CHIAVE DEL "BANKER" - Account Ganache con fondi per finanziare altri account
-GANACHE_BANKER_KEY = "0x62cf956df3396b4c7ea1a501d595e3323aab806e4d3f45dd42d2eda4801ae98a"  # Account #1 di Ganache
+GANACHE_BANKER_KEY = "0xb1c1952037b07a53a9a53b54b84e66d67ec514b8ac8a8469fc7dbb7e04e68d60"  # Account #1 di Ganache
 
 def derive_ethereum_key_from_rsa(pem_file_path: str, password: bytes):
     """

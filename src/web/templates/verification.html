@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="h4 mb-0">🔍 Verifica credenziali</h1>
+    <h1 class="h4 mb-0">🔍 Verifica presentazioni selettive</h1>
 </div>
 
 <div class="modal fade" id="verificationConfirmModal" tabindex="-1" aria-labelledby="verificationModalLabel" aria-hidden="true">
@@ -23,7 +23,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-        <button type="button" class="btn btn-primary" id="confirmVerifyButton">Avvia Verifica</button>
+        <button type="button" class="btn btn-primary" id="confirmVerifyButton">Avvia verifica</button>
       </div>
     </div>
   </div>
@@ -72,7 +72,7 @@
                     </div>
                     
                     <button type="submit" class="btn btn-primary" id="verifyButton">
-                        <span id="verifyText">🔍 Avvia verifica completa</span>
+                        <span id="verifyText"> Avvia verifica completa</span>
                         <span id="verifySpinner" class="spinner-border spinner-border-sm d-none"></span>
                     </button>
                 </form>

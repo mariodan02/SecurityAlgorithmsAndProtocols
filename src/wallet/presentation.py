@@ -1,5 +1,5 @@
 # =============================================================================
-# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - PRESENTATION MANAGER (CORRETTO)
+# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - PRESENTATION MANAGER 
 # File: wallet/presentation.py
 # Sistema Credenziali Accademiche Decentralizzate
 # =============================================================================

@@ -26,11 +26,11 @@
                         <a class="nav-link text-secondary" href="/dashboard">Dashboard</a>
                         <a class="nav-link text-secondary" href="/credentials">Gestione credenziali</a>
                         <a class="nav-link text-secondary" href="/credentials/issue">Emetti credenziale</a>
-                        <a class="nav-link text-secondary" href="/verification">Verifica credenziali</a>
+                        <a class="nav-link text-secondary" href="/verification">Verifica presentazioni selettive</a>
                     {% elif user.role == 'verifier' %}
                         <!-- Menu per università verificatrice (Salerno) -->
                         <a class="nav-link text-secondary" href="/dashboard">Dashboard</a>
-                        <a class="nav-link text-secondary" href="/verification">Verifica credenziali</a>
+                        <a class="nav-link text-secondary" href="/verification">Verifica presentazioni selettive</a>
                     {% elif user.role == 'studente' %}
                         <!-- Menu per studente -->
                         <a class="nav-link text-secondary" href="/wallet">Il mio wallet</a>

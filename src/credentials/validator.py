@@ -534,7 +534,7 @@ class AcademicCredentialValidator:
             
             # Prepara documento per verifica
             try:
-                # Ricostruisce i dati firmati nel formato corretto
+                # Ricostruisce i dati firmati 
                 signature_data = {
                     "credential_id": str(credential.metadata.credential_id),
                     "student_id": credential.subject.student_id_hash,

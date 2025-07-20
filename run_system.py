@@ -78,22 +78,11 @@ def main():
         except Exception as e:
             print(f"❌ Errore OCSP responder: {e}")
 
-    def show_startup_summary():
-        """Mostra un riepilogo dei servizi avviati."""
-        time.sleep(1)
-        print("SISTEMA AVVIATO CORRETTAMENTE")
-        print("📊 Servizi attivi:")
-        print("   🌐 Dashboard Web:           http://localhost:8000")
-        print("   🔒 API Sicure Consolidate:  https://localhost:8443")
-        print("   🔐 OCSP Responder:          http://localhost:3000")
-        print("=" * 60)
-
     # Definisce i thread per i servizi
     threads = [
         threading.Thread(target=run_secure_server_consolidated, daemon=True, name="SecureServer"),
         threading.Thread(target=run_ocsp_responder, daemon=True, name="OCSP"),
         threading.Thread(target=run_dashboard, daemon=True, name="Dashboard"),
-        threading.Thread(target=show_startup_summary, daemon=True, name="Summary")
     ]
 
     # Avvia tutti i thread
@@ -118,13 +107,12 @@ def check_system_requirements():
         "src/communication",
         "src/pki",
         "src/crypto",
-        "src/blockchain"  # Aggiunto controllo blockchain
+        "src/blockchain"  
     ]
 
     optional_dirs = [
         "certificates",
         "keys", 
-        "logs"
     ]
 
     missing_dirs = []

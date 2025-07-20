@@ -351,10 +351,10 @@ class PresentationManager:
             signature = presentation_data.get('signature')
             if signature and public_key:
                 try:
-                    # **MODIFICA**: Ricostruiamo i dati per la verifica escludendo summary
+                    # Ricostruiamo i dati per la verifica 
                     data_for_verification = presentation_data.copy()
                     data_for_verification.pop('signature', None)
-                    data_for_verification.pop('summary', None) # Rimuoviamo il summary
+                    data_for_verification.pop('summary', None) 
                     
                     data_for_verification['firma'] = signature
                     

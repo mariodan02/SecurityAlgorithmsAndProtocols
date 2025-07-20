@@ -166,21 +166,9 @@
                             <input class="form-check-input attribute-check" type="checkbox" value="issuer.name" id="attr_issuer" checked>
                             <label class="form-check-label" for="attr_issuer">Università Emittente</label>
                         </div>
-                        <div class="form-check">
-                            <input class="form-check-input attribute-check" type="checkbox" value="host_university.name" id="attr_host">
-                            <label class="form-check-label" for="attr_host">Università Ospitante</label>
-                        </div>
                     </div>
                     <div class="col-md-6">
                         <h6 class="text-muted">Informazioni Accademiche</h6>
-                        <div class="form-check">
-                            <input class="form-check-input attribute-check" type="checkbox" value="total_ects_credits" id="attr_ects">
-                            <label class="form-check-label" for="attr_ects">Crediti ECTS Totali</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input attribute-check" type="checkbox" value="average_grade" id="attr_avg">
-                            <label class="form-check-label" for="attr_avg">Media Voti</label>
-                        </div>
                         <div class="form-check">
                             <input class="form-check-input attribute-check" type="checkbox" value="study_period.start_date" id="attr_start">
                             <label class="form-check-label" for="attr_start">Data Inizio Studio</label>
@@ -193,7 +181,6 @@
                 </div>
                 
                 <div class="mt-3">
-                    <h6 class="text-muted">Corsi Specifici</h6>
                     <div id="courseAttributes">
                         </div>
                 </div>
@@ -708,27 +695,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!courseContainer) return;
         
         courseContainer.innerHTML = '';
-        
-        if (selectedCredentials.length > 0) {
-            courseContainer.innerHTML = `
-                <div class="form-check">
-                    <input class="form-check-input attribute-check" type="checkbox" value="courses.0.course_name" id="course_0_name">
-                    <label class="form-check-label" for="course_0_name">Nome Primo Corso</label>
-                </div>
-                <div class="form-check">
-                    <input class="form-check-input attribute-check" type="checkbox" value="courses.0.grade.score" id="course_0_grade">
-                    <label class="form-check-label" for="course_0_grade">Voto Primo Corso</label>
-                </div>
-                <div class="form-check">
-                    <input class="form-check-input attribute-check" type="checkbox" value="courses.1.course_name" id="course_1_name">
-                    <label class="form-check-label" for="course_1_name">Nome Secondo Corso</label>
-                </div>
-                <div class="form-check">
-                    <input class="form-check-input attribute-check" type="checkbox" value="courses.1.grade.score" id="course_1_grade">
-                    <label class="form-check-label" for="course_1_grade">Voto Secondo Corso</label>
-                </div>
-            `;
-        }
     }
 
     function resetSelection() {

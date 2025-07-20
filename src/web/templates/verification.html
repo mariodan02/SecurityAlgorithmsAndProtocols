@@ -362,20 +362,20 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function getAlertClass(result) {
         switch(result) {
-            case 'VALID': return 'alert-success';
-            case 'WARNING': return 'alert-warning';
-            case 'INVALID': return 'alert-danger';
-            case 'REVOKED': return 'alert-danger';
+            case 'VALIDO': return 'alert-success';
+            case 'AVVISO': return 'alert-warning';
+            case 'NON VALIDO': return 'alert-danger';
+            case 'REVOCATO': return 'alert-danger';
             default: return 'alert-secondary';
         }
     }
     
     function getResultIcon(result) {
         switch(result) {
-            case 'VALID': return '✅';
+            case 'VALIDO': return '✅';
             case 'WARNING': return '⚠️';
-            case 'INVALID': return '❌';
-            case 'REVOKED': return '🚫';
+            case 'NON VALIDO': return '❌';
+            case 'REVOCATO': return '🚫';
             default: return '❓';
         }
     }

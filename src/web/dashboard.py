@@ -318,21 +318,21 @@ class PresentationVerifier:
                 # 3.4 VERIFICA STATO SULLA BLOCKCHAIN
                 credential_id = cred_disclosure.get("credential_id")
                 if credential_id:
-                    blockchain_status = await self._verify_blockchain_status(credential_id)
+                    blockchain_status = await self._verify_single_credential_id(credential_id)
                     report["technical_details"]["blockchain_status"] = blockchain_status
 
-                    if blockchain_status == "revoked":
+                    if blockchain_status == "revocato":
                         report["errors"].append({
                             "code": "CREDENTIAL_REVOKED",
                             "message": f"La credenziale {credential_id} risulta revocata"
                         })
                         all_credentials_valid = False
-                    elif blockchain_status == "valid":
+                    elif blockchain_status == "valido":
                         report["info"].append({
                             "code": "BLOCKCHAIN_VALID",
                             "message": f"Credenziale {credential_id} verificata su blockchain"
                         })
-                    elif blockchain_status in ["timeout", "unreachable", "error"]:
+                    elif blockchain_status in ["timeout", "server irraggiungibile", "errore API", "errore client"]:
                         report["warnings"].append({
                             "code": "BLOCKCHAIN_UNREACHABLE",
                             "message": f"Impossibile verificare la blockchain per la credenziale {credential_id}: {blockchain_status}"
@@ -679,23 +679,15 @@ class PresentationVerifier:
         except Exception as e:
             self.logger.error(f"Errore nel debug di Merkle: {e}")
 
-    async def _verify_blockchain_status(self, presentation_data) -> str:
+    async def _verify_blockchain_status(self, presentation_data: dict) -> str:
         """
         Estrae l'ID della credenziale originale dalla presentazione
         e ne verifica lo stato su blockchain.
         """
-        if not isinstance(presentation_data, dict):
-            self.logger.error(
-                "Errore: _verify_blockchain_status ha ricevuto una stringa invece di un dizionario. "
-                "Assicurati di passare l'intera presentazione JSON, non solo l'ID."
-            )
-            # Passiamo l'ID ricevuto alla vecchia logica come fallback, se possibile
-            return await self._verify_single_credential_id(presentation_data)
-
         try:
-            # ESTRAZIONE DELL'ID ORIGINALE
-            credential = presentation_data.get("verifiableCredential", [{}])[0]
-            original_credential_id = credential.get("credentialSubject", {}).get("id")
+            original_credential_id = None
+            if "selective_disclosures" in presentation_data and presentation_data["selective_disclosures"]:
+                original_credential_id = presentation_data["selective_disclosures"][0].get("credential_id")
 
             if not original_credential_id:
                 self.logger.error("ID della credenziale originale non trovato nella presentazione.")

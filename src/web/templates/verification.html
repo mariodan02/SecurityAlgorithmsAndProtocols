@@ -403,23 +403,22 @@ document.addEventListener('DOMContentLoaded', function() {
         let icon, badgeClass, displayStatus;
         
         switch(status) {
-            case 'valid':
+            case 'valido':
                 icon = '✅'; badgeClass = 'bg-success'; displayStatus = 'VALIDA';
                 break;
-            case 'revoked':
+            case 'revocato':
                 icon = '🚫'; badgeClass = 'bg-danger'; displayStatus = 'REVOCATA';
                 break;
-            case 'not_found':  // ✅ AGGIUNTO NUOVO STATO
+            case 'non registrato su blockchain':  
                 icon = '⚠️'; badgeClass = 'bg-warning'; displayStatus = 'NON TROVATA';
                 break;
             case 'timeout':
                 icon = '⏰'; badgeClass = 'bg-warning'; displayStatus = 'TIMEOUT';
                 break;
-            case 'error':
+            case 'errore API':
+            case 'errore client':
+            case 'server irraggiungibile':
                 icon = '❌'; badgeClass = 'bg-danger'; displayStatus = 'ERRORE';
-                break;
-            case 'unknown':
-                icon = '❓'; badgeClass = 'bg-secondary'; displayStatus = 'SCONOSCIUTO';
                 break;
             default:
                 icon = '❓'; badgeClass = 'bg-secondary'; displayStatus = 'NON VERIFICATA';

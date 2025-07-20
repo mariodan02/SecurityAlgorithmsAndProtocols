@@ -827,11 +827,17 @@ class AcademicCredentialsDashboard:
 
     def _setup_logging(self) -> None:
         """Configura il sistema di logging."""
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            force=True
-        )
+        if not logging.root.handlers:
+            logging.basicConfig(
+                level=logging.INFO,
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                force=True
+            )
+            
+        for logger_name in ['credentials.issuer', 'credentials.validator']:
+            logger = logging.getLogger(logger_name)
+            logger.propagate = False
+
         self.logger = logging.getLogger(__name__)
 
     def run(self, host: Optional[str] = None, port: Optional[int] = None):

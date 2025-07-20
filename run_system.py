@@ -51,6 +51,11 @@ def main():
         try:
             time.sleep(2) # Attende l'avvio degli altri server
             print("\nInizializzazione Dashboard...")
+
+            from src.web.dashboard import _dashboard_instance
+            dashboard = _dashboard_instance or AcademicCredentialsDashboard()
+
+
             dashboard = AcademicCredentialsDashboard()
             print("Dashboard pronto su: http://localhost:8000")
             print("\nUtenti demo:")

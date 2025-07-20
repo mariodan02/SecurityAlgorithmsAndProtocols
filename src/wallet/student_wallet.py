@@ -293,7 +293,7 @@ class AcademicStudentWallet:
     def sign_credential_with_university_key(self, credential: AcademicCredential) -> AcademicCredential:
         """Firma una credenziale con la chiave privata dell'università (demo) - CORRETTO"""
         try:
-            # CORREZIONE: Usa il nome dell'issuer per determinare quale chiave usare
+            # Usiamo il nome dell'issuer per determinare quale chiave usare
             issuer_name = credential.issuer.name.lower()
             
             # Mapping università -> chiave privata
@@ -399,7 +399,7 @@ class AcademicStudentWallet:
         
         storage_id = str(uuid.uuid4())
         
-        # CORREZIONE 3: Verifica che la credenziale sia firmata prima di aggiungere
+        # Verifichiamo che la credenziale sia firmata prima di aggiungere
         if not credential.signature:
             print("Credenziale non firmata, la sto firmando con la chiave dell'università...")
             credential = self.sign_credential_with_university_key(credential)

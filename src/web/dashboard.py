@@ -1280,13 +1280,23 @@ class AcademicCredentialsDashboard:
                 first_name = name_parts[0] if name_parts else "Sconosciuto"
                 last_name = name_parts[-1] if len(name_parts) > 1 else "Studente"
 
+                surname_salt = crypto_utils.generate_salt()
+                name_salt = crypto_utils.generate_salt()
+                birth_date_salt = crypto_utils.generate_salt()
+                student_id_salt = crypto_utils.generate_salt()
+
                 student_info = PersonalInfo(
-                    surname_hash=crypto_utils.sha256_hash_string(last_name),
-                    name_hash=crypto_utils.sha256_hash_string(first_name),
-                    birth_date_hash=crypto_utils.sha256_hash_string("1990-01-01"),
-                    student_id_hash=crypto_utils.sha256_hash_string(student_id),
+                    surname_hash=crypto_utils.hash_with_salt(last_name, surname_salt),
+                    surname_salt=surname_salt.hex(),
+                    name_hash=crypto_utils.hash_with_salt(first_name, name_salt),
+                    name_salt=name_salt.hex(),
+                    birth_date_hash=crypto_utils.hash_with_salt("1990-01-01", birth_date_salt), # Data di nascita fittizia per la demo
+                    birth_date_salt=birth_date_salt.hex(),
+                    student_id_hash=crypto_utils.hash_with_salt(student_id, student_id_salt),
+                    student_id_salt=student_id_salt.hex(),
                     pseudonym=f"studente_{student_name.lower().replace(' ', '_')}"
                 )
+
 
                 # Preparazione periodo di studio
                 try:

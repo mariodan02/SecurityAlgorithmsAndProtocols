@@ -408,9 +408,7 @@ class AcademicCredentialIssuer:
             credential_signature = CredentialSignature(
                 algorithm=signature_info['algoritmo'],
                 value=signature_info['valore'],
-                timestamp=datetime.datetime.fromisoformat(
-                    signature_info['timestamp'].replace('Z', '+00:00')
-                )
+                timestamp=datetime.datetime.fromisoformat(signature_info['timestamp'])
             )
             
             # Aggiunge thumbprint certificato

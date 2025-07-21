@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import httpx
 
 # Dipendenze FastAPI e web
-from fastapi import FastAPI, Request, HTTPException, Depends, Form, status
+from fastapi import FastAPI, Query, Request, HTTPException, Depends, Form, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1213,6 +1213,37 @@ class AcademicCredentialsDashboard:
                 return self.templates.TemplateResponse("login.html", {
                     "request": request, "error": "Errore di sistema. Riprova più tardi.", "title": "Login"
                 })
+            
+        @self.app.get("/credentials/download", response_class=FileResponse)
+        async def download_credential(
+            request: Request,
+            file_path: str = Query(..., description="Il percorso del file della credenziale da scaricare")
+        ):
+            """Endpoint sicuro per scaricare un file di credenziale."""
+            user = self.auth_deps['require_issuer'](request)
+
+            # --- Controllo di sicurezza per prevenire Path Traversal ---
+            base_path = Path.cwd().resolve()
+            allowed_dirs = [
+                base_path / "src" / "credentials",
+                base_path / "credentials"
+            ]
+            requested_path = Path(file_path).resolve()
+            
+            is_path_safe = any(requested_path.is_relative_to(allowed_dir) for allowed_dir in allowed_dirs)
+
+            if not is_path_safe:
+                self.logger.error(f"Tentativo di accesso non consentito al percorso: {requested_path}")
+                raise HTTPException(status_code=403, detail="Accesso al percorso non consentito")
+
+            if not requested_path.is_file():
+                raise HTTPException(status_code=404, detail="File non trovato")
+
+            return FileResponse(
+                path=str(requested_path),
+                media_type='application/json',
+                filename=requested_path.name
+            )
 
         @self.app.get("/logout")
         async def logout(request: Request):

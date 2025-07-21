@@ -1,0 +1,4 @@
+V	260721101145Z		3E8	unknown	/CN=Université de Rennes,O=Université de Rennes,C=FR
+V	260721101145Z		3E9	unknown	/CN=Università di Salerno,O=Università degli Studi di Salerno,C=IT
+V	260721101145Z		3EA	unknown	/UID=0622702628,CN=Mario Rossi,O=Student Wallet,C=IT
+V	260721101145Z		3EB	unknown	/CN=localhost,O=Academic Credentials System,C=IT

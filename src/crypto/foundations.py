@@ -263,7 +263,7 @@ class DigitalSignature:
         doc_copy['firma'] = {
             'algoritmo': f'RSA-SHA256-{self.padding_type}',
             'valore': base64.b64encode(signature).decode('utf-8'),
-            'timestamp': datetime.datetime.now(datetime.UTC).isoformat() + 'Z'
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
         
         print("✓ Documento firmato digitalmente")
@@ -615,7 +615,7 @@ class CryptoUtils:
         Returns:
             Timestamp formattato
         """
-        return datetime.datetime.now(datetime.UTC).isoformat() + 'Z'
+        return datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     @staticmethod
     def validate_timestamp(timestamp: str, max_age_seconds: int = 3600) -> bool:

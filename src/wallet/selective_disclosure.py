@@ -367,45 +367,6 @@ class SelectiveDisclosureManager:
         
         return attributes
     
-    def _flatten_credential(self, credential: AcademicCredential) -> Dict[str, Any]:
-        """
-        Appiattisce credenziale usando serializzazione MIGLIORATA.
-        """
-        from collections import deque
-        import re
-        
-        def normalize_key(key):
-            # Normalizza le chiavi mantenendo i caratteri validi per i path
-            return re.sub(r'[^a-zA-Z0-9_\[\]\.]', '_', key)
-        
-        print("🔧 Inizio appiattimento credenziale...")
-        
-        # Serializza la credenziale
-        credential_dict = DeterministicSerializer._normalize_object(credential)
-        print(f"📊 Credenziale serializzata: {len(credential_dict)} campi principali")
-        
-        items = deque([('', credential_dict)])
-        flat = {}
-        
-        while items:
-            parent_path, obj = items.popleft()
-            
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    # Crea il percorso normalizzato
-                    normalized_k = normalize_key(k)
-                    new_path = f"{parent_path}.{normalized_k}" if parent_path else normalized_k
-                    items.append((new_path, v))
-            elif isinstance(obj, list):
-                for i, v in enumerate(obj):
-                    new_path = f"{parent_path}.{i}"
-                    items.append((new_path, v))
-            else:
-                flat[parent_path] = obj
-        
-        print(f"✅ Appiattimento completato: {len(flat)} attributi totali")
-        return flat
-
     def create_selective_disclosure(self, 
                                 credential: AcademicCredential,
                                 attributes_to_disclose: List[str],
@@ -440,9 +401,11 @@ class SelectiveDisclosureManager:
             print(f"📊 Mappa attributi disponibili: {len(attribute_index_map)} elementi")
             
             # 3. Appiattisce la credenziale per ottenere tutti gli attributi
-            all_attributes = self._flatten_credential(credential)
-            print(f"🗂️ Attributi appiattiti totali: {len(all_attributes)}")
+            all_attributes_list = credential._flatten_for_merkle_tree_attributes()
+            all_attributes = {path: value for path, value in all_attributes_list}
             
+            print(f"🗂️  Attributi appiattiti totali (con metodo corretto): {len(all_attributes)}")
+                        
             # 4. Estrae solo gli attributi da divulgare - CON TRACKING DETTAGLIATO
             disclosed_attributes = {}
             valid_attributes = []

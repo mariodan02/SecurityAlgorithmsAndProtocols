@@ -411,7 +411,7 @@ class AcademicCredential(BaseModel):
 
     def _flatten_for_merkle_tree_attributes(self) -> List[Tuple[str, Any]]:
         """
-        Metodo per appiattire una credenziale in una lista ordinata di 
+        Metodo per appiattire una credenziale in una lista ordinata di
         tuple (percorso, valore) per costruire il Merkle Tree degli attributi.
         """
         # La sintassi per escludere campi annidati è un dizionario
@@ -432,15 +432,15 @@ class AcademicCredential(BaseModel):
                     for i, item in enumerate(v):
                         # Se l'elemento della lista è un dizionario, appiattiscilo
                         if isinstance(item, dict):
-                            items.extend(flatten(item, f"{new_key}[{i}]"))
+                            items.extend(flatten(item, f"{new_key}.{i}")) # Use dot notation for lists
                         else:
-                            items.append((f"{new_key}[{i}]", item))
+                            items.append((f"{new_key}.{i}", item)) # Use dot notation for lists
                 else:
                     items.append((new_key, v))
             return items
 
         return flatten(credential_dict)
-
+    
     def calculate_attributes_merkle_root(self) -> Tuple[str, Dict[str, int]]:
         """
         Calcola la radice del Merkle Tree da TUTTI gli attributi della credenziale.

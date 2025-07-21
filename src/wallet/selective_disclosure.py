@@ -751,22 +751,37 @@ class SelectiveDisclosureManager:
     def _verify_merkle_proof(self, proof: MerkleProof) -> bool:
         """Verifica una Merkle proof (implementazione semplificata)"""
         try:
-            # Implementazione semplificata - in produzione dovrebbe ricostruire il path
+            # 1. Serializza il valore dell'attributo in modo deterministico
+            from credentials.models import DeterministicSerializer
+            attribute_json = DeterministicSerializer.serialize_for_merkle(proof.attribute_value)
             
-            # Verifica che la proof non sia vuota
-            if not proof.proof_path:
-                return False
+            # 2. Calcola l'hash iniziale del valore
+            current_hash = self.crypto_utils.sha256_hash_string(attribute_json)
             
-            # Verifica che abbia una root valida
-            if not proof.merkle_root or len(proof.merkle_root) != 64:
-                return False
+            # 3. Ricostruisce il percorso verso la radice seguendo la prova
+            for step in proof.proof_path:
+                sibling_hash = step.get('hash')
+                is_right_sibling = step.get('is_right', False)
+                
+                if not sibling_hash:
+                    return False # Prova non valida
+
+                # Combina l'hash corrente con il sibling secondo la direzione
+                if is_right_sibling:
+                    combined = current_hash + sibling_hash
+                else:
+                    combined = sibling_hash + current_hash
+                
+                # Calcola il nuovo hash per il passo successivo
+                current_hash = self.crypto_utils.sha256_hash_string(combined)
             
-            # Per la demo, consideriamo valide le proof non vuote
-            return True
+            # 4. Verifica che la radice calcolata corrisponda a quella attesa nella prova
+            return current_hash == proof.merkle_root
             
         except Exception as e:
-            print(f"⚠️  Errore verifica proof: {e}")
+            print(f"⚠️  Errore nella verifica crittografica della prova: {e}")
             return False
+
     
     def _get_predefined_attributes(self, credential: AcademicCredential,
                                  level: DisclosureLevel) -> List[str]:

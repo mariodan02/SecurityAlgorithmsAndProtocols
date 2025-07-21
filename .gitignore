@@ -1,9 +1,5 @@
-
 *.pyc
 /src/blockchain/node_modules
 *.json
 *.enc
-*.pem
-*.txt
-certificates/ca/serial
 student_wallets/studente_mariorossi_wallet/wallet.salt

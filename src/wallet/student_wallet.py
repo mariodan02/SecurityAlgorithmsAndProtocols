@@ -435,20 +435,11 @@ class AcademicStudentWallet:
             calculated_root = credential.calculate_merkle_root()
             
             if calculated_root != original_merkle_root:
-                print(f"❌ ERRORE CRITICO: Merkle Tree non corrispondente!")
+                print(f"❌ ERRORE CRITICO: Merkle Tree non corrispondente! La credenziale potrebbe essere contraffatta.")
                 print(f"   🌳 Originale:  {original_merkle_root}")
                 print(f"   🧮 Calcolata:  {calculated_root}")
-                
-                # CORREZIONE AUTOMATICA
-                print("🔄 Ricostruzione Merkle Tree...")
-                credential.metadata.merkle_root = calculated_root
-                
-                # Verifica correzione
-                if credential.calculate_merkle_root() == credential.metadata.merkle_root:
-                    print("✅ Merkle Tree ricostruito correttamente")
-                else:
-                    print("❌ Impossibile ricostruire il Merkle Tree")
-                    return None
+                print("🛑 Importazione annullata per motivi di sicurezza.")
+                return None 
             else:
                 print("✅ Merkle Tree verificato correttamente")
 
@@ -458,9 +449,9 @@ class AcademicStudentWallet:
             return storage_id
 
         except Exception as e:
-            print(f"Errore critico: {e}")
+            print(f"Errore critico durante l'importazione: {e}")
             return None
-
+    
     def get_credential(self, storage_id):
         if self.status != WalletStatus.UNLOCKED: 
             raise RuntimeError("Wallet bloccato")

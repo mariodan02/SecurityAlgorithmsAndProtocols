@@ -1891,7 +1891,7 @@ class AcademicCredentialsDashboard:
                     })
                 else:
                     return JSONResponse(
-                        {"success": False, "message": "Impossibile importare la credenziale. Potrebbe essere già presente."},
+                        {"success": False, "message": "Impossibile importare la credenziale."},
                         status_code=400
                     )
             

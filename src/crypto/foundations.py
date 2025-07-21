@@ -18,10 +18,8 @@ from cryptography.exceptions import InvalidSignature
 
 
 # 1. GESTIONE CHIAVI RSA
-
 class RSAKeyManager:
     """Gestisce la generazione, serializzazione e archiviazione delle chiavi RSA"""
-    
     def __init__(self, key_size: int = 2048):
         """
         Inizializza il key manager
@@ -190,7 +188,6 @@ class RSAKeyManager:
         return private_key, public_key
 
 # 2. FIRMA DIGITALE RSA-SHA256
-
 class DigitalSignature:
     """Gestisce la firma digitale e verifica con RSA-SHA256"""
     
@@ -266,7 +263,7 @@ class DigitalSignature:
         doc_copy['firma'] = {
             'algoritmo': f'RSA-SHA256-{self.padding_type}',
             'valore': base64.b64encode(signature).decode('utf-8'),
-            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+            'timestamp': datetime.datetime.now(datetime.UTC).isoformat() + 'Z'
         }
         
         print("✓ Documento firmato digitalmente")
@@ -336,7 +333,6 @@ class DigitalSignature:
 
 
 # 3. IMPLEMENTAZIONE MERKLE TREE
-
 class MerkleTree:
     """Implementazione di Merkle Tree per divulgazione selettiva"""
     
@@ -509,7 +505,6 @@ class MerkleTree:
 
 
 # 4. UTILITIES CRITTOGRAFICHE
-
 class CryptoUtils:
     """Utilities crittografiche generali"""
 
@@ -620,7 +615,7 @@ class CryptoUtils:
         Returns:
             Timestamp formattato
         """
-        return datetime.datetime.utcnow().isoformat() + 'Z'
+        return datetime.datetime.now(datetime.UTC).isoformat() + 'Z'
     
     @staticmethod
     def validate_timestamp(timestamp: str, max_age_seconds: int = 3600) -> bool:
@@ -682,7 +677,6 @@ class CryptoUtils:
 
 
 # 5. CLASSE PRINCIPALE - CRYPTO MANAGER
-
 class CryptoManager:
     """Manager principale per tutte le operazioni crittografiche"""
     
@@ -719,7 +713,7 @@ class CryptoManager:
     def demo_full_workflow(self):
         """Dimostra un workflow completo del sistema crittografico"""
         print("\n" + "=" * 60)
-        print("DEMO WORKFLOW COMPLETO")
+        print("TEST COMPLETO")
         print("=" * 60)
         
         # 1. Generazione chiavi università
@@ -824,13 +818,8 @@ class CryptoManager:
 
 
 # 6. TESTING E VALIDAZIONE
-
 def run_comprehensive_tests():
-    """Esegue test completi di tutti i componenti"""
-    print("\n" + "🧪" * 20)
-    print("TESTING SUITE COMPLETA")
-    print("🧪" * 20)
-    
+    """Esegue test completi di tutti i componenti"""    
     try:
         # Test 1: Key Manager
         print("\nTest 1: RSA Key Manager")
@@ -887,11 +876,7 @@ def run_comprehensive_tests():
         print(f"   ✓ SHA-256: {hash_test[:16]}...")
         print(f"   ✓ Base64: {b64_test}")
         print(f"   ✓ Timestamp: {ts_valid}")
-        
-        print("\n" + "✅" * 20)
-        print("TUTTI I TEST SUPERATI!")
-        print("✅" * 20)
-        
+                
         return True
         
     except Exception as e:
@@ -900,13 +885,7 @@ def run_comprehensive_tests():
 
 
 # 7. MAIN - PUNTO DI INGRESSO
-
 if __name__ == "__main__":
-    print("🔐" * 30)
-    print("FASE 1: FONDAMENTA CRITTOGRAFICHE")
-    print("Sistema Credenziali Accademiche Decentralizzate")
-    print("🔐" * 30)
-    
     # Esegui test completi
     tests_passed = run_comprehensive_tests()
     
@@ -915,16 +894,14 @@ if __name__ == "__main__":
         crypto_manager = CryptoManager(key_size=2048, padding_type="PSS")
         credenziale_demo = crypto_manager.demo_full_workflow()
         
-        print("\n🎉 FASE 1 COMPLETATA CON SUCCESSO!")
         print("\nComponenti implementati:")
         print("RSA Key Manager (2048/4096 bit)")
         print("Digital Signature (RSA-SHA256-PSS/PKCS1v15)")
         print("Merkle Tree (costruzione, proof, verifica)")
         print("Crypto Utils (SHA-256, Base64, Timestamp)")
-        print("Testing suite completa")
+        print("Test completo superato")
         
         print(f"\nFile chiavi salvati in: ./keys/")
-        print("Pronti per la Fase 2: Gestione Certificati X.509!")
     
     else:
         print("\nTest falliti - verificare l'implementazione")

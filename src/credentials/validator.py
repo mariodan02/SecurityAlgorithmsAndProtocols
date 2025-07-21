@@ -809,8 +809,6 @@ class AcademicCredentialValidator:
     def _validate_certificate_trust_chain(self, certificate: x509.Certificate) -> Dict[str, Any]:
         """Valida la catena di fiducia del certificato."""
         try:
-            # Implementazione semplificata per demo
-            # In produzione si dovrebbe validare l'intera catena fino alla CA root
             
             for ca_cert in self.trusted_ca_certs.values():
                 try:
@@ -900,7 +898,7 @@ class AcademicCredentialValidator:
                     if Path(cert_path).exists() and cert_path not in self.trusted_ca_certs:
                         cert = self.cert_manager.load_certificate_from_file(cert_path)
                         self.trusted_ca_certs[cert_path] = cert
-                        logger.debug(f"Certificato demo caricato: {Path(cert_path).name}")
+                        logger.debug(f"Certificato caricato: {Path(cert_path).name}")
                 except Exception as e:
                     logger.warning(f"Errore caricamento {cert_path}: {e}")
                     continue

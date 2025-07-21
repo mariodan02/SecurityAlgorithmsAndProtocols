@@ -1,123 +1,15 @@
-# =============================================================================
-# REQUIREMENTS.TXT - Sistema Credenziali Accademiche Decentralizzate
-# =============================================================================
-
 # Core Dependencies
 cryptography>=41.0.0          # Crittografia (RSA, SHA, etc)
 pydantic>=2.0.0               # Validazione dati
 requests>=2.31.0              # HTTP client
-python-dateutil>=2.8.2       # Date utilities
 
-# Testing Framework
-pytest>=7.4.0                # Testing framework
-pytest-asyncio>=0.21.0       # Async testing
-pytest-cov>=4.1.0            # Coverage testing
-
-# JSON and Data Processing
-jsonschema>=4.17.0           # JSON schema validation
-pyjwt>=2.8.0                 # JWT tokens (opzionale)
-
-# Web3 and Blockchain (Opzionale - con fallback)
-# Nota: Versioni compatibili per evitare errori geth_poa_middleware
+# Web3 and Blockchain 
 web3>=6.0.0,<7.0.0          # Web3.py per blockchain
 eth-hash>=0.5.0             # Ethereum hashing
 eth-typing>=3.0.0           # Ethereum typing
 httpx
 
-# Solidity Compiler (Opzionale)
-py-solc-x>=1.12.0           # Solidity compiler wrapper
-
 # Web Framework (per API e Dashboard)
 fastapi>=0.100.0            # Modern web framework  
 uvicorn>=0.23.0             # ASGI server
 jinja2>=3.1.2               # Template engine
-
-# Database (Opzionale)
-sqlalchemy>=2.0.0           # ORM
-alembic>=1.11.0             # Database migrations
-
-# Caching (Opzionale)
-redis>=4.6.0                # Redis client
-
-# File Processing
-openpyxl>=3.1.0             # Excel files
-python-multipart>=0.0.6    # File uploads
-
-# Development Tools
-black>=23.0.0               # Code formatter
-flake8>=6.0.0               # Linting
-mypy>=1.5.0                 # Type checking
-
-# Logging and Monitoring
-structlog>=23.1.0           # Structured logging
-
-# Optional: Machine Learning (per matching corsi)
-scikit-learn>=1.3.0         # ML algorithms
-numpy>=1.24.0               # Numerical computing
-
-# Optional: PDF Generation
-reportlab>=4.0.0            # PDF generation
-
-# Optional: QR Codes
-qrcode>=7.4.2               # QR code generation
-pillow>=10.0.0              # Image processing
-
-# ============================================================================= 
-# INSTALLAZIONE CONSIGLIATA
-# =============================================================================
-
-# 1. Installazione base (obbligatoria)
-# pip install cryptography pydantic requests python-dateutil pytest
-
-# 2. Installazione completa (con blockchain)  
-# pip install -r requirements.txt
-
-# 3. Installazione senza blockchain (testing sicuro)
-# pip install cryptography pydantic requests python-dateutil pytest pytest-asyncio jsonschema
-
-# 4. Solo per sviluppo
-# pip install black flake8 mypy
-
-# =============================================================================
-# NOTE VERSIONI
-# =============================================================================
-
-# Web3.py versione 6.x risolve i problemi con geth_poa_middleware
-# che è stato deprecato nelle versioni più recenti
-
-# Cryptography >= 41.0.0 include supporto RSA PSS padding
-# che è richiesto dal nostro sistema di firma digitale
-
-# Pydantic v2 ha API diverse da v1 - il codice è compatibile con v2
-
-# =============================================================================
-# DIPENDENZE OPZIONALI PER FEATURES AVANZATE
-# =============================================================================
-
-# [blockchain]
-web3>=6.0.0,<7.0.0
-py-solc-x>=1.12.0
-eth-hash>=0.5.0
-
-# [ml]
-scikit-learn>=1.3.0
-numpy>=1.24.0
-
-# [pdf]
-reportlab>=4.0.0
-
-# [qr]
-qrcode>=7.4.2
-pillow>=10.0.0
-
-# [dev]
-black>=23.0.0
-flake8>=6.0.0  
-mypy>=1.5.0
-
-# [web]
-fastapi>=0.100.0
-uvicorn>=0.23.0
-jinja2>=3.1.2
-
-itsdangerous>=2.0.0

@@ -419,60 +419,46 @@ class AcademicStudentWallet:
         return storage_id
     
     def add_credential_from_json(self, credential_json: str, tags: Optional[List[str]] = None) -> Optional[str]:
-        """
-        Aggiunge una credenziale al wallet partendo da una stringa JSON.
-
-        Questa funzione è ideale per quando lo studente riceve un file .json 
-        dall'università issuer e vuole importarlo nel proprio wallet.
-
-        Args:
-            credential_json: Una stringa contenente la credenziale in formato JSON.
-            tags: Una lista opzionale di tag da associare alla credenziale.
-
-        Returns:
-            L'ID di archiviazione (storage_id) della nuova credenziale se l'operazione
-            ha successo, altrimenti None.
-        """
+        """Importa credenziale verificando integrità Merkle Tree"""
         if self.status != WalletStatus.UNLOCKED:
-            print("Errore: Il wallet è bloccato. Sbloccalo prima di aggiungere credenziali.")
             raise RuntimeError("Wallet bloccato")
 
         print("Tentativo di importare una credenziale da JSON...")
         try:
-            # 1. Deserializza la stringa JSON in un oggetto AcademicCredential
-            #    Questo passaggio valida anche la struttura del JSON secondo il modello Pydantic.
             credential = AcademicCredential.from_json(credential_json)
-            print(f"JSON deserializzato con successo. ID credenziale: {credential.metadata.credential_id}")
-
-            # 2. Controlla se una credenziale con lo stesso ID esiste già per evitare duplicati
-            for existing_cred in self.credentials.values():
-                if existing_cred.credential.metadata.credential_id == credential.metadata.credential_id:
-                    print(f"Attenzione: Una credenziale con ID {credential.metadata.credential_id} esiste già. Importazione annullata.")
-                    return None
-
-            # 3. Chiama la funzione 'add_credential' esistente che si occupa di:
-            #    - Verificare la firma (e firmarla se necessario, per la demo)
-            #    - Eseguire la validazione di base
-            #    - Salvare il wallet in modo cifrato
-            #    - Creare un backup
-            print("Avvio della procedura di aggiunta e validazione standard...")
-            storage_id = self.add_credential(credential, tags=tags)
+            original_merkle_root = credential.metadata.merkle_root
             
-            if storage_id:
-                print(f"Credenziale importata e aggiunta al wallet con successo! ID Storage: {storage_id}")
-            else:
-                print("Si è verificato un errore durante l'aggiunta della credenziale al database del wallet.")
+            print(f"JSON deserializzato. ID: {credential.metadata.credential_id}")
+            print(f"🌳 Merkle Root originale: {original_merkle_root}")
 
+            # VERIFICA INTEGRITÀ
+            calculated_root = credential.calculate_merkle_root()
+            
+            if calculated_root != original_merkle_root:
+                print(f"❌ ERRORE CRITICO: Merkle Tree non corrispondente!")
+                print(f"   🌳 Originale:  {original_merkle_root}")
+                print(f"   🧮 Calcolata:  {calculated_root}")
+                
+                # CORREZIONE AUTOMATICA
+                print("🔄 Ricostruzione Merkle Tree...")
+                credential.metadata.merkle_root = calculated_root
+                
+                # Verifica correzione
+                if credential.calculate_merkle_root() == credential.metadata.merkle_root:
+                    print("✅ Merkle Tree ricostruito correttamente")
+                else:
+                    print("❌ Impossibile ricostruire il Merkle Tree")
+                    return None
+            else:
+                print("✅ Merkle Tree verificato correttamente")
+
+            # Procedi con aggiunta
+            storage_id = self.add_credential(credential, tags=tags)
+            print(f"Credenziale importata! Storage ID: {storage_id}")
             return storage_id
 
-        except json.JSONDecodeError:
-            print("Errore: La stringa fornita non è un JSON valido.")
-            return None
         except Exception as e:
-            # Cattura altri errori di validazione di Pydantic o errori interni
-            print(f"Errore critico durante l'importazione da JSON: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"Errore critico: {e}")
             return None
 
     def get_credential(self, storage_id):

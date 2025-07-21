@@ -13,6 +13,7 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from fastapi import logger
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic.types import UUID4
 
@@ -272,6 +273,74 @@ class Metadata(BaseModel):
             raise ValueError('Data scadenza deve essere successiva a data emissione')
         return self
 
+import json
+import datetime
+from typing import Any, Dict, List
+from collections import OrderedDict
+
+class DeterministicSerializer:
+    """
+    Serializzatore deterministico per garantire che i dati vengano sempre
+    serializzati nello stesso modo per il calcolo del Merkle Tree.
+    """
+    
+    @staticmethod
+    def serialize_for_merkle(obj: Any) -> str:
+        """
+        Serializza un oggetto in modo deterministico per il calcolo del Merkle Tree.
+        
+        Args:
+            obj: Oggetto da serializzare
+            
+        Returns:
+            Stringa JSON deterministica
+        """
+        return json.dumps(
+            DeterministicSerializer._normalize_object(obj),
+            sort_keys=True,  # CRUCIALE: ordina sempre le chiavi
+            separators=(',', ':'),  # Formato compatto senza spazi
+            ensure_ascii=True  # Evita problemi di encoding
+        )
+    
+    @staticmethod
+    def _normalize_object(obj: Any) -> Any:
+        """
+        Normalizza ricorsivamente un oggetto per la serializzazione deterministica.
+        """
+        if obj is None:
+            return None
+        elif isinstance(obj, bool):
+            return obj
+        elif isinstance(obj, (int, float)):
+            return obj
+        elif isinstance(obj, str):
+            return obj
+        elif isinstance(obj, datetime.datetime):
+            # IMPORTANTE: Usa sempre UTC e formato ISO con 'Z'
+            if obj.tzinfo is None:
+                obj = obj.replace(tzinfo=datetime.timezone.utc)
+            return obj.astimezone(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        elif isinstance(obj, datetime.date):
+            return obj.strftime('%Y-%m-%d')
+        elif hasattr(obj, 'value'):  # Enum
+            return obj.value
+        elif isinstance(obj, dict):
+            # Usa OrderedDict per garantire ordine deterministico
+            normalized = OrderedDict()
+            for key in sorted(obj.keys()):  # Ordina le chiavi
+                normalized[str(key)] = DeterministicSerializer._normalize_object(obj[key])
+            return normalized
+        elif isinstance(obj, (list, tuple)):
+            return [DeterministicSerializer._normalize_object(item) for item in obj]
+        elif hasattr(obj, 'model_dump'):  # Pydantic v2
+            return DeterministicSerializer._normalize_object(obj.model_dump())
+        elif hasattr(obj, 'dict'):  # Pydantic v1
+            return DeterministicSerializer._normalize_object(obj.dict())
+        elif hasattr(obj, '__dict__'):
+            return DeterministicSerializer._normalize_object(obj.__dict__)
+        else:
+            return str(obj)
+
 
 class AcademicCredential(BaseModel):
     """
@@ -340,9 +409,40 @@ class AcademicCredential(BaseModel):
         """Crea un'istanza da stringa JSON."""
         return cls.model_validate_json(json_str)
 
+    def _flatten_for_merkle_tree(self) -> List[Tuple[str, Any]]:
+        """
+        Metodo helper centralizzato per "appiattire" una credenziale in una lista 
+        stabile e ordinata di tuple (percorso, valore) per il calcolo del Merkle tree.
+        Questo è l'UNICO metodo che definisce quali dati garantiscono l'integrità.
+        """
+        # La sintassi corretta per escludere campi annidati è un dizionario
+        exclude_config = {
+            'signature': True,
+            'metadata': {'merkle_root'}
+        }
+        credential_dict = self.model_dump(mode='json', exclude=exclude_config)
+
+        def flatten(d, parent_key=''):
+            items = []
+            for k, v in sorted(d.items()):
+                new_key = f"{parent_key}.{k}" if parent_key else k
+                if isinstance(v, dict):
+                    items.extend(flatten(v, new_key))
+                elif isinstance(v, list):
+                    for i, item in enumerate(v):
+                        if isinstance(item, dict):
+                            items.extend(flatten(item, f"{new_key}[{i}]"))
+                        else:
+                            items.append((f"{new_key}[{i}]", item))
+                else:
+                    items.append((new_key, v))
+            return items
+
+        return flatten(credential_dict)
+
     def calculate_merkle_root(self) -> str:
         """
-        Calcola la radice del Merkle Tree dai dati dei corsi.
+        Calcola la radice del Merkle Tree dai dati dei corsi usando serializzazione deterministica.
         
         Returns:
             Hash della radice del Merkle Tree
@@ -350,10 +450,24 @@ class AcademicCredential(BaseModel):
         if not self.courses:
             return ""
         
-        course_data = [course.model_dump(mode='json') for course in self.courses]
-        merkle_tree = MerkleTree(course_data)
-        return merkle_tree.get_merkle_root()
-    
+        # Usa serializzazione deterministica per ogni corso
+        course_data_deterministic = []
+        for course in self.courses:
+            # Serializza deterministicamente ogni corso
+            course_json = DeterministicSerializer.serialize_for_merkle(course)
+            course_data_deterministic.append(course_json)
+        
+        from crypto.foundations import MerkleTree
+        merkle_tree = MerkleTree(course_data_deterministic)
+        root = merkle_tree.get_merkle_root()
+        
+        # Usa print invece di logger per evitare problemi
+        print(f"🔒 Merkle Tree calcolato deterministicamente:")
+        print(f"   📁 Corsi: {len(course_data_deterministic)}")
+        print(f"   🌳 Root: {root}")
+        
+        return root
+            
     def update_merkle_root(self) -> None:
         """Aggiorna la radice Merkle nei metadati."""
         self.metadata.merkle_root = self.calculate_merkle_root()

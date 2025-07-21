@@ -530,15 +530,15 @@ class PresentationVerifier:
         Verifica crittografica delle prove di Merkle REALI.
         """
         try:
-            self.logger.info("🔐 Verifica crittografica delle prove di Merkle REALI...")
+            self.logger.info("🔐 Verifica crittografica delle prove di Merkle...")
             
-            # 1. ESTRAI LA MERKLE ROOT ORIGINALE (TRUSTED ROOT)
+            # 1. ESTRAI LA MERKLE ROOT ORIGINALE 
             original_merkle_root = disclosure.get("original_merkle_root")
             if not original_merkle_root:
                 self.logger.error("❌ Merkle root originale assente dalla presentazione")
                 return False, "Merkle root originale mancante"
 
-            self.logger.info(f"🌳 Utilizzo Merkle root originale: {original_merkle_root[:16]}...")
+            self.logger.info(f"Utilizzo Merkle root originale: {original_merkle_root[:16]}...")
 
             disclosed_attributes = disclosure.get("disclosed_attributes", {})
             merkle_proofs = disclosure.get("merkle_proofs", [])
@@ -593,7 +593,7 @@ class PresentationVerifier:
 
             # 4. DETERMINA IL RISULTATO FINALE
             if valid_count == total_proofs:
-                self.logger.info(f"🎉 SUCCESSO: Tutte le {valid_count} prove Merkle sono crittograficamente valide")
+                self.logger.info(f"SUCCESSO: Tutte le {valid_count} prove Merkle sono crittograficamente valide")
                 report["technical_details"]["merkle_tree_valid"] = True
                 return True, ""
             elif valid_count >= total_proofs * 0.8:  # Almeno 80% valide
@@ -603,7 +603,7 @@ class PresentationVerifier:
                 return True, warning_msg
             else:
                 error_msg = f"FALLIMENTO: Solo {valid_count}/{total_proofs} prove valide (<80%)"
-                self.logger.error(f"💥 {error_msg}")
+                self.logger.error(f"{error_msg}")
                 report["technical_details"]["merkle_tree_valid"] = False
                 return False, error_msg
 
@@ -665,7 +665,6 @@ class PresentationVerifier:
                 
                 # Debug aggiuntivo per capire la discrepanza
                 self.logger.debug(f"   Ultimo hash combinato: {combined if 'combined' in locals() else 'N/A'}")
-            
             return is_valid
             
         except Exception as e:

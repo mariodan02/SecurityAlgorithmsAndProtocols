@@ -208,8 +208,6 @@ class PresentationManager:
         self.presentations: Dict[str, VerifiablePresentation] = {}
         self.templates: Dict[str, PresentationTemplate] = {}
         self._initialize_default_templates()
-        print(f"✅ Presentation Manager inizializzato, pronto a creare presentazioni!")
-        print(f"   ↪ Caricati {len(self.templates)} modelli predefiniti.")
     
     def create_presentation(self, 
                           purpose: str,
@@ -233,7 +231,7 @@ class PresentationManager:
                     continue
                 credential = wallet_credential.credential
                 
-                # Crea la "divulgazione selettiva" (i dati da mostrare)
+                # Crea la divulgazione selettiva della credenziale accademica 
                 if custom_attributes:
                     disclosure = self.disclosure_manager.create_selective_disclosure(
                         credential, custom_attributes, DisclosureLevel.CUSTOM,
@@ -313,7 +311,7 @@ class PresentationManager:
         try:
             presentation = self.presentations.get(presentation_id)
             if not presentation:
-                print(f"⚠️  Presentazione {presentation_id} non trovata.")
+                print(f"Presentazione {presentation_id} non trovata.")
                 return False
             
             if presentation.signature:
@@ -321,16 +319,14 @@ class PresentationManager:
             
             if private_key is None:
                 if not self.wallet.wallet_private_key:
-                    print("❌ Chiave privata non disponibile nel wallet per firmare.")
+                    print("Chiave privata non disponibile nel wallet per firmare.")
                     return False
                 private_key = self.wallet.wallet_private_key
             
             presentation.status = PresentationStatus.READY
             
-            # *** FIX: Usa il metodo migliorato per ottenere dati serializzabili ***
             data_to_sign = presentation.get_data_for_signing()
             
-            # Debug: Verifica che i dati siano serializzabili
             try:
                 import json
                 json.dumps(data_to_sign)
@@ -347,7 +343,7 @@ class PresentationManager:
             return True
             
         except Exception as e:
-            print(f"❌ Errore durante la firma della presentazione: {e}")
+            print(f"Errore durante la firma della presentazione: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -380,7 +376,7 @@ class PresentationManager:
             print(f"📄 Esportata presentazione in: {output_path}")
             return True
         except Exception as e:
-            print(f"❌ ERRORE CRITICO in export_presentation: {e}")
+            print(f"ERRORE CRITICO in export_presentation: {e}")
             import traceback
             traceback.print_exc()
             return False

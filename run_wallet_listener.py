@@ -1,5 +1,3 @@
-# run_wallet_listener.py - Versione con supporto HTTPS
-
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import json
@@ -14,7 +12,6 @@ from pathlib import Path
 WALLET_ID = "studente_mariorossi_wallet"
 USE_HTTPS = True  # Cambia a False per usare solo HTTP
 PORT = 8080
-# --------------------
 
 def get_local_ip():
     """Ottiene l'IP locale della macchina"""
@@ -55,12 +52,6 @@ def create_ssl_context():
     
     if not cert_path or not key_path:
         print("❌ ERRORE: Certificati SSL non trovati!")
-        print("💡 Certificati necessari:")
-        print("   - ./certificates/wallet/wallet_cert.pem")
-        print("   - ./keys/wallet_private.pem")
-        print("💡 Oppure riusa quelli esistenti:")
-        print("   - ./certificates/server/secure_server.pem") 
-        print("   - ./keys/secure_server_private.pem")
         return None
     
     try:
@@ -117,10 +108,7 @@ def print_banner():
     print("=" * 80)
     print(f"✅ Wallet ID: {WALLET_ID}")
     print(f"📁 Directory: {os.path.abspath(WALLET_DIR)}")
-    print(f"🌐 Server avviato su:")
-    print(f"   • Locale:        {protocol}://localhost:{PORT}/api/credential-receiver")
-    print(f"   • IP della LAN:  {protocol}://{local_ip}:{PORT}/api/credential-receiver")
-    print(f"🔍 Endpoint di test: {protocol}://{local_ip}:{PORT}/")
+    print(f"IP:  {local_ip}:{PORT}")
     print("=" * 80)
     print("📞 ISTRUZIONI PER L'UNIVERSITÀ:")
     print(f"   Inserire nel campo 'Callback URL': {protocol}://{local_ip}:{PORT}/api/credential-receiver")
@@ -256,14 +244,6 @@ async def receive_credential(request: Request):
         print(f"📈 Totale credenziali ricevute: {stats['credentials_received']}")
         print(f"✅ SUCCESSO! Credenziale acquisita nel wallet via {protocol}")
         print(f"{'='*60}\n")
-        
-        # Mostra istruzioni per il prossimo passo
-        if stats["credentials_received"] == 1:
-            print("💡 PROSSIMI PASSI:")
-            print("   1. Importa la credenziale nel tuo wallet dal dashboard")
-            print("   2. Crea presentazioni verificabili")
-            print("   3. Condividi in modo sicuro con divulgazione selettiva")
-            print()
         
         # Risposta di successo
         response_data = {

@@ -220,7 +220,6 @@ class BlockchainService:
                 
             # 2. VERIFICA STATO CORRENTE
             print("2️⃣ Verifica stato corrente credenziale...")
-            
             try:
                 current_status = self.verify_credential(credential_id)
                 print(f"   Stato corrente: {current_status}")

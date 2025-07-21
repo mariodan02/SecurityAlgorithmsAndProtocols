@@ -4,7 +4,7 @@ import datetime
 import requests
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization

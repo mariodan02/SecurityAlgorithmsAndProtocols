@@ -1,13 +1,6 @@
-# =============================================================================
-# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - PRESENTATION MANAGER 
-# File: wallet/presentation.py
-# Sistema Credenziali Accademiche Decentralizzate
-# =============================================================================
-
 import os
 import json
 import datetime
-from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -525,19 +518,6 @@ class PresentationManager:
             ],
             "proof": presentation.signature
         }
-    
-    def _export_pdf_report(self, presentation: VerifiablePresentation, output_path: str) -> bool:
-        """(Funzione non implementata) Esporta la presentazione in PDF."""
-        try:
-            # Qui andrebbe il codice per generare un PDF, per ora salviamo un HTML.
-            html_content = self._generate_html_report(presentation)
-            html_path = output_path.replace('.pdf', '.html')
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            print(f"ℹ️  Generazione PDF non implementata. Creato report HTML: {html_path}")
-            return True
-        except Exception as e:
-            return False
     
     def _generate_html_report(self, presentation: VerifiablePresentation) -> str:
         """Genera un semplice report HTML della presentazione."""

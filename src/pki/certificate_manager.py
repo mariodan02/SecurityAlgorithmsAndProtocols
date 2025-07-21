@@ -5,7 +5,7 @@ import datetime
 import ipaddress
 from pathlib import Path
 import sys
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -691,10 +691,10 @@ class CertificateStore:
                 serial = str(certificate.serial_number)
                 alias = f"{cn}_{serial}"
             
-            # Rimuovi caratteri non validi dall'alias
+            # Rimuove caratteri non validi dall'alias
             alias = "".join(c for c in alias if c.isalnum() or c in "._-")
             
-            # Aggiungi allo store
+            # Aggiunge allo store
             self.certificates[alias] = certificate
             self.certificate_info[alias] = self.cert_manager.parse_certificate(certificate)
             

@@ -1,9 +1,3 @@
-# =============================================================================
-# WALLET PACKAGE - DIGITAL WALLET AND SELECTIVE DISCLOSURE
-# File: wallet/__init__.py
-# Sistema Credenziali Accademiche Decentralizzate
-# =============================================================================
-
 """
 Modulo Wallet per la gestione del portafoglio digitale studenti
 e la divulgazione selettiva delle credenziali accademiche.

@@ -368,15 +368,26 @@ class SelectiveDisclosureManager:
         return attributes
     
     def _flatten_credential(self, credential: AcademicCredential) -> Dict[str, Any]:
-        """Appiattisce credenziale usando serializzazione"""
+        """
+        Appiattisce credenziale usando serializzazione MIGLIORATA.
+        """
         from collections import deque
         import re
         
         def normalize_key(key):
-            return re.sub(r'[^a-zA-Z0-9_]', '_', key)
+            # Normalizza le chiavi mantenendo i caratteri validi per i path
+            return re.sub(r'[^a-zA-Z0-9_\[\]]', '_', key)
         
-        # Serializza
+        print("🔧 Inizio appiattimento credenziale...")
+        
+        # Serializza la credenziale
         credential_dict = DeterministicSerializer._normalize_object(credential)
+        print(f"📊 Credenziale serializzata: {len(credential_dict)} campi principali")
+        
+        # Debug: mostra la struttura principale
+        print("🗂️ Campi principali:")
+        for key in credential_dict.keys():
+            print(f"   - {key}: {type(credential_dict[key])}")
         
         items = deque([('', credential_dict)])
         flat = {}
@@ -386,14 +397,45 @@ class SelectiveDisclosureManager:
             
             if isinstance(obj, dict):
                 for k, v in obj.items():
-                    new_path = f"{parent_path}.{normalize_key(k)}" if parent_path else normalize_key(k)
+                    # Crea il percorso normalizzato
+                    normalized_k = normalize_key(k)
+                    new_path = f"{parent_path}.{normalized_k}" if parent_path else normalized_k
                     items.append((new_path, v))
+                    
             elif isinstance(obj, list):
                 for i, v in enumerate(obj):
-                    new_path = f"{parent_path}[{i}]"
-                    items.append((new_path, v))
+                    # Usa sia formato con . che con []
+                    new_path_dot = f"{parent_path}.{i}"  # formato: courses.0
+                    new_path_bracket = f"{parent_path}[{i}]"  # formato: courses[0]
+                    
+                    # Aggiungi entrambi i formati per compatibilità
+                    items.append((new_path_dot, v))
+                    if new_path_dot != new_path_bracket:
+                        items.append((new_path_bracket, v))
             else:
                 flat[parent_path] = obj
+        
+        print(f"✅ Appiattimento completato: {len(flat)} attributi totali")
+        
+        # Debug: mostra esempi di attributi appiattiti
+        print("🔍 Esempi di attributi appiattiti:")
+        count = 0
+        for key, value in flat.items():
+            if count < 15:  # Mostra primi 15
+                value_preview = str(value)[:50] + "..." if len(str(value)) > 50 else str(value)
+                print(f"   {key} = {value_preview}")
+                count += 1
+            else:
+                break
+        
+        # Debug specifico per i corsi
+        course_attrs = {k: v for k, v in flat.items() if 'courses' in k.lower()}
+        print(f"Attributi corsi trovati: {len(course_attrs)}")
+        if course_attrs:
+            print("🔍 Primi attributi corsi:")
+            for i, (key, value) in enumerate(list(course_attrs.items())[:10]):
+                value_preview = str(value)[:30] + "..." if len(str(value)) > 30 else str(value)
+                print(f"   {key} = {value_preview}")
         
         return flat
     
@@ -406,46 +448,100 @@ class SelectiveDisclosureManager:
                             expires_hours: int = 24) -> SelectiveDisclosure:
         """
         Crea una divulgazione selettiva con prove Merkle REALI.
+        FIX: Sincronizza correttamente attributi e prove.
         """
         try:
             print(f"🔍 Creazione selective disclosure REALE per: {credential.metadata.credential_id}")
+            print(f"📋 Attributi richiesti: {len(attributes_to_disclose)} -> {attributes_to_disclose}")
             
             # 1. Calcola il Merkle Tree degli attributi e ottiene la mappa degli indici
             attributes_root, attribute_index_map = credential.calculate_attributes_merkle_root()
             
             print(f"🌳 Merkle root attributi: {attributes_root}")
-            print(f"📊 Mappa attributi: {len(attribute_index_map)} elementi")
+            print(f"📊 Mappa attributi disponibili: {len(attribute_index_map)} elementi")
             
             # 2. Appiattisce la credenziale per ottenere tutti gli attributi
             all_attributes = self._flatten_credential(credential)
+            print(f"🗂️ Attributi appiattiti totali: {len(all_attributes)}")
             
-            # 3. Estrae solo gli attributi da divulgare
+            # 3. DEBUG: Mostra alcuni attributi disponibili
+            print("🔍 Primi 10 attributi disponibili:")
+            for i, (key, value) in enumerate(list(all_attributes.items())[:10]):
+                print(f"   {i}: {key} = {str(value)[:50]}...")
+            
+            # 4. Estrae solo gli attributi da divulgare - CON TRACKING DETTAGLIATO
             disclosed_attributes = {}
             valid_attributes = []
-            
+            failed_attributes = []
+
             for attr_path in attributes_to_disclose:
+                print(f"🔍 Processando attributo richiesto: '{attr_path}'")
+                
                 if attr_path in all_attributes:
                     disclosed_attributes[attr_path] = all_attributes[attr_path]
                     valid_attributes.append(attr_path)
+                    print(f"   ✅ TROVATO: {attr_path} = {str(all_attributes[attr_path])[:100]}...")
                 else:
-                    print(f"⚠️ Attributo non trovato: {attr_path}")
+                    failed_attributes.append(attr_path)
+                    print(f"   ❌ NON TROVATO: {attr_path}")
+                    
+                    # Prova a trovare attributi simili per debug
+                    similar = [k for k in all_attributes.keys() if attr_path.lower() in k.lower() or k.lower() in attr_path.lower()]
+                    if similar:
+                        print(f"      🔍 Attributi simili trovati: {similar[:3]}")
+
+            print(f"📊 RISULTATI ESTRAZIONE:")
+            print(f"   ✅ Attributi trovati: {len(disclosed_attributes)} -> {list(disclosed_attributes.keys())}")
+            print(f"   ❌ Attributi mancanti: {len(failed_attributes)} -> {failed_attributes}")
             
-            # 4. Serializza per sicurezza
+            # 5. Gestione wildcard per i corsi (migliorata)
+            if failed_attributes:
+                print("🔧 Tentativo di risoluzione wildcard per attributi mancanti...")
+                for attr_path in failed_attributes.copy():
+                    if "courses." in attr_path and ".*." in attr_path:
+                        print(f"   🔄 Elaborazione wildcard: {attr_path}")
+                        base_path = attr_path.split(".*.")[0]
+                        field_name = attr_path.split(".*.")[1]
+                        
+                        for i in range(len(credential.courses)):
+                            course_path = f"{base_path}.{i}.{field_name}"
+                            if course_path in all_attributes:
+                                disclosed_attributes[course_path] = all_attributes[course_path]
+                                valid_attributes.append(course_path)
+                                print(f"      ✅ RISOLTO: {course_path}")
+                        
+                        failed_attributes.remove(attr_path)
+
+            # 6. Serializza per sicurezza
             disclosed_attributes = _serialize_datetimes(disclosed_attributes)
             
-            print(f"✅ Attributi da divulgare: {len(disclosed_attributes)}")
+            print(f"✅ FINALE - Attributi da divulgare: {len(disclosed_attributes)}")
+            print(f"✅ FINALE - Attributi validi per prove: {len(valid_attributes)}")
             
-            # 5. Genera prove Merkle REALI per ogni attributo
+            # 7. VERIFICA CRITICA: I due conteggi devono essere uguali
+            if len(disclosed_attributes) != len(valid_attributes):
+                error_msg = f"MISMATCH CRITICO: disclosed_attributes({len(disclosed_attributes)}) != valid_attributes({len(valid_attributes)})"
+                print(f"❌ {error_msg}")
+                print(f"   Disclosed keys: {list(disclosed_attributes.keys())}")
+                print(f"   Valid keys: {valid_attributes}")
+                raise ValueError(error_msg)
+            
+            # 8. Genera prove Merkle REALI per ogni attributo - SOLO PER QUELLI VALIDI
             merkle_proofs = []
             
-            for attr_path in valid_attributes:
-                print(f"🔐 Generando prova Merkle per: {attr_path}")
+            for i, attr_path in enumerate(valid_attributes):
+                print(f"🔐 Generando prova Merkle {i+1}/{len(valid_attributes)} per: {attr_path}")
+                
+                # Verifica che l'attributo sia effettivamente nei disclosed_attributes
+                if attr_path not in disclosed_attributes:
+                    print(f"   ⚠️ SALTATO: {attr_path} non in disclosed_attributes")
+                    continue
                 
                 # Genera la prova reale usando il metodo della credenziale
                 try:
                     proof_data = credential.generate_attribute_merkle_proof(attr_path)
                 except Exception as e:
-                    print(f"Errore nella generazione della prova: {e}")
+                    print(f"   ❌ Errore nella generazione della prova per {attr_path}: {e}")
                     continue
 
                 if proof_data:
@@ -460,9 +556,23 @@ class SelectiveDisclosureManager:
                 else:
                     print(f"   ❌ Impossibile generare prova per {attr_path}")
             
-            print(f"✅ Prove Merkle reali generate: {len(merkle_proofs)}")
+            print(f"✅ FINALE - Prove Merkle reali generate: {len(merkle_proofs)}")
             
-            # 6. Crea la divulgazione selettiva con prove REALI
+            # 9. VERIFICA FINALE CRITICA
+            if len(disclosed_attributes) != len(merkle_proofs):
+                error_msg = f"MISMATCH FINALE CRITICO: attributi({len(disclosed_attributes)}) != prove({len(merkle_proofs)})"
+                print(f"❌ {error_msg}")
+                
+                # Debug dettagliato
+                print("🔍 DEBUG FINALE:")
+                print(f"   Attributi disclosed: {list(disclosed_attributes.keys())}")
+                print(f"   Prove generate: {len(merkle_proofs)}")
+                for i, proof in enumerate(merkle_proofs):
+                    print(f"      Prova {i}: valore={str(proof.attribute_value)[:50]}...")
+                
+                raise ValueError(error_msg)
+            
+            # 10. Crea la divulgazione selettiva con prove REALI
             disclosure = SelectiveDisclosure(
                 credential_id=str(credential.metadata.credential_id),
                 disclosure_id=str(uuid.uuid4()),
@@ -481,6 +591,7 @@ class SelectiveDisclosureManager:
             )
             
             print(f"✅ Selective disclosure REALE creata: {disclosure.disclosure_id}")
+            print(f"✅ VERIFICA FINALE: {len(disclosure.disclosed_attributes)} attributi, {len(disclosure.merkle_proofs)} prove")
             return disclosure
             
         except Exception as e:

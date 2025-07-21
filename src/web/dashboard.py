@@ -527,7 +527,7 @@ class PresentationVerifier:
 
     async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
         """
-        Verifica crittografica delle prove di Merkle REALI.
+        Verifica crittografica delle prove di Merkle 
         """
         try:
             self.logger.info("🔐 Verifica crittografica delle prove di Merkle...")
@@ -543,33 +543,91 @@ class PresentationVerifier:
             disclosed_attributes = disclosure.get("disclosed_attributes", {})
             merkle_proofs = disclosure.get("merkle_proofs", [])
 
-            # 2. CONTROLLI DI COERENZA
+            # 2. CONTROLLI DI COERENZA MIGLIORATI
             if not disclosed_attributes or not merkle_proofs:
                 return False, "Nessun attributo o prova di Merkle fornita"
 
-            if len(disclosed_attributes) != len(merkle_proofs):
-                error_msg = f"Numero attributi ({len(disclosed_attributes)}) ≠ numero prove ({len(merkle_proofs)})"
-                self.logger.warning(error_msg)
+            # 3. DIAGNOSI DETTAGLIATA DEL MISMATCH
+            num_attributes = len(disclosed_attributes)
+            num_proofs = len(merkle_proofs)
+            
+            self.logger.info(f"📊 CONTEGGI:")
+            self.logger.info(f"   Attributi disclosed: {num_attributes}")
+            self.logger.info(f"   Prove Merkle: {num_proofs}")
+            
+            if num_attributes != num_proofs:
+                # Debug dettagliato del mismatch
+                self.logger.error(f"❌ MISMATCH CRITICO: {num_attributes} attributi ≠ {num_proofs} prove")
+                
+                # Mostra gli attributi
+                self.logger.info("🔍 ATTRIBUTI DISCLOSED:")
+                for i, (key, value) in enumerate(disclosed_attributes.items()):
+                    value_preview = str(value)[:50] + "..." if len(str(value)) > 50 else str(value)
+                    self.logger.info(f"   {i}: {key} = {value_preview}")
+                
+                # Mostra le prove
+                self.logger.info("🔍 PROVE MERKLE:")
+                for i, proof in enumerate(merkle_proofs):
+                    proof_value = proof.get("attribute_value", "N/A")
+                    value_preview = str(proof_value)[:50] + "..." if len(str(proof_value)) > 50 else str(proof_value)
+                    self.logger.info(f"   {i}: indice={proof.get('attribute_index')} valore={value_preview}")
+                
+                error_msg = f"Numero attributi ({num_attributes}) ≠ numero prove ({num_proofs}). "
+                
+                # Suggerisci possibili cause
+                if num_proofs > num_attributes:
+                    error_msg += "Possibili prove duplicate o attributi mancanti durante l'estrazione."
+                elif num_attributes > num_proofs:
+                    error_msg += "Alcune prove Merkle non sono state generate correttamente."
+                
+                error_msg += " Controlla i log del server per dettagli."
+                
                 return False, error_msg
 
-            # 3. VERIFICA OGNI PROVA REALE
+            # 4. VERIFICA OGNI PROVA REALE
             valid_count = 0
             total_proofs = len(merkle_proofs)
+            detailed_errors = []
+            
+            # Crea mappa attributi per matching
+            attr_list = list(disclosed_attributes.items())
             
             for i, proof_data in enumerate(merkle_proofs):
                 attribute_value = proof_data.get("attribute_value")
                 proof_path = proof_data.get("proof_path", [])
                 proof_merkle_root = proof_data.get("merkle_root")
+                attribute_index = proof_data.get("attribute_index", i)
+
+                self.logger.info(f"🔍 Verificando prova {i+1}/{total_proofs}")
+                self.logger.info(f"   Indice attributo: {attribute_index}")
+                self.logger.info(f"   Valore: {str(attribute_value)[:100]}...")
 
                 if attribute_value is None:
-                    self.logger.warning(f"Prova {i+1}: valore attributo mancante")
+                    error_msg = f"Prova {i+1}: valore attributo mancante"
+                    self.logger.warning(error_msg)
+                    detailed_errors.append(error_msg)
                     continue
 
                 # Verifica che la root della prova corrisponda alla root originale
                 if proof_merkle_root != original_merkle_root:
-                    self.logger.warning(f"Prova {i+1}: root non corrispondente")
+                    error_msg = f"Prova {i+1}: root non corrispondente"
+                    self.logger.warning(error_msg)
                     self.logger.warning(f"   Prova root:     {proof_merkle_root}")
                     self.logger.warning(f"   Originale root: {original_merkle_root}")
+                    detailed_errors.append(error_msg)
+                    continue
+
+                # Verifica che il valore della prova corrisponda a un attributo disclosed
+                matching_attr = None
+                for attr_key, attr_value in disclosed_attributes.items():
+                    if attr_value == attribute_value:
+                        matching_attr = attr_key
+                        break
+                
+                if not matching_attr:
+                    error_msg = f"Prova {i+1}: valore non corrisponde a nessun attributo disclosed"
+                    self.logger.warning(error_msg)
+                    detailed_errors.append(error_msg)
                     continue
 
                 # Esegui la verifica crittografica della prova
@@ -581,17 +639,13 @@ class PresentationVerifier:
 
                 if is_valid:
                     valid_count += 1
-                    self.logger.info(f"✅ Prova {i+1}/{total_proofs} VALIDA")
+                    self.logger.info(f"✅ Prova {i+1}/{total_proofs} VALIDA per '{matching_attr}'")
                 else:
-                    # Trova il nome dell'attributo per un log più chiaro
-                    failed_attribute_key = "sconosciuto"
-                    for key, val in disclosed_attributes.items():
-                        if val == attribute_value:
-                            failed_attribute_key = key
-                            break
-                    self.logger.error(f"❌ Prova {i+1}/{total_proofs} INVALIDA per '{failed_attribute_key}'")
+                    error_msg = f"Prova {i+1}/{total_proofs} INVALIDA per '{matching_attr}'"
+                    self.logger.error(f"❌ {error_msg}")
+                    detailed_errors.append(error_msg)
 
-            # 4. DETERMINA IL RISULTATO FINALE
+            # 5. DETERMINA IL RISULTATO FINALE
             if valid_count == total_proofs:
                 self.logger.info(f"SUCCESSO: Tutte le {valid_count} prove Merkle sono crittograficamente valide")
                 report["technical_details"]["merkle_tree_valid"] = True
@@ -599,10 +653,14 @@ class PresentationVerifier:
             elif valid_count >= total_proofs * 0.8:  # Almeno 80% valide
                 warning_msg = f"PARZIALE: {valid_count}/{total_proofs} prove valide (≥80%)"
                 self.logger.warning(f"⚠️ {warning_msg}")
+                if detailed_errors:
+                    warning_msg += f". Errori: {'; '.join(detailed_errors[:3])}"
                 report["technical_details"]["merkle_tree_valid"] = True
                 return True, warning_msg
             else:
                 error_msg = f"FALLIMENTO: Solo {valid_count}/{total_proofs} prove valide (<80%)"
+                if detailed_errors:
+                    error_msg += f". Errori principali: {'; '.join(detailed_errors[:3])}"
                 self.logger.error(f"{error_msg}")
                 report["technical_details"]["merkle_tree_valid"] = False
                 return False, error_msg
@@ -610,7 +668,7 @@ class PresentationVerifier:
         except Exception as e:
             self.logger.error(f"Errore critico nella verifica Merkle: {e}", exc_info=True)
             return False, f"Errore interno: {e}"
-
+    
     async def _verify_single_merkle_proof(self, attribute_value: Any, proof_path: List[Dict], merkle_root: str) -> bool:
         """
         Verifica crittograficamente una singola prova di Merkle REALE.

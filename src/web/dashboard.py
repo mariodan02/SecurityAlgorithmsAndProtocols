@@ -205,6 +205,13 @@ class PresentationVerifier:
         self.ocsp_client = OCSPClient()
         self.cert_manager = CertificateManager()
 
+        try:
+            from crypto.foundations import CryptoUtils
+            self.crypto_utils = CryptoUtils()
+        except ImportError:
+            self.logger.warning("CryptoUtils non disponibile - le verifiche Merkle potrebbero fallire")
+            self.crypto_utils = None
+
     def _get_issuer_name_from_disclosure(self, disclosure: dict) -> Optional[str]:
         """Estrae il nome dell'emittente dagli attributi divulgati."""
         try:
@@ -660,6 +667,72 @@ class PresentationVerifier:
             self.logger.error(f"Errore critico durante la verifica delle prove di Merkle: {e}", exc_info=True)
             return False, f"Errore interno del sistema di verifica: {e}"
         
+    async def _verify_single_merkle_proof(self, attribute_value: Any, proof_path: List[Dict], merkle_root: str) -> bool:
+        """
+        Verifica crittograficamente una singola prova di Merkle.
+        
+        Args:
+            attribute_value: Il valore dell'attributo da verificare
+            proof_path: Il percorso di prova Merkle (lista di hash e direzioni)
+            merkle_root: La radice Merkle attesa
+            
+        Returns:
+            True se la prova è valida, False altrimenti
+        """
+        try:
+            # Verifica che crypto_utils sia disponibile
+            if not self.crypto_utils:
+                self.logger.error("CryptoUtils non disponibile per la verifica Merkle")
+                return False
+            
+            # Inizializza con l'hash del valore dell'attributo
+            import json
+            from credentials.models import DeterministicSerializer
+            
+            # Serializza deterministicamente il valore
+            attribute_json = DeterministicSerializer.serialize_for_merkle(attribute_value)
+            current_hash = self.crypto_utils.sha256_hash_string(attribute_json)
+            
+            self.logger.debug(f"Hash iniziale attributo: {current_hash}")
+            
+            # Ricostruisce il percorso verso la radice
+            for i, step in enumerate(proof_path):
+                sibling_hash = step.get('hash')
+                is_right_sibling = step.get('is_right', False)
+                
+                if not sibling_hash:
+                    self.logger.warning(f"Hash mancante nel passo {i}")
+                    return False
+                
+                # Combina l'hash corrente con il sibling secondo la direzione
+                if is_right_sibling:
+                    # Il sibling è a destra, quindi il nostro hash è a sinistra
+                    combined = current_hash + sibling_hash
+                else:
+                    # Il sibling è a sinistra, quindi il nostro hash è a destra
+                    combined = sibling_hash + current_hash
+                
+                # Calcola il nuovo hash
+                current_hash = self.crypto_utils.sha256_hash_string(combined)
+                
+                self.logger.debug(f"Passo {i}: combinato = {combined[:32]}... -> hash = {current_hash}")
+            
+            # Verifica che la radice calcolata corrisponda a quella attesa
+            is_valid = current_hash == merkle_root
+            
+            if is_valid:
+                self.logger.debug(f"✅ Prova Merkle VALIDA - radice raggiunta: {current_hash}")
+            else:
+                self.logger.warning(f"❌ Prova Merkle NON VALIDA")
+                self.logger.warning(f"   Radice calcolata: {current_hash}")
+                self.logger.warning(f"   Radice attesa:    {merkle_root}")
+            
+            return is_valid
+            
+        except Exception as e:
+            self.logger.error(f"Errore nella verifica della prova Merkle: {e}")
+            return False
+    
     async def _debug_merkle_structure(self, disclosure: dict):
         """
         Metodo di debug per analizzare la struttura delle prove di Merkle.

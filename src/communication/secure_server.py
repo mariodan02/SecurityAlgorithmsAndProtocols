@@ -405,7 +405,7 @@ class AcademicCredentialsSecureServer:
         ):
             return await self._handle_credential_submission(request, auth)
         
-        # Validate credential (solo per issuer/verifier)
+        # Validate credential
         @self.app.post("/api/v1/credentials/validate")
         async def validate_credential(
             request: CredentialValidationRequest,
@@ -960,7 +960,7 @@ class AcademicCredentialsSecureServer:
                     ssl_context.load_cert_chain(
                         self.config.ssl_cert_file,
                         keyfile=self.config.ssl_key_file,
-                        password="Unisa2025"  # PASSWORD HARDCODED 
+                        password="Unisa2025"
                     )
                     print(f"🔒 SSL configurato correttamente")
                 else:
@@ -975,8 +975,8 @@ class AcademicCredentialsSecureServer:
                 "app": self.app,
                 "host": self.config.host,
                 "port": self.config.port,
-                "log_level": "warning",  # Logging ridotto
-                "access_log": False      # Disabilita access log
+                "log_level": "warning",  
+                "access_log": False      
             }
             
             # Configurazione SSL

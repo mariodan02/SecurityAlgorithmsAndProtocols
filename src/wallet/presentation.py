@@ -89,8 +89,6 @@ class VerifiablePresentation:
         Prepara i dati per la firma digitale.
         USA I DATI GIÀ SERIALIZZATI CORRETTAMENTE.
         """
-        # MODIFICA: Questa funzione ora costruisce semplicemente il dizionario
-        # senza applicare una nuova, incoerente, serializzazione.
         data = {
             'presentation_id': self.presentation_id,
             'created_at': self.created_at.isoformat(),

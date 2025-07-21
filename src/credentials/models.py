@@ -316,7 +316,6 @@ class DeterministicSerializer:
         elif isinstance(obj, str):
             return obj
         elif isinstance(obj, datetime.datetime):
-            # IMPORTANTE: Usa sempre UTC e formato ISO con 'Z'
             if obj.tzinfo is None:
                 obj = obj.replace(tzinfo=datetime.timezone.utc)
             return obj.astimezone(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
@@ -325,16 +324,15 @@ class DeterministicSerializer:
         elif hasattr(obj, 'value'):  # Enum
             return obj.value
         elif isinstance(obj, dict):
-            # Usa OrderedDict per garantire ordine deterministico
             normalized = OrderedDict()
             for key in sorted(obj.keys()):  # Ordina le chiavi
                 normalized[str(key)] = DeterministicSerializer._normalize_object(obj[key])
             return normalized
         elif isinstance(obj, (list, tuple)):
             return [DeterministicSerializer._normalize_object(item) for item in obj]
-        elif hasattr(obj, 'model_dump'):  # Pydantic v2
+        elif hasattr(obj, 'model_dump'): 
             return DeterministicSerializer._normalize_object(obj.model_dump())
-        elif hasattr(obj, 'dict'):  # Pydantic v1
+        elif hasattr(obj, 'dict'): 
             return DeterministicSerializer._normalize_object(obj.dict())
         elif hasattr(obj, '__dict__'):
             return DeterministicSerializer._normalize_object(obj.__dict__)
@@ -432,9 +430,9 @@ class AcademicCredential(BaseModel):
                     for i, item in enumerate(v):
                         # Se l'elemento della lista è un dizionario, appiattiscilo
                         if isinstance(item, dict):
-                            items.extend(flatten(item, f"{new_key}.{i}")) # Use dot notation for lists
+                            items.extend(flatten(item, f"{new_key}.{i}")) 
                         else:
-                            items.append((f"{new_key}.{i}", item)) # Use dot notation for lists
+                            items.append((f"{new_key}.{i}", item)) 
                 else:
                     items.append((new_key, v))
             return items

@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 PROVIDER_URL = "http://127.0.0.1:8545"
 
 # CHIAVE DEL "BANKER" - Account Ganache con fondi per finanziare altri account
-GANACHE_BANKER_KEY = "0x1da8cda9f7a70a84bed13a7f9cc16c9ac9ae9326662e51a5c2568faa3b989b4c"  # Account #1 di Ganache
+GANACHE_BANKER_KEY = "0x1da8cda9f7a70a84bed13a7f9cc16c9ac9ae9326662e51a5c2568faa3b989b4c"
 
 def derive_ethereum_key_from_rsa(pem_file_path: str, password: bytes):
     """
@@ -230,7 +230,7 @@ class BlockchainService:
                     
                 if current_status['status'] == 'REVOKED':
                     print("⚠️ Credenziale già revocata!")
-                    return True  # Considerala come successo
+                    return True 
                     
                 if current_status['status'] != 'VALID':
                     print(f"❌ Stato credenziale non valido: {current_status['status']}")

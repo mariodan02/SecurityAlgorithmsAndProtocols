@@ -1,8 +1,3 @@
-# =============================================================================
-# DASHBOARD CREDENZIALI ACCADEMICHE - Applicazione Principale
-# File: web/dashboard.py
-# Sistema Decentralizzato di Credenziali Accademiche
-# =============================================================================
 
 import asyncio
 import base64
@@ -364,7 +359,7 @@ class PresentationVerifier:
                 report["overall_result"] = "non valido"
             elif len(report["warnings"]) > 0:
                 report["overall_result"] = "avviso"
-                report["is_valid"] = True  # Valida ma con avvertenze
+                report["is_valid"] = True  
             else:
                 report["overall_result"] = "valido"
                 report["is_valid"] = True
@@ -593,7 +588,6 @@ class PresentationVerifier:
                     # Se anche una sola prova fallisce, l'intera presentazione non è valida.
                     return False, error_msg
             
-            # 4. RISULTATO FINALE
             if valid_proofs_count == len(disclosed_attributes):
                 self.logger.info(f"SUCCESSO: Tutte le {valid_proofs_count} prove sono state verificate con successo.")
                 report["technical_details"]["merkle_tree_valid"] = True

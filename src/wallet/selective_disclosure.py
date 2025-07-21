@@ -1,8 +1,3 @@
-# =============================================================================
-# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - SELECTIVE DISCLOSURE 
-# File: wallet/selective_disclosure.py
-# Sistema Credenziali Accademiche Decentralizzate
-# =============================================================================
 
 import logging
 import os
@@ -14,7 +9,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 import uuid
 
-# Import dei nostri moduli interni del progetto
 import sys
 
 from credentials.models import DeterministicSerializer

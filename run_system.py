@@ -149,7 +149,7 @@ def check_system_requirements():
             print(f"   - {file_path}")
         return False
 
-    # Verifica Python packages (opzionale)
+    # Verifica Python packages
     try:
         import fastapi, uvicorn, cryptography, web3
         print("   ✅ Dipendenze Python principali presenti")

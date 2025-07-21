@@ -106,7 +106,6 @@ class CertificateManager:
         try:
             cert_data = file_path.read_bytes()
             
-            # Prova prima PEM, poi DER
             try:
                 certificate = x509.load_pem_x509_certificate(cert_data, self.backend)
             except ValueError:
@@ -165,7 +164,6 @@ class CertificateManager:
             ext_key_usage_list = self._extract_extended_key_usage(certificate)
             san_list = self._extract_subject_alt_names(certificate)
             
-            # Basic Constraints (CA)
             is_ca = self._is_ca_certificate(certificate)
             
             # Informazioni chiave
@@ -637,7 +635,6 @@ class CertificateManager:
                   .add_extension(x509.BasicConstraints(ca=kwargs.get('ca', False), path_length=None), 
                                critical=True))
         
-        # Aggiungi SANs se presenti
         if 'sans' in kwargs:
             san_names = []
             for san in kwargs['sans']:

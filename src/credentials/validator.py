@@ -255,7 +255,7 @@ class AcademicCredentialValidator:
         )
         
         try:
-            # Validazioni base (sempre eseguite)
+            # Validazioni base
             logger.debug("Validazione formato")
             self._validate_format(credential, report)
             
@@ -776,7 +776,7 @@ class AcademicCredentialValidator:
                     logger.warning(f"Errore analisi certificato {cert_path}: {e}")
                     continue
             
-            # Fallback - cerca direttamente nei file se non trovato
+            # Cerca direttamente nei file se non trovato
             possible_cert_paths = [
                 "./certificates/issued/university_F_RENNES01_1001.pem",
                 "./certificates/issued/university_I_SALERNO_2001.pem",

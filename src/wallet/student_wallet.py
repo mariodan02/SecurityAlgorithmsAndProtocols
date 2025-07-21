@@ -1,8 +1,3 @@
-# =============================================================================
-# FASE 4: WALLET E DIVULGAZIONE SELETTIVA - STUDENT WALLET
-# File: wallet/student_wallet.py
-# Sistema Credenziali Accademiche Decentralizzate
-# =============================================================================
 
 import os
 import json
@@ -436,7 +431,7 @@ class AcademicStudentWallet:
             print(f"JSON deserializzato. ID: {credential.metadata.credential_id}")
             print(f"🌳 Merkle Root originale: {original_merkle_root}")
 
-            # VERIFICA INTEGRITÀ
+            # verifita integrità
             calculated_root = credential.calculate_merkle_root()
             
             if calculated_root != original_merkle_root:

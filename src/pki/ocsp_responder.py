@@ -130,7 +130,7 @@ def create_ocsp_response(ocsp_request: ocsp.OCSPRequest,
         
         if is_revoked:
             cert_status = ocsp.OCSPCertStatus.REVOKED
-            revocation_time = now  # In un sistema reale, si dovrebbe leggere la data effettiva
+            revocation_time = now 
             revocation_reason = x509.ReasonFlags.unspecified
         else:
             cert_status = ocsp.OCSPCertStatus.GOOD

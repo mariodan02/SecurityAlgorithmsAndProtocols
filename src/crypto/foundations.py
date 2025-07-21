@@ -905,7 +905,6 @@ def run_comprehensive_tests():
         return False
 
 
-# 7. MAIN - PUNTO DI INGRESSO
 if __name__ == "__main__":
     # Esegui test completi
     tests_passed = run_comprehensive_tests()

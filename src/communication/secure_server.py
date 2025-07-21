@@ -1,10 +1,3 @@
-# =============================================================================
-# FASE 5: COMUNICAZIONE SICURA - SECURE SERVER CONSOLIDATO
-# File: communication/secure_server.py
-# Sistema Credenziali Accademiche Decentralizzate
-# INCLUDE: API Blockchain integrate
-# =============================================================================
-
 import os
 import json
 import asyncio
@@ -38,7 +31,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# 1. MODELLI DATI API (Consolidati)
+# 1. MODELLI DATI API 
 # =============================================================================
 
 class APIResponse(BaseModel):
@@ -69,7 +62,6 @@ class CredentialVerificationRequest(BaseModel):
     credential_data: Dict[str, Any]
     blockchain_network: str = "mainnet"
 
-# NUOVI MODELLI BLOCKCHAIN
 class VerifyCredentialRequest(BaseModel):
     credential_id: str = Field(..., description="ID della credenziale da verificare")
 
@@ -127,12 +119,12 @@ class CredentialRequest(BaseModel):
     requested_at: str
 
 # =============================================================================
-# 2. CONFIGURAZIONE SERVER CONSOLIDATA
+# 2. CONFIGURAZIONE SERVER
 # =============================================================================
 
 @dataclass
 class ServerConfiguration:
-    """Configurazione server sicuro consolidato"""
+    """Configurazione server"""
     host: str = "localhost"
     port: int = 8443
     ssl_enabled: bool = True
@@ -298,23 +290,23 @@ def verify_issuer_role(user_info: dict = Depends(verify_auth_token)):
     return user_info
 
 # =============================================================================
-# 4. SECURE SERVER PRINCIPALE CONSOLIDATO
+# 4. SERVER PRINCIPALE 
 # =============================================================================
 
 class AcademicCredentialsSecureServer:
-    """Server sicuro consolidato per il sistema di credenziali accademiche"""
+    """Server per il sistema di credenziali accademiche"""
     
     def __init__(self, config: ServerConfiguration):
         """
-        Inizializza il server sicuro consolidato
+        Inizializza il server 
         
         Args:
             config: Configurazione server
         """
         self.config = config
         self.app = FastAPI(
-            title="Academic Credentials Secure API - Consolidated",
-            description="API sicura consolidata per il sistema di credenziali accademiche con funzionalità blockchain",
+            title="Server",
+            description="API per il sistema",
             version="1.0.0",
             docs_url="/docs" if not config.api_key_required else None
         )
@@ -346,10 +338,7 @@ class AcademicCredentialsSecureServer:
         self._setup_middleware()
         self._setup_routes()
         
-        print(f"🔧 Secure Server Consolidato inizializzato")
-        print(f"   Host: {config.host}:{config.port}")
-        print(f"   SSL: {'Abilitato' if config.ssl_enabled else 'Disabilitato'}")
-        print(f"   API Key: {'Richiesta' if config.api_key_required else 'Opzionale'}")
+        print(f"🔧 Server inizializzato")
         print(f"   Blockchain: {config.blockchain_rpc_url}")
     
     def _setup_middleware(self):
@@ -405,7 +394,7 @@ class AcademicCredentialsSecureServer:
         """Configura routes API consolidate"""
         
         # =============================================================================
-        # ROUTES ORIGINALI
+        # ROUTES
         # =============================================================================
         
         # Submit credential
@@ -424,7 +413,7 @@ class AcademicCredentialsSecureServer:
         ):
             return await self._handle_credential_validation(request, auth)
         
-        # Verify credential (tutti gli utenti possono verificare)
+        # Verify credential blockchain (tutti gli utenti possono verificare)
         @self.app.post("/api/v1/credentials/verify")
         async def verify_credential(
             request: CredentialVerificationRequest,
@@ -474,7 +463,7 @@ class AcademicCredentialsSecureServer:
                     message=f"Errore interno: {e}"
                 )
 
-        # Submit presentation
+        # Emetti presentazione
         @self.app.post("/api/v1/presentations/submit")
         async def submit_presentation(
             request: PresentationRequest,
@@ -482,7 +471,7 @@ class AcademicCredentialsSecureServer:
         ):
             return await self._handle_presentation_submission(request, auth)
         
-        # Get credential status
+        # Ottieni stato della credenziale
         @self.app.get("/api/v1/credentials/{credential_id}/status")
         async def get_credential_status(
             credential_id: str,
@@ -613,7 +602,6 @@ class AcademicCredentialsSecureServer:
 
                 # Verifica la revoca
                 updated_status = blockchain_service.verify_credential(request.credential_id)
-                
                 self.stats['revocations_performed'] += 1
                 
                 return RevokeCredentialResponse(
@@ -685,7 +673,7 @@ class AcademicCredentialsSecureServer:
                     message=f"Errore health check: {str(e)}"
                 )
 
-        # Statistics endpoint (aggiornato)
+        # Statistics endpoint
         @self.app.get("/api/v1/stats")
         async def get_statistics(
             auth: HTTPAuthorizationCredentials = Depends(self.security) if self.security else None
@@ -705,15 +693,15 @@ class AcademicCredentialsSecureServer:
         @self.app.get("/")
         async def root():
             return {
-                "message": "Academic Credentials Secure API - Consolidated",
-                "version": "2.0.0",
+                "message": "Server API",
+                "version": "1.0.0",
                 "features": ["Standard API", "Blockchain Integration"],
                 "docs": "/docs",
                 "redoc": "/redoc"
             }
     
     # =============================================================================
-    # METODI HANDLER ORIGINALI 
+    # METODI HANDLER 
     # =============================================================================
     
     async def _authenticate_request(self, auth: Optional[HTTPAuthorizationCredentials]) -> Optional[Dict[str, Any]]:
@@ -962,7 +950,7 @@ class AcademicCredentialsSecureServer:
     def run(self):
         """Avvia il server consolidato"""
         try:
-            print(f"🚀 Avvio server consolidato su {self.config.host}:{self.config.port}")
+            print(f"🚀 Avvio server su https://{self.config.host}:{self.config.port}")
             
             ssl_context = None
             if self.config.ssl_enabled:
@@ -972,7 +960,7 @@ class AcademicCredentialsSecureServer:
                     ssl_context.load_cert_chain(
                         self.config.ssl_cert_file,
                         keyfile=self.config.ssl_key_file,
-                        password="Unisa2025"  # PASSWORD HARDCODED - CAMBIA SE NECESSARIO
+                        password="Unisa2025"  # PASSWORD HARDCODED 
                     )
                     print(f"🔒 SSL configurato correttamente")
                 else:

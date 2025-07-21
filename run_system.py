@@ -1,10 +1,3 @@
-# =============================================================================
-# RUNNER PRINCIPALE AGGIORNATO
-# File: run_system.py
-# Sistema Credenziali Accademiche Decentralizzate
-# VERSIONE CONSOLIDATA (senza credential_blockchain_api.py separato)
-# =============================================================================
-
 import os
 import sys
 import threading

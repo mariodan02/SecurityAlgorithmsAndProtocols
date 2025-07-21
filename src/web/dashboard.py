@@ -1878,7 +1878,8 @@ class AcademicCredentialsDashboard:
                         status_code=500
                     )
                 
-                storage_id = wallet.add_credential_from_json(
+                # La funzione ora restituisce un tuple (storage_id, error_message)
+                storage_id, error_message = wallet.add_credential_from_json(
                     request_body.credential_json,
                     tags=["importata"]
                 )
@@ -1890,8 +1891,9 @@ class AcademicCredentialsDashboard:
                         "storage_id": storage_id
                     })
                 else:
+                    # Usa il messaggio di errore specifico fornito dal wallet
                     return JSONResponse(
-                        {"success": False, "message": "Impossibile importare la credenziale."},
+                        {"success": False, "message": error_message or "Impossibile importare la credenziale per un motivo sconosciuto."},
                         status_code=400
                     )
             

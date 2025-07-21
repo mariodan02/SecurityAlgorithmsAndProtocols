@@ -8,7 +8,7 @@ import os
 import json
 import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 import uuid
@@ -418,10 +418,15 @@ class AcademicStudentWallet:
             self._create_backup()
         return storage_id
     
-    def add_credential_from_json(self, credential_json: str, tags: Optional[List[str]] = None) -> Optional[str]:
-        """Importa credenziale verificando integrità Merkle Tree"""
+    # In src/wallet/student_wallet.py
+
+    def add_credential_from_json(self, credential_json: str, tags: Optional[List[str]] = None) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Importa credenziale verificando integrità Merkle Tree e restituisce un messaggio di errore dettagliato.
+        Returns: (storage_id, error_message)
+        """
         if self.status != WalletStatus.UNLOCKED:
-            raise RuntimeError("Wallet bloccato")
+            return None, "Il wallet è bloccato. Sbloccalo prima di importare una credenziale."
 
         print("Tentativo di importare una credenziale da JSON...")
         try:
@@ -435,22 +440,27 @@ class AcademicStudentWallet:
             calculated_root = credential.calculate_merkle_root()
             
             if calculated_root != original_merkle_root:
-                print(f"❌ ERRORE CRITICO: Merkle Tree non corrispondente! La credenziale potrebbe essere contraffatta.")
+                error_msg = "Errore di integrità: la firma dei corsi (Merkle root) non corrisponde. La credenziale potrebbe essere stata alterata."
+                print(f"❌ ERRORE CRITICO: {error_msg}")
                 print(f"   🌳 Originale:  {original_merkle_root}")
                 print(f"   🧮 Calcolata:  {calculated_root}")
-                print("🛑 Importazione annullata per motivi di sicurezza.")
-                return None 
+                return None, error_msg
             else:
                 print("✅ Merkle Tree verificato correttamente")
 
             # Procedi con aggiunta
             storage_id = self.add_credential(credential, tags=tags)
             print(f"Credenziale importata! Storage ID: {storage_id}")
-            return storage_id
+            return storage_id, None
 
+        except json.JSONDecodeError as e:
+            error_msg = f"Errore di formato: il file fornito non è un JSON valido. Dettagli: {e}"
+            print(f"❌ {error_msg}")
+            return None, error_msg
         except Exception as e:
-            print(f"Errore critico durante l'importazione: {e}")
-            return None
+            error_msg = f"Errore imprevisto durante l'importazione: {e}"
+            print(f"❌ Errore critico durante l'importazione: {e}")
+            return None, error_msg
     
     def get_credential(self, storage_id):
         if self.status != WalletStatus.UNLOCKED: 

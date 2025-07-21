@@ -164,7 +164,7 @@ class AcademicCredentialIssuer:
         self.issuer_account = None
         
         try:
-            # Utilizza chiave privata di Ganache per demo            
+            # Utilizza chiave privata di Ganache            
             self.blockchain_service = BlockchainService()
             
             if self.blockchain_service:

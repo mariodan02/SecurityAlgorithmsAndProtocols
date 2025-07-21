@@ -297,7 +297,7 @@ class DeterministicSerializer:
         """
         return json.dumps(
             DeterministicSerializer._normalize_object(obj),
-            sort_keys=True,  # CRUCIALE: ordina sempre le chiavi
+            sort_keys=True,  # Ordina sempre le chiavi
             separators=(',', ':'),  # Formato compatto senza spazi
             ensure_ascii=True  # Evita problemi di encoding
         )
@@ -305,7 +305,7 @@ class DeterministicSerializer:
     @staticmethod
     def _normalize_object(obj: Any) -> Any:
         """
-        Normalizza ricorsivamente un oggetto per la serializzazione deterministica.
+        Normalizza ricorsivamente un oggetto per la serializzazione.
         """
         if obj is None:
             return None
@@ -414,7 +414,7 @@ class AcademicCredential(BaseModel):
         Metodo per appiattire una credenziale in una lista ordinata di 
         tuple (percorso, valore) per costruire il Merkle Tree degli attributi.
         """
-        # La sintassi corretta per escludere campi annidati è un dizionario, non un set.
+        # La sintassi per escludere campi annidati è un dizionario
         exclude_config = {
             'signature': True,          # Esclude il campo 'signature' a livello principale
             'metadata': {'merkle_root'} # Esclude 'merkle_root' dentro 'metadata'
@@ -529,10 +529,10 @@ class AcademicCredential(BaseModel):
         if not self.courses:
             return ""
         
-        # Usa serializzazione deterministica per ogni corso
+        # Usa serializzazione per ogni corso
         course_data_deterministic = []
         for course in self.courses:
-            # Serializza deterministicamente ogni corso
+            # Serializza ogni corso
             course_json = DeterministicSerializer.serialize_for_merkle(course)
             course_data_deterministic.append(course_json)
         
@@ -541,7 +541,7 @@ class AcademicCredential(BaseModel):
         root = merkle_tree.get_merkle_root()
         
         # Usa print invece di logger per evitare problemi
-        print(f"🔒 Merkle Tree calcolato deterministicamente:")
+        print(f"🔒 Merkle Tree calcolato:")
         print(f"   📁 Corsi: {len(course_data_deterministic)}")
         print(f"   🌳 Root: {root}")
         

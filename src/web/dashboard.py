@@ -622,7 +622,7 @@ class PresentationVerifier:
             
             from credentials.models import DeterministicSerializer
             
-            # Serializza deterministicamente il valore dell'attributo
+            # Serializza il valore dell'attributo
             attribute_json = DeterministicSerializer.serialize_for_merkle(attribute_value)
             current_hash = self.crypto_utils.sha256_hash_string(attribute_json)
             
@@ -1139,7 +1139,7 @@ class AcademicCredentialsDashboard:
 
             wallet.create_wallet(
                 password="Unisa2025",
-                student_common_name="Mario Rossi",  # Preimpostato per l'utente demo
+                student_common_name="Mario Rossi",  
                 student_id=student_id
             )
         if wallet.status == WalletStatus.LOCKED:
@@ -1332,7 +1332,7 @@ class AcademicCredentialsDashboard:
                     surname_salt=surname_salt.hex(),
                     name_hash=crypto_utils.hash_with_salt(first_name, name_salt),
                     name_salt=name_salt.hex(),
-                    birth_date_hash=crypto_utils.hash_with_salt("1990-01-01", birth_date_salt), # Data di nascita fittizia per la demo
+                    birth_date_hash=crypto_utils.hash_with_salt("1990-01-01", birth_date_salt), 
                     birth_date_salt=birth_date_salt.hex(),
                     student_id_hash=crypto_utils.hash_with_salt(student_id, student_id_salt),
                     student_id_salt=student_id_salt.hex(),

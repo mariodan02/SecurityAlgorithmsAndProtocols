@@ -368,14 +368,14 @@ class SelectiveDisclosureManager:
         return attributes
     
     def _flatten_credential(self, credential: AcademicCredential) -> Dict[str, Any]:
-        """Appiattisce credenziale usando serializzazione deterministica"""
+        """Appiattisce credenziale usando serializzazione"""
         from collections import deque
         import re
         
         def normalize_key(key):
             return re.sub(r'[^a-zA-Z0-9_]', '_', key)
         
-        # USA SERIALIZZAZIONE DETERMINISTICA
+        # Serializza
         credential_dict = DeterministicSerializer._normalize_object(credential)
         
         items = deque([('', credential_dict)])

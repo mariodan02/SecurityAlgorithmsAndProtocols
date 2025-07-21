@@ -424,58 +424,50 @@ class MerkleTree:
         
         proof_path = []
         current_index = leaf_index
-        current_level = self.leaves[:]  # Copia dei foglie
+        
+        # Inizia dal livello delle foglie
+        current_level_nodes = self.leaves[:]
         
         print(f"🔐 Generando prova Merkle per foglio {leaf_index}")
-        print(f"   Hash foglio: {current_level[leaf_index]}")
+        print(f"   Hash foglio: {current_level_nodes[leaf_index]}")
         
-        # Naviga verso l'alto nel tree
         level_num = 0
-        while len(current_level) > 1:
-            next_level = []
+        # Naviga verso l'alto nel tree, livello per livello
+        while len(current_level_nodes) > 1:
+            # Se il numero di nodi è dispari, duplica l'ultimo (logica mancante)
+            if len(current_level_nodes) % 2 == 1:
+                current_level_nodes.append(current_level_nodes[-1])
+
+            sibling_index = -1
+            if current_index % 2 == 0:
+                # Il nostro nodo è a sinistra, il sibling è a destra
+                sibling_index = current_index + 1
+                proof_path.append({
+                    "hash": current_level_nodes[sibling_index],
+                    "is_right": True
+                })
+                print(f"   Livello {level_num}: sibling DX = {current_level_nodes[sibling_index][:16]}...")
+            else:
+                # Il nostro nodo è a destra, il sibling è a sinistra
+                sibling_index = current_index - 1
+                proof_path.append({
+                    "hash": current_level_nodes[sibling_index],
+                    "is_right": False
+                })
+                print(f"   Livello {level_num}: sibling SX = {current_level_nodes[sibling_index][:16]}...")
+
+            # Costruisci il livello successivo
+            next_level_nodes = []
+            for i in range(0, len(current_level_nodes), 2):
+                left_hash = current_level_nodes[i]
+                right_hash = current_level_nodes[i + 1]
+                combined = left_hash + right_hash
+                parent_hash = hashlib.sha256(combined.encode('utf-8')).hexdigest()
+                next_level_nodes.append(parent_hash)
             
-            # Processa a coppie
-            i = 0
-            while i < len(current_level):
-                if i + 1 < len(current_level):
-                    # Coppia normale
-                    left_hash = current_level[i]
-                    right_hash = current_level[i + 1]
-                    
-                    # Se siamo sul nodo target, aggiungi il sibling alla prova
-                    if current_index == i:
-                        # Il nostro nodo è a sinistra, sibling a destra
-                        proof_path.append({
-                            "hash": right_hash,
-                            "is_right": True
-                        })
-                        print(f"   Livello {level_num}: sibling DX = {right_hash[:16]}...")
-                    elif current_index == i + 1:
-                        # Il nostro nodo è a destra, sibling a sinistra
-                        proof_path.append({
-                            "hash": left_hash,
-                            "is_right": False
-                        })
-                        print(f"   Livello {level_num}: sibling SX = {left_hash[:16]}...")
-                    
-                    # Combina e aggiungi al livello successivo
-                    combined = left_hash + right_hash
-                    parent_hash = self.crypto_utils.sha256_hash_string(combined)
-                    next_level.append(parent_hash)
-                    
-                    # Aggiorna l'indice per il livello successivo
-                    if current_index == i or current_index == i + 1:
-                        current_index = len(next_level) - 1
-                    
-                    i += 2
-                else:
-                    # Nodo singolo (numero dispari), promosso direttamente
-                    next_level.append(current_level[i])
-                    if current_index == i:
-                        current_index = len(next_level) - 1
-                    i += 1
-            
-            current_level = next_level
+            # Aggiorna l'indice per il livello successivo
+            current_index = current_index // 2
+            current_level_nodes = next_level_nodes
             level_num += 1
         
         print(f"   ✅ Prova generata: {len(proof_path)} passi")

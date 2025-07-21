@@ -885,7 +885,7 @@ class AcademicCredentialValidator:
                 else:
                     logger.warning(f"CA non trovata: {cert_path}")
             
-            # Carica automaticamente certificati demo se esistenti
+            # Carica automaticamente certificati se esistenti
             demo_cert_paths = [
                 "./certificates/ca/ca_certificate.pem",
                 "./certificates/issued/university_FR_RENNES01_1001.pem", 

@@ -440,8 +440,12 @@ class SelectiveDisclosureManager:
                 print(f"🔐 Generando prova Merkle per: {attr_path}")
                 
                 # Genera la prova reale usando il metodo della credenziale
-                proof_data = credential.generate_attribute_merkle_proof(attr_path)
-                
+                try:
+                    proof_data = credential.generate_attribute_merkle_proof(attr_path)
+                except Exception as e:
+                    print(f"Errore nella generazione della prova: {e}")
+                    continue
+
                 if proof_data:
                     proof = MerkleProof(
                         attribute_index=proof_data['attribute_index'],

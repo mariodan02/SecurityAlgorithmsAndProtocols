@@ -346,9 +346,12 @@ class MerkleTree:
         if not data_list:
             raise ValueError("La lista dati non può essere vuota")
         
+        self.crypto_utils = CryptoUtils()
+
         self.original_data = data_list.copy()
         self.tree_levels = []
         self.leaf_indices = {}  # Mappa elemento -> indice foglia
+        self.leaves = []
         
         # Costruisce l'albero
         self._build_tree()
@@ -374,6 +377,7 @@ class MerkleTree:
             self.leaf_indices[i] = len(current_level) - 1
         
         self.tree_levels.append(current_level)
+        self.leaves = current_level
         
         # Costruisce i livelli superiori
         while len(current_level) > 1:

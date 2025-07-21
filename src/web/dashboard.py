@@ -524,134 +524,6 @@ class PresentationVerifier:
             self.logger.error(f"Errore nella ricerca del certificato: {e}")
             return None
 
-    async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
-        try:
-            self.logger.info("Verifica crittografica delle prove di Merkle...")
-            disclosed_attributes = disclosure.get("disclosed_attributes", {})
-            merkle_proofs = disclosure.get("merkle_proofs", [])
-
-            if not disclosed_attributes:
-                self.logger.warning("Nessun attributo divulgato")
-                return False, "Nessun attributo divulgato"
-
-            if not merkle_proofs:
-                self.logger.warning("Nessuna Merkle proof fornita")
-                return False, "Nessuna Merkle proof fornita"
-
-            if len(disclosed_attributes) != len(merkle_proofs):
-                error_msg = f"Numero di attributi ({len(disclosed_attributes)}) diverso dal numero di prove ({len(merkle_proofs)})"
-                self.logger.warning(f"{error_msg}")
-                return False, error_msg
-
-            # Verifica ogni prova di Merkle individualmente
-            all_proofs_valid = True
-            valid_count = 0
-
-            for i, proof in enumerate(merkle_proofs):
-                attribute_value = proof.get("attribute_value")
-                proof_path = proof.get("proof_path", [])
-                merkle_root = proof.get("merkle_root")
-
-                if not merkle_root or not proof_path or attribute_value is None:
-                    self.logger.warning(f" Struttura della prova {i+1} incompleta")
-                    all_proofs_valid = False
-                    continue
-
-                # Verifica crittografica della singola prova
-                is_valid = await self._verify_single_merkle_proof(
-                    attribute_value, proof_path, merkle_root
-                )
-
-                if is_valid:
-                    valid_count += 1
-                    self.logger.info(f"Prova {i+1} crittograficamente valida")
-                else:
-                    self.logger.warning(f"Prova {i+1} crittograficamente non valida")
-                    all_proofs_valid = False
-
-            # Risultato finale
-            success_rate = valid_count / len(merkle_proofs)
-
-            if all_proofs_valid:
-                self.logger.info(f"Tutte le prove di Merkle sono valide ({valid_count}/{len(merkle_proofs)})")
-                report["technical_details"]["merkle_tree_valid"] = True
-                return True, ""
-            elif success_rate >= 0.8:  # L'80% delle prove deve essere valido
-                warning_msg = f"Alcune prove non sono valide ma la maggioranza è corretta ({valid_count}/{len(merkle_proofs)})"
-                self.logger.warning(f"{warning_msg}")
-                report["technical_details"]["merkle_tree_valid"] = True
-                return True, warning_msg
-            else:
-                error_msg = f"Troppe prove non valide ({valid_count}/{len(merkle_proofs)})"
-                self.logger.warning(f"{error_msg}")
-                return False, error_msg
-
-        except Exception as e:
-            self.logger.error(f" Errore critico durante la verifica delle prove di Merkle: {e}")
-            return False, f"Errore interno: {e}"
-
-    async def _verify_single_merkle_proof(self, attribute_value: Any, proof_path: List[Dict], merkle_root: str) -> bool:
-        """
-        Verifica crittograficamente una singola prova di Merkle REALE.
-        """
-        try:
-            if not self.crypto_utils:
-                self.logger.error("CryptoUtils non disponibile per la verifica Merkle")
-                return False
-            
-            from credentials.models import DeterministicSerializer
-            
-            # Serializza deterministicamente il valore dell'attributo
-            attribute_json = DeterministicSerializer.serialize_for_merkle(attribute_value)
-            current_hash = self.crypto_utils.sha256_hash_string(attribute_json)
-            
-            self.logger.debug(f"🔍 Verifica prova Merkle:")
-            self.logger.debug(f"   Valore: {str(attribute_value)[:50]}...")
-            self.logger.debug(f"   Hash iniziale: {current_hash}")
-            self.logger.debug(f"   Passi prova: {len(proof_path)}")
-            
-            # Ricostruisce il percorso verso la radice seguendo la prova
-            for i, step in enumerate(proof_path):
-                sibling_hash = step.get('hash')
-                is_right_sibling = step.get('is_right', False)
-                
-                if not sibling_hash:
-                    self.logger.warning(f"Hash mancante nel passo {i}")
-                    return False
-                
-                # Combina l'hash corrente con il sibling secondo la direzione
-                if is_right_sibling:
-                    # Il sibling è a destra, quindi il nostro hash è a sinistra
-                    combined = current_hash + sibling_hash
-                else:
-                    # Il sibling è a sinistra, quindi il nostro hash è a destra
-                    combined = sibling_hash + current_hash
-                
-                # Calcola il nuovo hash per il passo successivo
-                current_hash = self.crypto_utils.sha256_hash_string(combined)
-                
-                self.logger.debug(f"   Passo {i}: {sibling_hash[:16]}... ({'DX' if is_right_sibling else 'SX'}) -> {current_hash}")
-            
-            # Verifica che la radice calcolata corrisponda a quella attesa
-            is_valid = current_hash == merkle_root
-            
-            if is_valid:
-                self.logger.info(f"✅ Prova Merkle VALIDA - radice raggiunta: {current_hash}")
-            else:
-                self.logger.warning(f"❌ Prova Merkle NON VALIDA")
-                self.logger.warning(f"   Radice calcolata: {current_hash}")
-                self.logger.warning(f"   Radice attesa:    {merkle_root}")
-                
-                # Debug aggiuntivo per capire la discrepanza
-                self.logger.debug(f"   Ultimo hash combinato: {combined if 'combined' in locals() else 'N/A'}")
-            
-            return is_valid
-            
-        except Exception as e:
-            self.logger.error(f"Errore nella verifica della prova Merkle: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
 
     async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
         """
@@ -738,6 +610,69 @@ class PresentationVerifier:
         except Exception as e:
             self.logger.error(f"Errore critico nella verifica Merkle: {e}", exc_info=True)
             return False, f"Errore interno: {e}"
+
+    async def _verify_single_merkle_proof(self, attribute_value: Any, proof_path: List[Dict], merkle_root: str) -> bool:
+        """
+        Verifica crittograficamente una singola prova di Merkle REALE.
+        """
+        try:
+            if not self.crypto_utils:
+                self.logger.error("CryptoUtils non disponibile per la verifica Merkle")
+                return False
+            
+            from credentials.models import DeterministicSerializer
+            
+            # Serializza deterministicamente il valore dell'attributo
+            attribute_json = DeterministicSerializer.serialize_for_merkle(attribute_value)
+            current_hash = self.crypto_utils.sha256_hash_string(attribute_json)
+            
+            self.logger.debug(f"🔍 Verifica prova Merkle:")
+            self.logger.debug(f"   Valore: {str(attribute_value)[:50]}...")
+            self.logger.debug(f"   Hash iniziale: {current_hash}")
+            self.logger.debug(f"   Passi prova: {len(proof_path)}")
+            
+            # Ricostruisce il percorso verso la radice seguendo la prova
+            for i, step in enumerate(proof_path):
+                sibling_hash = step.get('hash')
+                is_right_sibling = step.get('is_right', False)
+                
+                if not sibling_hash:
+                    self.logger.warning(f"Hash mancante nel passo {i}")
+                    return False
+                
+                # Combina l'hash corrente con il sibling secondo la direzione
+                if is_right_sibling:
+                    # Il sibling è a destra, quindi il nostro hash è a sinistra
+                    combined = current_hash + sibling_hash
+                else:
+                    # Il sibling è a sinistra, quindi il nostro hash è a destra
+                    combined = sibling_hash + current_hash
+                
+                # Calcola il nuovo hash per il passo successivo
+                current_hash = self.crypto_utils.sha256_hash_string(combined)
+                
+                self.logger.debug(f"   Passo {i}: {sibling_hash[:16]}... ({'DX' if is_right_sibling else 'SX'}) -> {current_hash}")
+            
+            # Verifica che la radice calcolata corrisponda a quella attesa
+            is_valid = current_hash == merkle_root
+            
+            if is_valid:
+                self.logger.info(f"✅ Prova Merkle VALIDA - radice raggiunta: {current_hash}")
+            else:
+                self.logger.warning(f"❌ Prova Merkle NON VALIDA")
+                self.logger.warning(f"   Radice calcolata: {current_hash}")
+                self.logger.warning(f"   Radice attesa:    {merkle_root}")
+                
+                # Debug aggiuntivo per capire la discrepanza
+                self.logger.debug(f"   Ultimo hash combinato: {combined if 'combined' in locals() else 'N/A'}")
+            
+            return is_valid
+            
+        except Exception as e:
+            self.logger.error(f"Errore nella verifica della prova Merkle: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     async def _debug_merkle_structure(self, disclosure: dict):
         """

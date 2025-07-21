@@ -138,7 +138,8 @@ class SelectiveDisclosure:
     recipient: Optional[str] = None
     expires_at: Optional[datetime.datetime] = None
     original_merkle_root: str = ""  # ← AGGIUNGI QUESTO CAMPO SE MANCA
-    
+    original_university_signature: Optional[Dict[str, Any]] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Converte in dizionario."""
         serialized_attributes = _serialize_datetimes(self.disclosed_attributes)
@@ -154,7 +155,8 @@ class SelectiveDisclosure:
             'purpose': self.purpose,
             'recipient': self.recipient,
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
-            'original_merkle_root': self.original_merkle_root  # ← INCLUDI ANCHE QUI
+            'original_merkle_root': self.original_merkle_root,
+            'original_university_signature': self.original_university_signature 
         }
     
     @classmethod

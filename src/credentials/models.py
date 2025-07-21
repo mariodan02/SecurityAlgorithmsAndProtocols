@@ -409,27 +409,28 @@ class AcademicCredential(BaseModel):
         """Crea un'istanza da stringa JSON."""
         return cls.model_validate_json(json_str)
 
-# Aggiungi questi metodi alla classe AcademicCredential
-
     def _flatten_for_merkle_tree_attributes(self) -> List[Tuple[str, Any]]:
         """
         Metodo per appiattire una credenziale in una lista ordinata di 
         tuple (percorso, valore) per costruire il Merkle Tree degli attributi.
         """
+        # La sintassi corretta per escludere campi annidati è un dizionario, non un set.
         exclude_config = {
-            'signature': True,
-            'metadata': {'merkle_root'}
+            'signature': True,          # Esclude il campo 'signature' a livello principale
+            'metadata': {'merkle_root'} # Esclude 'merkle_root' dentro 'metadata'
         }
         credential_dict = self.model_dump(mode='json', exclude=exclude_config)
 
         def flatten(d, parent_key=''):
             items = []
+            # Ordina le chiavi per garantire un output deterministico
             for k, v in sorted(d.items()):
                 new_key = f"{parent_key}.{k}" if parent_key else k
                 if isinstance(v, dict):
                     items.extend(flatten(v, new_key))
                 elif isinstance(v, list):
                     for i, item in enumerate(v):
+                        # Se l'elemento della lista è un dizionario, appiattiscilo
                         if isinstance(item, dict):
                             items.extend(flatten(item, f"{new_key}[{i}]"))
                         else:

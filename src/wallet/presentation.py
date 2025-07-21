@@ -377,7 +377,7 @@ class PresentationManager:
             for i, disclosure_data in enumerate(disclosures):
                 try:
                     disclosure = SelectiveDisclosure.from_dict(disclosure_data)
-                    merkle_root = "dummy_root" 
+                    merkle_root = disclosure.original_merkle_root 
                     is_valid, disclosure_errors = self.disclosure_manager.verify_selective_disclosure(
                         disclosure, merkle_root
                     )

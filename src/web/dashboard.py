@@ -519,7 +519,6 @@ class PresentationVerifier:
             self.logger.error(f"Errore nella ricerca del certificato: {e}")
             return None
 
-
     async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
         """
         Verifica crittografica delle prove di Merkle in modo sicuro, confrontando i dati
@@ -601,7 +600,7 @@ class PresentationVerifier:
         except Exception as e:
             self.logger.error(f"Errore critico durante la verifica Merkle: {e}", exc_info=True)
             return False, f"Errore interno del server durante la verifica: {e}"
-    
+            
     async def _verify_single_merkle_proof(self, attribute_value: Any, proof_path: List[Dict], merkle_root: str) -> bool:
         """
         Verifica crittograficamente una singola prova di Merkle REALE.

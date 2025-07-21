@@ -13,41 +13,6 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def ensure_json_serializable(obj):
-    """Garantisce che un oggetto sia serializzabile in JSON."""
-    import json
-    import datetime
-    
-    def convert_obj(o):
-        if isinstance(o, datetime.datetime):
-            return o.isoformat()
-        elif isinstance(o, datetime.date):
-            return o.isoformat()
-        elif isinstance(o, dict):
-            return {k: convert_obj(v) for k, v in o.items()}
-        elif isinstance(o, list):
-            return [convert_obj(i) for i in o]
-        elif isinstance(o, tuple):
-            return tuple(convert_obj(i) for i in o)
-        elif hasattr(o, '__dict__'):
-            try:
-                return convert_obj(o.__dict__)
-            except:
-                return str(o)
-        else:
-            return o
-    
-    converted = convert_obj(obj)
-    
-    # Test di serializzazione per verificare
-    try:
-        json.dumps(converted)
-        return converted
-    except (TypeError, ValueError) as e:
-        print(f"Errore serializzazione JSON: {e}")
-        # Se fallisce, forza tutto a stringa
-        return json.loads(json.dumps(converted, default=str))
-
 try:
     from crypto.foundations import DigitalSignature, CryptoUtils
     from credentials.models import AcademicCredential, CredentialFactory
@@ -122,8 +87,10 @@ class VerifiablePresentation:
     def get_data_for_signing(self) -> Dict[str, Any]:
         """
         Prepara i dati per la firma digitale.
-        Garantisce che tutti i campi siano serializzabili in JSON.
+        USA I DATI GIÀ SERIALIZZATI CORRETTAMENTE.
         """
+        # MODIFICA: Questa funzione ora costruisce semplicemente il dizionario
+        # senza applicare una nuova, incoerente, serializzazione.
         data = {
             'presentation_id': self.presentation_id,
             'created_at': self.created_at.isoformat(),
@@ -137,7 +104,7 @@ class VerifiablePresentation:
             'format': self.format.value,
             'verification_url': self.verification_url,
         }
-        return ensure_json_serializable(data)
+        return data
 
     def to_dict(self) -> Dict[str, Any]:
         """Converte l'intera presentazione in un dizionario per l'esportazione."""
@@ -145,7 +112,7 @@ class VerifiablePresentation:
         data['signature'] = self.signature
         data['summary'] = self.get_summary()
         return data
-    
+        
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'VerifiablePresentation':
         """Crea una presentazione partendo da un dizionario."""
@@ -326,15 +293,7 @@ class PresentationManager:
             presentation.status = PresentationStatus.READY
             
             data_to_sign = presentation.get_data_for_signing()
-            
-            try:
-                import json
-                json.dumps(data_to_sign)
-                print(f"✅ Dati della presentazione serializzabili correttamente")
-            except Exception as e:
-                print(f"❌ Errore serializzazione dati: {e}")
-                return False
-            
+                        
             # Esegui la firma
             signed_data = self.digital_signature.sign_document(private_key, data_to_sign)
             presentation.signature = signed_data.get('firma')

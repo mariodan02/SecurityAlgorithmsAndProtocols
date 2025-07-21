@@ -409,13 +409,13 @@ class AcademicCredential(BaseModel):
         """Crea un'istanza da stringa JSON."""
         return cls.model_validate_json(json_str)
 
-    def _flatten_for_merkle_tree(self) -> List[Tuple[str, Any]]:
+# Aggiungi questi metodi alla classe AcademicCredential
+
+    def _flatten_for_merkle_tree_attributes(self) -> List[Tuple[str, Any]]:
         """
-        Metodo helper centralizzato per "appiattire" una credenziale in una lista 
-        stabile e ordinata di tuple (percorso, valore) per il calcolo del Merkle tree.
-        Questo è l'UNICO metodo che definisce quali dati garantiscono l'integrità.
+        Metodo per appiattire una credenziale in una lista ordinata di 
+        tuple (percorso, valore) per costruire il Merkle Tree degli attributi.
         """
-        # La sintassi corretta per escludere campi annidati è un dizionario
         exclude_config = {
             'signature': True,
             'metadata': {'merkle_root'}
@@ -440,6 +440,84 @@ class AcademicCredential(BaseModel):
 
         return flatten(credential_dict)
 
+    def calculate_attributes_merkle_root(self) -> Tuple[str, Dict[str, int]]:
+        """
+        Calcola la radice del Merkle Tree da TUTTI gli attributi della credenziale.
+        
+        Returns:
+            Tupla (merkle_root, attribute_index_map)
+        """
+        flattened_attributes = self._flatten_for_merkle_tree_attributes()
+        
+        if not flattened_attributes:
+            return "", {}
+        
+        attribute_data = []
+        attribute_index_map = {}
+        
+        for i, (path, value) in enumerate(flattened_attributes):
+            serialized = DeterministicSerializer.serialize_for_merkle(value)
+            attribute_data.append(serialized)
+            attribute_index_map[path] = i
+        
+        from crypto.foundations import MerkleTree
+        merkle_tree = MerkleTree(attribute_data)
+        root = merkle_tree.get_merkle_root()
+        
+        print(f"🔒 Merkle Tree attributi calcolato:")
+        print(f"   📁 Attributi: {len(attribute_data)}")
+        print(f"   🌳 Root: {root}")
+        
+        return root, attribute_index_map
+
+    def generate_attribute_merkle_proof(self, attribute_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Genera una prova Merkle per un attributo specifico.
+        """
+        try:
+            flattened_attributes = self._flatten_for_merkle_tree_attributes()
+            
+            if not flattened_attributes:
+                return None
+            
+            # Trova l'indice dell'attributo
+            attribute_index = None
+            attribute_value = None
+            
+            for i, (path, value) in enumerate(flattened_attributes):
+                if path == attribute_path:
+                    attribute_index = i
+                    attribute_value = value
+                    break
+            
+            if attribute_index is None:
+                print(f"Attributo {attribute_path} non trovato")
+                return None
+            
+            # Ricostruisce il Merkle Tree
+            attribute_data = []
+            for path, value in flattened_attributes:
+                serialized = DeterministicSerializer.serialize_for_merkle(value)
+                attribute_data.append(serialized)
+            
+            from crypto.foundations import MerkleTree
+            merkle_tree = MerkleTree(attribute_data)
+            
+            # Genera la prova per questo attributo
+            proof_path = merkle_tree.generate_proof(attribute_index)
+            merkle_root = merkle_tree.get_merkle_root()
+            
+            return {
+                'attribute_index': attribute_index,
+                'attribute_value': attribute_value,
+                'proof_path': proof_path,
+                'merkle_root': merkle_root
+            }
+            
+        except Exception as e:
+            print(f"Errore generazione prova per {attribute_path}: {e}")
+            return None
+        
     def calculate_merkle_root(self) -> str:
         """
         Calcola la radice del Merkle Tree dai dati dei corsi usando serializzazione deterministica.

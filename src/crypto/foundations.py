@@ -403,90 +403,115 @@ class MerkleTree:
         """
         return self.tree_levels[-1][0]
     
-    def generate_proof(self, data_index: int) -> List[Dict[str, Any]]:
+    def generate_proof(self, leaf_index: int) -> List[Dict[str, Any]]:
         """
-        Genera una Merkle proof per un elemento specifico
+        Genera una prova di Merkle per un foglio specifico.
         
         Args:
-            data_index: Indice dell'elemento nella lista originale
+            leaf_index: Indice del foglio nel tree (0-based)
             
         Returns:
-            Lista di hash siblings per ricostruire la radice
+            Lista di passaggi della prova, ogni passo contiene:
+            - hash: Hash del nodo sibling
+            - is_right: True se il sibling è a destra, False se a sinistra
         """
-        if data_index < 0 or data_index >= len(self.original_data):
-            raise ValueError("Indice dati non valido")
+        if leaf_index < 0 or leaf_index >= len(self.leaves):
+            raise ValueError(f"Indice foglio {leaf_index} fuori range [0, {len(self.leaves)-1}]")
         
-        proof = []
-        current_index = data_index
+        proof_path = []
+        current_index = leaf_index
+        current_level = self.leaves[:]  # Copia dei foglie
         
-        # Risale dall'elemento alla radice
-        for level_idx in range(len(self.tree_levels) - 1):
-            level = self.tree_levels[level_idx]
-            
-            # Determina il sibling
-            if current_index % 2 == 0:  # Nodo sinistro
-                sibling_index = current_index + 1
-                is_right = True
-            else:  # Nodo destro
-                sibling_index = current_index - 1
-                is_right = False
-            
-            # Aggiunge il sibling alla proof (se esiste)
-            if sibling_index < len(level):
-                proof.append({
-                    'hash': level[sibling_index],
-                    'is_right': is_right
-                })
-            
-            # Passa al livello superiore
-            current_index = current_index // 2
+        print(f"🔐 Generando prova Merkle per foglio {leaf_index}")
+        print(f"   Hash foglio: {current_level[leaf_index]}")
         
-        print(f"✓ Proof generata per elemento {data_index} ({len(proof)} step)")
-        return proof
-    
-    def verify_proof(self, data: Any, data_index: int, proof: List[Dict[str, Any]], expected_root: str) -> bool:
+        # Naviga verso l'alto nel tree
+        level_num = 0
+        while len(current_level) > 1:
+            next_level = []
+            
+            # Processa a coppie
+            i = 0
+            while i < len(current_level):
+                if i + 1 < len(current_level):
+                    # Coppia normale
+                    left_hash = current_level[i]
+                    right_hash = current_level[i + 1]
+                    
+                    # Se siamo sul nodo target, aggiungi il sibling alla prova
+                    if current_index == i:
+                        # Il nostro nodo è a sinistra, sibling a destra
+                        proof_path.append({
+                            "hash": right_hash,
+                            "is_right": True
+                        })
+                        print(f"   Livello {level_num}: sibling DX = {right_hash[:16]}...")
+                    elif current_index == i + 1:
+                        # Il nostro nodo è a destra, sibling a sinistra
+                        proof_path.append({
+                            "hash": left_hash,
+                            "is_right": False
+                        })
+                        print(f"   Livello {level_num}: sibling SX = {left_hash[:16]}...")
+                    
+                    # Combina e aggiungi al livello successivo
+                    combined = left_hash + right_hash
+                    parent_hash = self.crypto_utils.sha256_hash_string(combined)
+                    next_level.append(parent_hash)
+                    
+                    # Aggiorna l'indice per il livello successivo
+                    if current_index == i or current_index == i + 1:
+                        current_index = len(next_level) - 1
+                    
+                    i += 2
+                else:
+                    # Nodo singolo (numero dispari), promosso direttamente
+                    next_level.append(current_level[i])
+                    if current_index == i:
+                        current_index = len(next_level) - 1
+                    i += 1
+            
+            current_level = next_level
+            level_num += 1
+        
+        print(f"   ✅ Prova generata: {len(proof_path)} passi")
+        
+        return proof_path
+
+    def verify_proof(self, leaf_data: str, leaf_index: int, proof_path: List[Dict[str, Any]], 
+                    expected_root: str) -> bool:
         """
-        Verifica una Merkle proof
+        Verifica una prova di Merkle.
         
         Args:
-            data: Dato originale
-            data_index: Indice del dato nella lista originale
-            proof: Merkle proof
-            expected_root: Radice attesa
+            leaf_data: Dati del foglio originale
+            leaf_index: Indice del foglio
+            proof_path: Percorso della prova
+            expected_root: Root attesa
             
         Returns:
-            True se la proof è valida, False altrimenti
+            True se la prova è valida
         """
         try:
-            # Hash del dato
-            current_hash = self._hash_data(data)
+            # Hash del foglio
+            current_hash = self.crypto_utils.sha256_hash_string(leaf_data)
             
-            # Ricostruisce il percorso verso la radice
-            for step in proof:
-                sibling_hash = step['hash']
-                is_right = step['is_right']
+            # Ricostruisce il percorso
+            for step in proof_path:
+                sibling_hash = step["hash"]
+                is_right = step["is_right"]
                 
                 if is_right:
-                    # Il sibling è a destra
                     combined = current_hash + sibling_hash
                 else:
-                    # Il sibling è a sinistra
                     combined = sibling_hash + current_hash
                 
-                current_hash = hashlib.sha256(combined.encode('utf-8')).hexdigest()
+                current_hash = self.crypto_utils.sha256_hash_string(combined)
             
-            # Verifica che la radice ricostruita corrisponda
-            is_valid = current_hash == expected_root
-            
-            if is_valid:
-                print("✓ Merkle proof verificata con successo")
-            else:
-                print("✗ Merkle proof non valida")
-            
-            return is_valid
+            return current_hash == expected_root
             
         except Exception as e:
-            print(f"✗ Errore nella verifica della proof: {e}")
+            print(f"Errore verifica prova: {e}")
             return False
     
     def get_tree_info(self) -> Dict[str, Any]:

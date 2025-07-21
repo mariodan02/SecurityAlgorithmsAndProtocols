@@ -403,43 +403,60 @@ class SelectiveDisclosureManager:
                             recipient: Optional[str] = None,
                             expires_hours: int = 24) -> SelectiveDisclosure:
         """
-        Crea una divulgazione selettiva per una credenziale.
-        CORRETTO: Include il parametro original_merkle_root richiesto.
+        Crea una divulgazione selettiva con prove Merkle REALI.
         """
         try:
-            print(f"🔍 Creazione selective disclosure per: {credential.metadata.credential_id}")
+            print(f"🔍 Creazione selective disclosure REALE per: {credential.metadata.credential_id}")
             
-            # 1. Usa il Merkle root originale della credenziale
-            original_merkle_root = credential.metadata.merkle_root
-            print(f"🌳 Merkle root originale: {original_merkle_root}")
-
-            # 2. Appiattisce la credenziale
+            # 1. Calcola il Merkle Tree degli attributi e ottiene la mappa degli indici
+            attributes_root, attribute_index_map = credential.calculate_attributes_merkle_root()
+            
+            print(f"🌳 Merkle root attributi: {attributes_root}")
+            print(f"📊 Mappa attributi: {len(attribute_index_map)} elementi")
+            
+            # 2. Appiattisce la credenziale per ottenere tutti gli attributi
             all_attributes = self._flatten_credential(credential)
             
             # 3. Estrae solo gli attributi da divulgare
-            disclosed_attributes = {
-                path: value
-                for path, value in all_attributes.items()
-                if path in attributes_to_disclose
-            }
-
+            disclosed_attributes = {}
+            valid_attributes = []
+            
+            for attr_path in attributes_to_disclose:
+                if attr_path in all_attributes:
+                    disclosed_attributes[attr_path] = all_attributes[attr_path]
+                    valid_attributes.append(attr_path)
+                else:
+                    print(f"⚠️ Attributo non trovato: {attr_path}")
+            
             # 4. Serializza per sicurezza
             disclosed_attributes = _serialize_datetimes(disclosed_attributes)
-
-            # 5. Genera Merkle proofs usando il root originale
+            
+            print(f"✅ Attributi da divulgare: {len(disclosed_attributes)}")
+            
+            # 5. Genera prove Merkle REALI per ogni attributo
             merkle_proofs = []
-            for i, (attr_path, attr_value) in enumerate(disclosed_attributes.items()):
-                proof = MerkleProof(
-                    attribute_index=i,
-                    attribute_value=attr_value,
-                    proof_path=[{"hash": f"proof_hash_{i}", "is_right": i % 2 == 0}],
-                    merkle_root=original_merkle_root
-                )
-                merkle_proofs.append(proof)
-
-            print(f"✅ Generati {len(merkle_proofs)} Merkle proofs")
-
-            # 6. Crea la divulgazione selettiva CON original_merkle_root
+            
+            for attr_path in valid_attributes:
+                print(f"🔐 Generando prova Merkle per: {attr_path}")
+                
+                # Genera la prova reale usando il metodo della credenziale
+                proof_data = credential.generate_attribute_merkle_proof(attr_path)
+                
+                if proof_data:
+                    proof = MerkleProof(
+                        attribute_index=proof_data['attribute_index'],
+                        attribute_value=proof_data['attribute_value'],
+                        proof_path=proof_data['proof_path'],
+                        merkle_root=proof_data['merkle_root']
+                    )
+                    merkle_proofs.append(proof)
+                    print(f"   ✅ Prova generata per {attr_path} (indice: {proof_data['attribute_index']})")
+                else:
+                    print(f"   ❌ Impossibile generare prova per {attr_path}")
+            
+            print(f"✅ Prove Merkle reali generate: {len(merkle_proofs)}")
+            
+            # 6. Crea la divulgazione selettiva con prove REALI
             disclosure = SelectiveDisclosure(
                 credential_id=str(credential.metadata.credential_id),
                 disclosure_id=str(uuid.uuid4()),
@@ -454,14 +471,14 @@ class SelectiveDisclosureManager:
                     datetime.datetime.now(datetime.timezone.utc) +
                     datetime.timedelta(hours=expires_hours)
                 ) if expires_hours > 0 else None,
-                original_merkle_root=original_merkle_root  # ← PARAMETRO MANCANTE
+                original_merkle_root=attributes_root  # Usa la root degli attributi
             )
-
-            print(f"✅ Selective disclosure creata: {disclosure.disclosure_id}")
+            
+            print(f"✅ Selective disclosure REALE creata: {disclosure.disclosure_id}")
             return disclosure
-
+            
         except Exception as e:
-            print(f"❌ Errore creazione divulgazione selettiva: {e}")
+            print(f"❌ Errore creazione divulgazione selettiva reale: {e}")
             import traceback
             traceback.print_exc()
             raise

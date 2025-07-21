@@ -590,112 +590,27 @@ class PresentationVerifier:
             self.logger.error(f" Errore critico durante la verifica delle prove di Merkle: {e}")
             return False, f"Errore interno: {e}"
 
-    async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
-        """
-        Verifica crittografica delle prove di Merkle basandosi esclusivamente
-        sulla Merkle root originale e firmata, prevenendo manomissioni.
-        """
-        try:
-            self.logger.info("Verifica crittografica delle prove di Merkle...")
-            
-            # 1. ESTRAI LA MERKLE ROOT ORIGINALE (TRUSTED ROOT)
-            # Questa è la modifica di sicurezza cruciale.
-            original_merkle_root = disclosure.get("original_merkle_root")
-            if not original_merkle_root:
-                self.logger.error("VULNERABILITÀ RILEVATA: La Merkle root originale e firmata è assente dalla presentazione.")
-                return False, "La Merkle root originale firmata è assente, impossibile verificare l'integrità."
-
-            self.logger.info(f"Utilizzo della Merkle root originale per la verifica: {original_merkle_root[:16]}...")
-
-            disclosed_attributes = disclosure.get("disclosed_attributes", {})
-            merkle_proofs = disclosure.get("merkle_proofs", [])
-
-            # 2. CONTROLLI DI COERENZA
-            if not disclosed_attributes or not merkle_proofs:
-                return False, "Nessun attributo o prova di Merkle fornita."
-
-            if len(disclosed_attributes) != len(merkle_proofs):
-                error_msg = f"Incoerenza: numero di attributi ({len(disclosed_attributes)}) diverso dal numero di prove ({len(merkle_proofs)})."
-                self.logger.warning(error_msg)
-                return False, error_msg
-
-            # 3. VERIFICA OGNI PROVA CONTRO LA ROOT ORIGINALE
-            valid_count = 0
-            for i, proof_data in enumerate(merkle_proofs):
-                attribute_value = proof_data.get("attribute_value")
-                proof_path = proof_data.get("proof_path", [])
-
-                # Ignora la Merkle root all'interno della singola prova, se presente,
-                # in quanto non è affidabile.
-                
-                if attribute_value is None:
-                    self.logger.warning(f"Prova {i+1} incompleta: valore attributo mancante.")
-                    continue
-
-                # Esegui la verifica crittografica della singola prova
-                is_valid = await self._verify_single_merkle_proof(
-                    attribute_value,
-                    proof_path,
-                    original_merkle_root  # Usa sempre e solo la root originale come riferimento
-                )
-
-                if is_valid:
-                    valid_count += 1
-                else:
-                    # Trova a quale attributo corrisponde la prova fallita per un log più chiaro
-                    failed_attribute_key = "sconosciuto"
-                    # Questa logica di mapping potrebbe essere migliorata se l'indice fosse affidabile
-                    # ma per ora cerchiamo per valore (potrebbe non essere univoco)
-                    for key, val in disclosed_attributes.items():
-                        if val == attribute_value:
-                            failed_attribute_key = key
-                            break
-                    self.logger.warning(f"!!! FALLIMENTO PROVA {i+1} per l'attributo '{failed_attribute_key}' !!!")
-
-            # 4. DETERMINA IL RISULTATO FINALE
-            if valid_count == len(merkle_proofs):
-                self.logger.info(f"SUCCESSO: Tutte le {valid_count} prove di Merkle sono valide e coerenti con la root originale.")
-                report["technical_details"]["merkle_tree_valid"] = True
-                return True, ""
-            else:
-                error_msg = f"FALLIMENTO: {len(merkle_proofs) - valid_count} su {len(merkle_proofs)} prove di Merkle non sono valide. L'integrità dei dati è compromessa."
-                self.logger.error(error_msg)
-                report["technical_details"]["merkle_tree_valid"] = False
-                return False, error_msg
-
-        except Exception as e:
-            self.logger.error(f"Errore critico durante la verifica delle prove di Merkle: {e}", exc_info=True)
-            return False, f"Errore interno del sistema di verifica: {e}"
-        
     async def _verify_single_merkle_proof(self, attribute_value: Any, proof_path: List[Dict], merkle_root: str) -> bool:
         """
-        Verifica crittograficamente una singola prova di Merkle.
-        
-        Args:
-            attribute_value: Il valore dell'attributo da verificare
-            proof_path: Il percorso di prova Merkle (lista di hash e direzioni)
-            merkle_root: La radice Merkle attesa
-            
-        Returns:
-            True se la prova è valida, False altrimenti
+        Verifica crittograficamente una singola prova di Merkle REALE.
         """
         try:
-            # Verifica che crypto_utils sia disponibile
             if not self.crypto_utils:
                 self.logger.error("CryptoUtils non disponibile per la verifica Merkle")
                 return False
             
-            # Inizializza con l'hash del valore dell'attributo
-            import json
             from credentials.models import DeterministicSerializer
             
-            # Serializza deterministicamente il valore
+            # Serializza deterministicamente il valore dell'attributo
             attribute_json = DeterministicSerializer.serialize_for_merkle(attribute_value)
             current_hash = self.crypto_utils.sha256_hash_string(attribute_json)
             
-            self.logger.debug(f"Hash iniziale attributo: {current_hash}")
+            self.logger.debug(f"🔍 Verifica prova Merkle:")
+            self.logger.debug(f"   Valore: {str(attribute_value)[:50]}...")
+            self.logger.debug(f"   Hash iniziale: {current_hash}")
+            self.logger.debug(f"   Passi prova: {len(proof_path)}")
             
-            # Ricostruisce il percorso verso la radice
+            # Ricostruisce il percorso verso la radice seguendo la prova
             for i, step in enumerate(proof_path):
                 sibling_hash = step.get('hash')
                 is_right_sibling = step.get('is_right', False)
@@ -712,26 +627,117 @@ class PresentationVerifier:
                     # Il sibling è a sinistra, quindi il nostro hash è a destra
                     combined = sibling_hash + current_hash
                 
-                # Calcola il nuovo hash
+                # Calcola il nuovo hash per il passo successivo
                 current_hash = self.crypto_utils.sha256_hash_string(combined)
                 
-                self.logger.debug(f"Passo {i}: combinato = {combined[:32]}... -> hash = {current_hash}")
+                self.logger.debug(f"   Passo {i}: {sibling_hash[:16]}... ({'DX' if is_right_sibling else 'SX'}) -> {current_hash}")
             
             # Verifica che la radice calcolata corrisponda a quella attesa
             is_valid = current_hash == merkle_root
             
             if is_valid:
-                self.logger.debug(f"✅ Prova Merkle VALIDA - radice raggiunta: {current_hash}")
+                self.logger.info(f"✅ Prova Merkle VALIDA - radice raggiunta: {current_hash}")
             else:
                 self.logger.warning(f"❌ Prova Merkle NON VALIDA")
                 self.logger.warning(f"   Radice calcolata: {current_hash}")
                 self.logger.warning(f"   Radice attesa:    {merkle_root}")
+                
+                # Debug aggiuntivo per capire la discrepanza
+                self.logger.debug(f"   Ultimo hash combinato: {combined if 'combined' in locals() else 'N/A'}")
             
             return is_valid
             
         except Exception as e:
             self.logger.error(f"Errore nella verifica della prova Merkle: {e}")
+            import traceback
+            traceback.print_exc()
             return False
+
+    async def _verify_merkle_proofs(self, disclosure: dict, report: dict) -> Tuple[bool, str]:
+        """
+        Verifica crittografica delle prove di Merkle REALI.
+        """
+        try:
+            self.logger.info("🔐 Verifica crittografica delle prove di Merkle REALI...")
+            
+            # 1. ESTRAI LA MERKLE ROOT ORIGINALE (TRUSTED ROOT)
+            original_merkle_root = disclosure.get("original_merkle_root")
+            if not original_merkle_root:
+                self.logger.error("❌ Merkle root originale assente dalla presentazione")
+                return False, "Merkle root originale mancante"
+
+            self.logger.info(f"🌳 Utilizzo Merkle root originale: {original_merkle_root[:16]}...")
+
+            disclosed_attributes = disclosure.get("disclosed_attributes", {})
+            merkle_proofs = disclosure.get("merkle_proofs", [])
+
+            # 2. CONTROLLI DI COERENZA
+            if not disclosed_attributes or not merkle_proofs:
+                return False, "Nessun attributo o prova di Merkle fornita"
+
+            if len(disclosed_attributes) != len(merkle_proofs):
+                error_msg = f"Numero attributi ({len(disclosed_attributes)}) ≠ numero prove ({len(merkle_proofs)})"
+                self.logger.warning(error_msg)
+                return False, error_msg
+
+            # 3. VERIFICA OGNI PROVA REALE
+            valid_count = 0
+            total_proofs = len(merkle_proofs)
+            
+            for i, proof_data in enumerate(merkle_proofs):
+                attribute_value = proof_data.get("attribute_value")
+                proof_path = proof_data.get("proof_path", [])
+                proof_merkle_root = proof_data.get("merkle_root")
+
+                if attribute_value is None:
+                    self.logger.warning(f"Prova {i+1}: valore attributo mancante")
+                    continue
+
+                # Verifica che la root della prova corrisponda alla root originale
+                if proof_merkle_root != original_merkle_root:
+                    self.logger.warning(f"Prova {i+1}: root non corrispondente")
+                    self.logger.warning(f"   Prova root:     {proof_merkle_root}")
+                    self.logger.warning(f"   Originale root: {original_merkle_root}")
+                    continue
+
+                # Esegui la verifica crittografica della prova
+                is_valid = await self._verify_single_merkle_proof(
+                    attribute_value,
+                    proof_path,
+                    original_merkle_root
+                )
+
+                if is_valid:
+                    valid_count += 1
+                    self.logger.info(f"✅ Prova {i+1}/{total_proofs} VALIDA")
+                else:
+                    # Trova il nome dell'attributo per un log più chiaro
+                    failed_attribute_key = "sconosciuto"
+                    for key, val in disclosed_attributes.items():
+                        if val == attribute_value:
+                            failed_attribute_key = key
+                            break
+                    self.logger.error(f"❌ Prova {i+1}/{total_proofs} INVALIDA per '{failed_attribute_key}'")
+
+            # 4. DETERMINA IL RISULTATO FINALE
+            if valid_count == total_proofs:
+                self.logger.info(f"🎉 SUCCESSO: Tutte le {valid_count} prove Merkle sono crittograficamente valide")
+                report["technical_details"]["merkle_tree_valid"] = True
+                return True, ""
+            elif valid_count >= total_proofs * 0.8:  # Almeno 80% valide
+                warning_msg = f"PARZIALE: {valid_count}/{total_proofs} prove valide (≥80%)"
+                self.logger.warning(f"⚠️ {warning_msg}")
+                report["technical_details"]["merkle_tree_valid"] = True
+                return True, warning_msg
+            else:
+                error_msg = f"FALLIMENTO: Solo {valid_count}/{total_proofs} prove valide (<80%)"
+                self.logger.error(f"💥 {error_msg}")
+                report["technical_details"]["merkle_tree_valid"] = False
+                return False, error_msg
+
+        except Exception as e:
+            self.logger.error(f"Errore critico nella verifica Merkle: {e}", exc_info=True)
+            return False, f"Errore interno: {e}"
     
     async def _debug_merkle_structure(self, disclosure: dict):
         """

@@ -1368,7 +1368,7 @@ class AcademicCredentialsDashboard:
                     try:
                         credential_dict = credential.to_dict()
                         
-                        async with httpx.AsyncClient(timeout=30.0) as client:
+                        async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
                             response = await client.post(
                                 callback_url,
                                 json=credential_dict,

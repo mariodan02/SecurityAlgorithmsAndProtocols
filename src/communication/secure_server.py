@@ -315,7 +315,7 @@ class AcademicCredentialsSecureServer:
         self.app = FastAPI(
             title="Academic Credentials Secure API - Consolidated",
             description="API sicura consolidata per il sistema di credenziali accademiche con funzionalità blockchain",
-            version="2.0.0",
+            version="1.0.0",
             docs_url="/docs" if not config.api_key_required else None
         )
         

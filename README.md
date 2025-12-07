@@ -1,7 +1,3 @@
-Ecco la versione inglese del README, ottimizzata per GitHub e completa delle nuove sezioni sull'architettura a microservizi e la configurazione ambientale:
-
------
-
 # Security Algorithms and Protocols Project - Group 19
 
 ## Decentralized Academic Credential Management System

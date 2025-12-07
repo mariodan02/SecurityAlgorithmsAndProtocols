@@ -3,11 +3,22 @@ import os
 from web3 import Web3
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from dotenv import load_dotenv
 
-PROVIDER_URL = "http://127.0.0.1:8545"
+# Carica le variabili d'ambiente dal file .env
+load_dotenv()
+
+PROVIDER_URL = os.getenv("BLOCKCHAIN_PROVIDER_URL", "http://127.0.0.1:8545")
 
 # CHIAVE DEL "BANKER" - Account Ganache con fondi per finanziare altri account
-GANACHE_BANKER_KEY = "0x1da8cda9f7a70a84bed13a7f9cc16c9ac9ae9326662e51a5c2568faa3b989b4c"
+GANACHE_BANKER_KEY = os.getenv("GANACHE_BANKER_KEY")
+
+if not GANACHE_BANKER_KEY:
+    raise ValueError(
+        "⚠️  GANACHE_BANKER_KEY non trovata nelle variabili d'ambiente!\n"
+        "Per favore, crea un file .env nella root del progetto e aggiungi:\n"
+        "GANACHE_BANKER_KEY=0x<tua_chiave_privata_ganache>"
+    )
 
 def derive_ethereum_key_from_rsa(pem_file_path: str, password: bytes):
     """

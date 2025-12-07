@@ -2,6 +2,7 @@
 cryptography>=41.0.0          # Crittografia (RSA, SHA, etc)
 pydantic>=2.0.0               # Validazione dati
 requests>=2.31.0              # HTTP client
+python-dotenv>=1.0.0          # Gestione variabili d'ambiente
 
 # Web3 and Blockchain 
 web3>=6.0.0,<7.0.0          # Web3.py per blockchain

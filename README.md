@@ -1,89 +1,118 @@
-# Progetto di Algoritmi e Protocolli per la Sicurezza - Gruppo 19
+Ecco la versione inglese del README, ottimizzata per GitHub e completa delle nuove sezioni sull'architettura a microservizi e la configurazione ambientale:
 
-## Sistema decentralizzato di gestione credenziali accademiche
+-----
 
-Questo progetto implementa un sistema decentralizzato per l'emissione, la gestione e la verifica di credenziali accademiche, basato su un'architettura a chiave pubblica (PKI), firme digitali, Merkle Tree per la divulgazione selettiva e prevede un'integrazione con una blockchain per la gestione delle revoche.
+# Security Algorithms and Protocols Project - Group 19
 
-### Funzionalità Principali
+## Decentralized Academic Credential Management System
 
-* **Infrastruttura a Chiave Pubblica (PKI):** Una Certificate Authority (CA) dedicata per generare e firmare i certificati digitali per tutte le entità del sistema (università, studenti, server).
-* **Emissione e Validazione di Credenziali:** Le università possono emettere credenziali accademiche digitali (Transcript of Records) firmate digitalmente per garantirne l'autenticità e l'integrità.
-* **Wallet Digitale per Studenti:** Gli studenti possono conservare e gestire in modo sicuro le proprie credenziali in un wallet digitale crittografato.
-* **Divulgazione Selettiva (Selective Disclosure):** Grazie all'uso di Merkle Tree, gli studenti possono creare "presentazioni" delle proprie credenziali, condividendo solo le informazioni strettamente necessarie senza invalidare la firma digitale dell'intera credenziale.
-* **Integrazione Blockchain:** Lo stato delle credenziali (es. revoca) viene registrato su una blockchain (simulata con Ganache), garantendo un registro immutabile e decentralizzato.
-* **Comunicazione Sicura:** Tutte le comunicazioni tra i componenti del sistema avvengono tramite un server API sicuro che utilizza TLS per la cifratura del traffico di rete.
-* **Dashboard Web:** Un'interfaccia web multi-ruolo (issuer, verifier, studente) per interagire con il sistema in modo intuitivo.
+This project implements a decentralized system for issuing, managing, and verifying academic credentials. It is based on a Public Key Infrastructure (PKI), digital signatures, Merkle Trees for selective disclosure, and includes blockchain integration for revocation management.
 
-### Architettura del Sistema
+### Key Features
 
-Il sistema è composto dai seguenti macro-componenti:
+  * **Public Key Infrastructure (PKI):** A dedicated Certificate Authority (CA) to generate and sign digital certificates for all system entities (universities, students, servers).
+  * **Credential Issuance and Validation:** Universities can issue digital academic credentials (Transcript of Records) that are digitally signed to ensure authenticity and integrity.
+  * **Student Digital Wallet:** Students can securely store and manage their credentials in an encrypted digital wallet.
+  * **Selective Disclosure:** Utilizing Merkle Trees, students can create "presentations" of their credentials, sharing only the strictly necessary information without invalidating the digital signature of the entire credential.
+  * **Blockchain Integration:** Credential status (e.g., revocation) is recorded on a blockchain (simulated with Ganache), ensuring an immutable and decentralized registry.
+  * **Secure Communication:** All communications between system components occur via a secure API server using TLS for network traffic encryption.
+  * **Web Dashboard:** A multi-role web interface (issuer, verifier, student) for intuitive system interaction.
 
-1.  **Web dashboard (`/src/web`):** L'interfaccia utente basata su FastAPI che permette a studenti, università emittenti e università verificatrici di interagire con il sistema.
-2.  **Server (`/src/communication`):** Un server API che gestisce la comunicazione sicura tra i vari componenti e integra le API per l'interazione con la blockchain.
-3.  **PKI e crittografia (`/src/pki`, `/src/crypto`):** Infrastruttura a chiave pubblica che include la CA, la gestione dei certificati, il client OCSP per la verifica delle revoche e le fondamenta crittografiche (RSA, firme digitali, Merkle Tree).
-4.  **Gestione credenziali (`/src/credentials`):** Contiene i modelli dati per le credenziali, la logica per la loro emissione da parte delle università e la loro validazione.
-5.  **Wallet studente (`/src/wallet`):** Implementa il wallet digitale per gli studenti, la logica per la divulgazione selettiva e la creazione di presentazioni verificabili.
-6.  **Integrazione blockchain (`/src/blockchain`):** Contiene lo smart contract in solidity e il servizio python per interagire con la blockchain per la registrazione e la revoca delle credenziali.
+### System Architecture
 
-### Guida Rapida all'Avvio
+The system consists of the following macro-components:
 
-#### Prerequisiti
+1.  **Web Dashboard (`/src/web`):** The FastAPI-based user interface allowing students, issuing universities, and verifying universities to interact with the system.
+2.  **Server (`/src/communication`):** A secure API server managing communication between components and integrating APIs for blockchain interaction.
+3.  **PKI and Cryptography (`/src/pki`, `/src/crypto`):** PKI infrastructure including the CA, certificate management, OCSP client for revocation verification, and cryptographic foundations (RSA, digital signatures, Merkle Trees).
+4.  **Credential Management (`/src/credentials`):** Contains data models for credentials, logic for their issuance by universities, and their validation.
+5.  **Student Wallet (`/src/wallet`):** Implements the digital wallet for students, logic for selective disclosure, and the creation of verifiable presentations.
+6.  **Blockchain Integration (`/src/blockchain`):** Contains the Solidity smart contract and the Python service for interacting with the blockchain for credential registration and revocation.
 
-* Python
-* Node.js e npm (per la compilazione e il deploy dello smart contract)
-* Ganache (per la simulazione della blockchain)
-* Aver installato le dipendenze Python con `pip install -r requirements.txt`
+#### Architecture Designed for Microservices Containerization
 
-#### Passaggi per l'Avvio
+The current architecture uses Python threads to orchestrate components (Dashboard, API Server, OCSP Responder) in a single process via `run_system.py`. This solution is ideal for development and local demos.
 
-1.  **Avviare Ganache:**
-    Assicurarsi che Ganache sia in esecuzione e in ascolto sulla porta `8545` (abbiamo supposto Ganache in esecuzione da CLI). È consigliabile avviarlo con un bilancio elevato per gli account di test:
+**For a production environment**, it is recommended to:
+
+  - **Containerize each component** in separate Docker containers (Dashboard, API Server, OCSP Responder, Blockchain Node).
+  - **Use Docker Compose** or Kubernetes for microservices orchestration.
+  - **Separate concerns**: each service can scale independently based on load.
+  - **Implement service discovery** and load balancing between microservices.
+  - **Manage secrets** with dedicated systems (HashiCorp Vault, AWS Secrets Manager, Kubernetes Secrets).
+  - **Centralized monitoring and logging** (Prometheus, Grafana, ELK Stack).
+
+The project's modular architecture facilitates this transition to containerized microservices without requiring significant code refactoring.
+
+### Quick Start Guide
+
+#### Prerequisites
+
+  * Python
+  * Node.js and npm (for compiling and deploying the smart contract)
+  * Ganache (for blockchain simulation)
+  * Python dependencies installed via `pip install -r requirements.txt`
+
+#### Steps to Start
+
+1.  **Start Ganache:**
+    Ensure Ganache is running and listening on port `8545` (assuming Ganache CLI execution). It is advisable to start it with a high balance for test accounts:
+
     ```sh
     ganache -e 2000000000000000
     ```
 
-2.  **Compilare e Distribuire lo Smart Contract:**
-    Posizionarsi nella directory `src/blockchain` ed eseguire i seguenti comandi:
+2.  **Compile and Deploy the Smart Contract:**
+    Navigate to the `src/blockchain` directory and execute the following commands:
+
     ```sh
     npm install
     node compile.js
     node deploy.js
     ```
 
-3.  **Configurare la Chiave Privata per la Blockchain:**
-    Aprire il file `src/blockchain/blockchain_service.py` e sostituire il valore della variabile `GANACHE_BANKER_KEY` con una delle chiavi private fornite da Ganache.
+3.  **Configure Environment Variables:**
+    Copy the `.env.example` file to `.env` and configure the necessary variables:
 
+    ```sh
+    cp .env.example .env
+    ```
 
-4.  **Generare i Certificati Digitali:**
-    Eseguire lo script della Certificate Authority per generare tutti i certificati necessari per le entità del sistema:
+    Edit the `.env` file and replace `GANACHE_BANKER_KEY` with one of the private keys provided by Ganache at startup.
+
+4.  **Generate Digital Certificates:**
+    Run the Certificate Authority script to generate all necessary certificates for system entities:
+
     ```sh
     python src/pki/certificate_authority.py
     ```
 
-5.  **Avviare il Sistema:**
-    Tornare nella directory principale del progetto ed eseguire lo script principale:
+5.  **Start the System:**
+    Return to the project's root directory and run the main script:
+
     ```sh
     python run_system.py
     ```
-A questo punto, l'intero sistema sarà in esecuzione.
 
-### Utilizzo del Sistema
+    At this point, the entire system will be up and running.
 
-#### 1. ✅ Accettare il Certificato Self-Signed (Passaggio Obbligatorio)
+### Using the System
 
-* Prima di usare la dashboard, è necessario aprire una nuova scheda del browser e andare su **[https://localhost:8443/](https://localhost:8443/)**.
-* Il browser mostrerà un avviso di sicurezza. Questo è normale perché il server usa un certificato autofirmato che non è riconosciuto da un'autorità pubblica.
-* Clicca su **"Avanzate"** e poi su **"Procedi su localhost (non sicuro)"**.
-* **Questo passaggio è fondamentale.** Se non lo fai, la Dashboard (`http://localhost:8000`) non potrà comunicare con il server sicuro e le operazioni (specialmente quelle sulla blockchain) falliranno con un errore di rete (`Fetch network error`).
+#### 1\. ✅ Accept the Self-Signed Certificate (Mandatory Step)
 
-#### 2. Accedere alla Dashboard
+  * Before using the dashboard, you must open a new browser tab and go to **[https://localhost:8443/](https://www.google.com/search?q=https://localhost:8443/)**.
+  * The browser will display a security warning. This is normal because the server uses a self-signed certificate not recognized by a public authority.
+  * Click on **"Advanced"** and then on **"Proceed to localhost (unsafe)"**.
+  * **This step is crucial.** If skipped, the Dashboard (`http://localhost:8000`) will not be able to communicate with the secure server, and operations (especially those on the blockchain) will fail with a network error (`Fetch network error`).
 
-* Una volta accettato il certificato, puoi usare l'applicazione navigando all'indirizzo: **[http://localhost:8000](http://localhost:8000)**.
+#### 2\. Access the Dashboard
 
-#### Utenti Demo
+  * Once the certificate is accepted, you can use the application by navigating to: **[http://localhost:8000](https://www.google.com/search?q=http://localhost:8000)**.
 
-Per accedere alla dashboard, è possibile utilizzare i seguenti utenti di prova (la password per tutti è `Unisa2025`):
+#### Demo Users
 
-* `issuer_rennes`: Università che può emettere credenziali.
-* `verifier_unisa`: Università che può verificare le presentazioni.
-* `studente_mariorossi`: Studente che può gestire il proprio wallet e creare presentazioni.
+To access the dashboard, you can use the following test users (the password for all is `Unisa2025`):
+
+  * `issuer_rennes`: University that can issue credentials.
+  * `verifier_unisa`: University that can verify presentations.
+  * `studente_mariorossi`: Student who can manage their wallet and create presentations.

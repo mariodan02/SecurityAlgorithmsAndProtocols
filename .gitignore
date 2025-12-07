@@ -3,3 +3,7 @@
 *.json
 *.enc
 student_wallets/studente_mariorossi_wallet/wallet.salt
+
+# Environment variables (contains sensitive keys)
+.env
+.env.local
